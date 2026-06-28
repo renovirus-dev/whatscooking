@@ -59,7 +59,8 @@
           "color": "#FF6B35"
         }
       ],
-      "expo-system-ui"
+      "expo-system-ui",
+      "expo-splash-screen"
     ],
     "extra": {
       "eas": {
