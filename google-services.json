@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:287609653948:android:c632df733c058a753a1eb9",
+        "mobilesdk_app_id": "1:287609653948:android:3bf2cfeee3f277603a1eb9",
         "android_client_info": {
-          "package_name": "com.renovirus.whatscooking"
+          "package_name": "com.yourname.whatscooking"
         }
       },
       "oauth_client": [
