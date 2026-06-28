@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "287609653948",
+    "project_id": "whats-cooking-5fd93",
+    "storage_bucket": "whats-cooking-5fd93.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:287609653948:android:c632df733c058a753a1eb9",
+        "android_client_info": {
+          "package_name": "com.renovirus.whatscooking"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "287609653948-cjssan7snfu78a699hce5v1hiaueac6i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCSKGWmoX36fDDuvfRZgDx36hlbUqQJVNk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "287609653948-cjssan7snfu78a699hce5v1hiaueac6i.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
