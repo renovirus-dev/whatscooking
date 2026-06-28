@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/firebase/config';
-import RootNavigator from './src/navigation/RootNavigator';
+import AppNavigator from './src/navigation/AppNavigator';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -50,7 +50,7 @@ export default function App() {
     <SafeAreaProvider>
       <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
         <NavigationContainer>
-          <RootNavigator />
+          <AppNavigator />
         </NavigationContainer>
       </Animated.View>
     </SafeAreaProvider>

@@ -328,9 +328,9 @@ const tabBarScreenOptions = ({ route }) => ({
   tabBarStyle: {
     backgroundColor: '#FFFFFF',
     borderTopColor:  '#E0E0E0',
-    paddingBottom: 8,
+    paddingBottom: 16,
     paddingTop:    4,
-    height:        65,
+    height:        75,
   },
   tabBarIcon: ({ color, size, focused }) => (
     <Ionicons
