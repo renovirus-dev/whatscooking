@@ -8,18 +8,25 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF6B35"
+    },
     "android": {
       "package": "com.yourname.whatscooking",
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF6B35"
+      },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO"
-      ],
-      "googleServicesFile": "./google-services.json"
+        "android.permission.VIBRATE"
+      ]
     },
     "ios": {
       "supportsTablet": true,
@@ -49,11 +56,10 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#FF6B35",
-          "sounds": []
+          "color": "#FF6B35"
         }
       ],
-      "@stripe/stripe-react-native"
+      "expo-system-ui"
     ],
     "extra": {
       "eas": {
