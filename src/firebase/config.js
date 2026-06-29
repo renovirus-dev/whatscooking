@@ -1,22 +1,27 @@
 // ============================================
-// FILE: src/firebase/config.js  ← CLEAN VERSION
+// FILE: src/firebase/config.js
 // ============================================
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  persistentLocalCache,
+  CACHE_SIZE_UNLIMITED,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCj-h8xEa1Hnd4YoC5Wx47_sZW4ChPgP9w",
-  authDomain: "whats-cooking-5fd93.firebaseapp.com",
-  projectId: "whats-cooking-5fd93",
-  storageBucket: "whats-cooking-5fd93.firebasestorage.app",
+  apiKey:            "AIzaSyCj-h8xEa1Hnd4YoC5Wx47_sZW4ChPgP9w",
+  authDomain:        "whats-cooking-5fd93.firebaseapp.com",
+  projectId:         "whats-cooking-5fd93",
+  storageBucket:     "whats-cooking-5fd93.firebasestorage.app",
   messagingSenderId: "287609653948",
-  appId: "1:287609653948:web:43226c2db2ae8d5e3a1eb9",
-  measurementId: "G-TX2146N6NB"
+  appId:             "1:287609653948:web:43226c2db2ae8d5e3a1eb9",
+  measurementId:     "G-TX2146N6NB",
 };
 
-// ✅ Safe initialization - prevents duplicate app error on hot reload
+// Safe initialization
 const app = getApps().length === 0
   ? initializeApp(firebaseConfig)
   : getApp();
@@ -25,12 +30,9 @@ const app = getApps().length === 0
 let auth;
 
 if (Platform.OS === 'web') {
-  // Web - uses IndexedDB automatically
   const { getAuth } = require('firebase/auth');
   auth = getAuth(app);
-
 } else {
-  // Native - needs AsyncStorage
   const {
     initializeAuth,
     getReactNativePersistence,
@@ -41,17 +43,28 @@ if (Platform.OS === 'web') {
     require('@react-native-async-storage/async-storage').default;
 
   try {
-    // First time - initialize with persistence
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
   } catch (e) {
-    // Hot reload hit this - just get existing instance
     auth = getAuth(app);
   }
 }
 
-const db = getFirestore(app);
+// ✅ Firestore with offline cache
+// This makes the app load data instantly on second open
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+    }),
+  });
+} catch (e) {
+  // Already initialized
+  db = getFirestore(app);
+}
+
 const storage = getStorage(app);
 
 export { auth, db, storage };

@@ -1,6 +1,16 @@
 // ============================================
 // FILE: src/navigation/AppNavigator.js
 // ============================================
+
+// Add this at the top of AppNavigator.js
+import React, {
+  useState, useEffect,
+  Suspense, useCallback,
+} from 'react';
+import {
+  View, Text, ActivityIndicator,
+  TouchableOpacity, ScrollView,
+} from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
