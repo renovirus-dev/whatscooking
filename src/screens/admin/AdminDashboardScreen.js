@@ -5,9 +5,10 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, FlatList, ActivityIndicator,
-  Alert, TextInput,
+  Alert, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection, query, where,
   getDocs, updateDoc, deleteDoc,
@@ -19,32 +20,35 @@ import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ─── Tab config ───────────────────────────────
 const TABS = [
-  { id: 'overview',     label: 'Overview',     icon: 'grid'            },
-  { id: 'restaurants',  label: 'Restaurants',  icon: 'restaurant'      },
-  { id: 'users',        label: 'Users',        icon: 'people'          },
-  { id: 'reviews',      label: 'Reviews',      icon: 'star'            },
-  { id: 'notify',       label: 'Notify',       icon: 'notifications'   },
+  { id: 'overview',     label: 'Overview',     icon: 'grid'          },
+  { id: 'restaurants',  label: 'Restaurants',  icon: 'restaurant'    },
+  { id: 'users',        label: 'Users',        icon: 'people'        },
+  { id: 'reviews',      label: 'Reviews',      icon: 'star'          },
+  { id: 'notify',       label: 'Notify',       icon: 'notifications' },
 ];
 
 export default function AdminDashboardScreen({ navigation }) {
-  const [activeTab, setActiveTab]       = useState('overview');
-  const [restaurants, setRestaurants]   = useState([]);
-  const [users, setUsers]               = useState([]);
-  const [reviews, setReviews]           = useState([]);
-  const [stats, setStats]               = useState({
-    totalRestaurants: 0,
+  // ✅ Safe area insets — respect system bars
+  const insets = useSafeAreaInsets();
+
+  const [activeTab, setActiveTab]     = useState('overview');
+  const [restaurants, setRestaurants] = useState([]);
+  const [users, setUsers]             = useState([]);
+  const [reviews, setReviews]         = useState([]);
+  const [stats, setStats]             = useState({
+    totalRestaurants:  0,
     activeRestaurants: 0,
-    totalUsers: 0,
-    totalReviews: 0,
-    pendingApprovals: 0,
+    totalUsers:        0,
+    totalReviews:      0,
+    pendingApprovals:  0,
   });
-  const [loading, setLoading]           = useState(true);
+  const [loading, setLoading]         = useState(true);
 
   // Notification form
-  const [notifTitle, setNotifTitle]     = useState('');
-  const [notifBody, setNotifBody]       = useState('');
-  const [notifTarget, setNotifTarget]   = useState('all');
-  const [sending, setSending]           = useState(false);
+  const [notifTitle, setNotifTitle]   = useState('');
+  const [notifBody, setNotifBody]     = useState('');
+  const [notifTarget, setNotifTarget] = useState('all');
+  const [sending, setSending]         = useState(false);
 
   // ─── Load all data ───────────────────────
   useEffect(() => {
@@ -221,7 +225,6 @@ export default function AdminDashboardScreen({ navigation }) {
 
     setSending(true);
     try {
-      // Get target users
       let targetUsers = users;
       if (notifTarget === 'customers') {
         targetUsers = users.filter(u => u.role === 'customer');
@@ -229,7 +232,6 @@ export default function AdminDashboardScreen({ navigation }) {
         targetUsers = users.filter(u => u.role === 'restaurant_owner');
       }
 
-      // Save notification for each user in Firestore
       await Promise.all(
         targetUsers.map(u =>
           fetch('https://exp.host/--/api/v2/push/send', {
@@ -245,7 +247,7 @@ export default function AdminDashboardScreen({ navigation }) {
               sound: 'default',
               data:  { type: 'broadcast' },
             }),
-          }).catch(() => null) // Skip users without tokens
+          }).catch(() => null)
         )
       );
 
@@ -261,9 +263,14 @@ export default function AdminDashboardScreen({ navigation }) {
     setSending(false);
   };
 
-  // ─── Render tabs ─────────────────────────
+  // ─── Render tabs ──────────────────────────
+
   const renderOverview = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      // ✅ Bottom padding so last card clears Android nav bar
+      contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.md }}
+    >
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
         {[
@@ -303,11 +310,7 @@ export default function AdminDashboardScreen({ navigation }) {
               styles.statIcon,
               { backgroundColor: stat.color + '20' },
             ]}>
-              <Ionicons
-                name={stat.icon}
-                size={24}
-                color={stat.color}
-              />
+              <Ionicons name={stat.icon} size={24} color={stat.color} />
             </View>
             <Text style={styles.statValue}>{stat.value}</Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -318,9 +321,7 @@ export default function AdminDashboardScreen({ navigation }) {
       {/* Pending Approvals */}
       {stats.pendingApprovals > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            ⏳ Pending Approvals
-          </Text>
+          <Text style={styles.sectionTitle}>⏳ Pending Approvals</Text>
           {restaurants
             .filter(r => !r.isApproved)
             .map(r => (
@@ -351,9 +352,7 @@ export default function AdminDashboardScreen({ navigation }) {
               <Text style={styles.reviewUser}>{r.userName}</Text>
               <View style={styles.reviewRating}>
                 <Ionicons name="star" size={12} color="#FFD700" />
-                <Text style={styles.reviewRatingText}>
-                  {r.rating}
-                </Text>
+                <Text style={styles.reviewRatingText}>{r.rating}</Text>
               </View>
             </View>
             <Text style={styles.reviewText} numberOfLines={2}>
@@ -369,7 +368,12 @@ export default function AdminDashboardScreen({ navigation }) {
     <FlatList
       data={restaurants}
       keyExtractor={item => item.id}
-      contentContainerStyle={styles.tabList}
+      contentContainerStyle={[
+        styles.tabList,
+        // ✅ Last card clears Android nav bar
+        { paddingBottom: insets.bottom + SIZES.md },
+      ]}
+      showsVerticalScrollIndicator={false}
       renderItem={({ item }) => (
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
@@ -382,9 +386,7 @@ export default function AdminDashboardScreen({ navigation }) {
             <View style={styles.listCardBadges}>
               <View style={[
                 styles.badge,
-                item.isActive
-                  ? styles.badgeSuccess
-                  : styles.badgeError,
+                item.isActive ? styles.badgeSuccess : styles.badgeError,
               ]}>
                 <Text style={styles.badgeText}>
                   {item.isActive ? 'Active' : 'Inactive'}
@@ -398,18 +400,13 @@ export default function AdminDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Actions */}
           <View style={styles.listCardActions}>
             {!item.isApproved && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnSuccess]}
                 onPress={() => approveRestaurant(item)}
               >
-                <Ionicons
-                  name="checkmark"
-                  size={14}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="checkmark" size={14} color={COLORS.textWhite} />
                 <Text style={styles.actionBtnText}>Approve</Text>
               </TouchableOpacity>
             )}
@@ -437,11 +434,7 @@ export default function AdminDashboardScreen({ navigation }) {
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteRestaurant(item)}
             >
-              <Ionicons
-                name="trash"
-                size={14}
-                color={COLORS.textWhite}
-              />
+              <Ionicons name="trash" size={14} color={COLORS.textWhite} />
               <Text style={styles.actionBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -454,7 +447,12 @@ export default function AdminDashboardScreen({ navigation }) {
     <FlatList
       data={users}
       keyExtractor={item => item.id}
-      contentContainerStyle={styles.tabList}
+      contentContainerStyle={[
+        styles.tabList,
+        // ✅ Last card clears Android nav bar
+        { paddingBottom: insets.bottom + SIZES.md },
+      ]}
+      showsVerticalScrollIndicator={false}
       renderItem={({ item }) => (
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
@@ -478,11 +476,7 @@ export default function AdminDashboardScreen({ navigation }) {
 
           {item.isBanned && (
             <View style={styles.bannedBanner}>
-              <Ionicons
-                name="ban"
-                size={14}
-                color={COLORS.error}
-              />
+              <Ionicons name="ban" size={14} color={COLORS.error} />
               <Text style={styles.bannedText}>User is banned</Text>
             </View>
           )}
@@ -518,11 +512,7 @@ export default function AdminDashboardScreen({ navigation }) {
                 style={[styles.actionBtn, styles.actionBtnDanger]}
                 onPress={() => banUser(item)}
               >
-                <Ionicons
-                  name="ban"
-                  size={14}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="ban" size={14} color={COLORS.textWhite} />
                 <Text style={styles.actionBtnText}>Ban</Text>
               </TouchableOpacity>
             )}
@@ -536,14 +526,19 @@ export default function AdminDashboardScreen({ navigation }) {
     <FlatList
       data={reviews}
       keyExtractor={item => item.id}
-      contentContainerStyle={styles.tabList}
+      contentContainerStyle={[
+        styles.tabList,
+        // ✅ Last card clears Android nav bar
+        { paddingBottom: insets.bottom + SIZES.md },
+      ]}
+      showsVerticalScrollIndicator={false}
       renderItem={({ item }) => (
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
             <View style={styles.listCardInfo}>
               <Text style={styles.listCardName}>{item.userName}</Text>
               <View style={styles.reviewRating}>
-                {[1,2,3,4,5].map(star => (
+                {[1, 2, 3, 4, 5].map(star => (
                   <Ionicons
                     key={star}
                     name="star"
@@ -557,11 +552,7 @@ export default function AdminDashboardScreen({ navigation }) {
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteReview(item)}
             >
-              <Ionicons
-                name="trash"
-                size={14}
-                color={COLORS.textWhite}
-              />
+              <Ionicons name="trash" size={14} color={COLORS.textWhite} />
               <Text style={styles.actionBtnText}>Remove</Text>
             </TouchableOpacity>
           </View>
@@ -573,128 +564,138 @@ export default function AdminDashboardScreen({ navigation }) {
     />
   );
 
+  // ✅ Notify tab wrapped in KeyboardAvoidingView
+  // so the keyboard doesn't cover the TextInput fields
   const renderNotify = () => (
-    <ScrollView
-      contentContainerStyle={styles.tabList}
-      showsVerticalScrollIndicator={false}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // ✅ On Android with translucent status bar we offset
+      // by the status bar height so keyboard sits correctly
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
-      <Text style={styles.sectionTitle}>
-        📢 Send Broadcast Notification
-      </Text>
+      <ScrollView
+        contentContainerStyle={[
+          styles.tabList,
+          // ✅ Extra bottom padding clears nav bar + keyboard buffer
+          { paddingBottom: insets.bottom + SIZES.xl },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.sectionTitle}>
+          📢 Send Broadcast Notification
+        </Text>
 
-      {/* Target audience */}
-      <Text style={styles.fieldLabel}>Send To</Text>
-      <View style={styles.targetRow}>
-        {[
-          { id: 'all',       label: 'Everyone'  },
-          { id: 'customers', label: 'Customers' },
-          { id: 'owners',    label: 'Owners'    },
-        ].map(t => (
-          <TouchableOpacity
-            key={t.id}
-            style={[
-              styles.targetBtn,
-              notifTarget === t.id && styles.targetBtnActive,
-            ]}
-            onPress={() => setNotifTarget(t.id)}
-          >
-            <Text style={[
-              styles.targetBtnText,
-              notifTarget === t.id && styles.targetBtnTextActive,
-            ]}>
-              {t.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Title */}
-      <Text style={styles.fieldLabel}>Notification Title</Text>
-      <TextInput
-        style={styles.notifInput}
-        placeholder="e.g. 🎉 Special Offer Today!"
-        placeholderTextColor={COLORS.textMuted}
-        value={notifTitle}
-        onChangeText={setNotifTitle}
-      />
-
-      {/* Message */}
-      <Text style={styles.fieldLabel}>Message</Text>
-      <TextInput
-        style={[styles.notifInput, styles.notifTextarea]}
-        placeholder="Enter your notification message..."
-        placeholderTextColor={COLORS.textMuted}
-        value={notifBody}
-        onChangeText={setNotifBody}
-        multiline
-        numberOfLines={4}
-      />
-
-      {/* Preview */}
-      {(notifTitle || notifBody) && (
-        <View style={styles.previewCard}>
-          <Text style={styles.previewLabel}>Preview</Text>
-          <View style={styles.previewNotif}>
-            <Ionicons
-              name="notifications"
-              size={20}
-              color={COLORS.primary}
-            />
-            <View style={styles.previewContent}>
-              <Text style={styles.previewTitle}>
-                {notifTitle || 'Title'}
+        {/* Target audience */}
+        <Text style={styles.fieldLabel}>Send To</Text>
+        <View style={styles.targetRow}>
+          {[
+            { id: 'all',       label: 'Everyone'  },
+            { id: 'customers', label: 'Customers' },
+            { id: 'owners',    label: 'Owners'    },
+          ].map(t => (
+            <TouchableOpacity
+              key={t.id}
+              style={[
+                styles.targetBtn,
+                notifTarget === t.id && styles.targetBtnActive,
+              ]}
+              onPress={() => setNotifTarget(t.id)}
+            >
+              <Text style={[
+                styles.targetBtnText,
+                notifTarget === t.id && styles.targetBtnTextActive,
+              ]}>
+                {t.label}
               </Text>
-              <Text style={styles.previewBody} numberOfLines={2}>
-                {notifBody || 'Message'}
-              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Title */}
+        <Text style={styles.fieldLabel}>Notification Title</Text>
+        <TextInput
+          style={styles.notifInput}
+          placeholder="e.g. 🎉 Special Offer Today!"
+          placeholderTextColor={COLORS.textMuted}
+          value={notifTitle}
+          onChangeText={setNotifTitle}
+          returnKeyType="next"
+        />
+
+        {/* Message */}
+        <Text style={styles.fieldLabel}>Message</Text>
+        <TextInput
+          style={[styles.notifInput, styles.notifTextarea]}
+          placeholder="Enter your notification message..."
+          placeholderTextColor={COLORS.textMuted}
+          value={notifBody}
+          onChangeText={setNotifBody}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          returnKeyType="done"
+        />
+
+        {/* Preview */}
+        {(notifTitle || notifBody) && (
+          <View style={styles.previewCard}>
+            <Text style={styles.previewLabel}>Preview</Text>
+            <View style={styles.previewNotif}>
+              <Ionicons
+                name="notifications"
+                size={20}
+                color={COLORS.primary}
+              />
+              <View style={styles.previewContent}>
+                <Text style={styles.previewTitle}>
+                  {notifTitle || 'Title'}
+                </Text>
+                <Text style={styles.previewBody} numberOfLines={2}>
+                  {notifBody || 'Message'}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
-      )}
-
-      {/* Send button */}
-      <TouchableOpacity
-        style={[
-          styles.sendBtn,
-          sending && styles.sendBtnDisabled,
-        ]}
-        onPress={handleSendNotification}
-        disabled={sending}
-      >
-        {sending ? (
-          <ActivityIndicator color={COLORS.textWhite} />
-        ) : (
-          <>
-            <Ionicons
-              name="send"
-              size={20}
-              color={COLORS.textWhite}
-            />
-            <Text style={styles.sendBtnText}>
-              Send Notification
-            </Text>
-          </>
         )}
-      </TouchableOpacity>
 
-      {/* Stats */}
-      <View style={styles.notifStats}>
-        <View style={styles.notifStatItem}>
-          <Text style={styles.notifStatValue}>
-            {users.filter(u => u.expoPushToken).length}
-          </Text>
-          <Text style={styles.notifStatLabel}>
-            Users with push enabled
-          </Text>
+        {/* Send button */}
+        <TouchableOpacity
+          style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+          onPress={handleSendNotification}
+          disabled={sending}
+        >
+          {sending ? (
+            <ActivityIndicator color={COLORS.textWhite} />
+          ) : (
+            <>
+              <Ionicons name="send" size={20} color={COLORS.textWhite} />
+              <Text style={styles.sendBtnText}>Send Notification</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* Stats */}
+        <View style={styles.notifStats}>
+          <View style={styles.notifStatItem}>
+            <Text style={styles.notifStatValue}>
+              {users.filter(u => u.expoPushToken).length}
+            </Text>
+            <Text style={styles.notifStatLabel}>
+              Users with push enabled
+            </Text>
+          </View>
+          <View style={styles.notifStatItem}>
+            <Text style={styles.notifStatValue}>{users.length}</Text>
+            <Text style={styles.notifStatLabel}>Total users</Text>
+          </View>
         </View>
-        <View style={styles.notifStatItem}>
-          <Text style={styles.notifStatValue}>{users.length}</Text>
-          <Text style={styles.notifStatLabel}>Total users</Text>
-        </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 
+  // ─── Loading state ────────────────────────
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -706,10 +707,16 @@ export default function AdminDashboardScreen({ navigation }) {
     );
   }
 
+  // ─── Main render ──────────────────────────
   return (
-    <View style={styles.container}>
+    // ✅ Root container respects bottom safe area inset
+    // The top inset is handled by the stack navigator header
+    <View style={[
+      styles.container,
+      { paddingBottom: 0 }, // tabs handle their own bottom padding
+    ]}>
 
-      {/* Tab Bar */}
+      {/* Horizontal Tab Bar */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -753,6 +760,7 @@ export default function AdminDashboardScreen({ navigation }) {
         {activeTab === 'reviews'     && renderReviews()}
         {activeTab === 'notify'      && renderNotify()}
       </View>
+
     </View>
   );
 }
@@ -768,7 +776,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Tab bar
+  // ─── Tab bar ───────────────────────────
   tabBar: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
@@ -810,7 +818,7 @@ const styles = StyleSheet.create({
     gap: SIZES.md,
   },
 
-  // Stats grid
+  // ─── Stats grid ────────────────────────
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -844,7 +852,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Section
+  // ─── Section ───────────────────────────
   section: {
     padding: SIZES.md,
     gap: SIZES.sm,
@@ -856,7 +864,7 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.xs,
   },
 
-  // Pending cards
+  // ─── Pending cards ─────────────────────
   pendingCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -865,7 +873,7 @@ const styles = StyleSheet.create({
     padding: SIZES.md,
     ...SHADOW,
   },
-  pendingInfo: { flex: 1 },
+  pendingInfo:  { flex: 1 },
   pendingName: {
     fontSize: FONTS.md,
     fontWeight: '700',
@@ -887,7 +895,7 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
   },
 
-  // List cards
+  // ─── List cards ────────────────────────
   listCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -900,7 +908,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  listCardInfo:  { flex: 1 },
+  listCardInfo:   { flex: 1 },
   listCardName: {
     fontSize: FONTS.md,
     fontWeight: '700',
@@ -922,7 +930,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
 
-  // Badges
+  // ─── Badges ────────────────────────────
   badge: {
     paddingHorizontal: SIZES.sm,
     paddingVertical: 3,
@@ -938,7 +946,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
-  // Action buttons
+  // ─── Action buttons ────────────────────
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -947,17 +955,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: RADIUS.round,
   },
-  actionBtnSuccess: { backgroundColor: COLORS.success  },
-  actionBtnDanger:  { backgroundColor: COLORS.error    },
-  actionBtnWarning: { backgroundColor: '#FFA500'       },
-  actionBtnPrimary: { backgroundColor: COLORS.primary  },
+  actionBtnSuccess: { backgroundColor: COLORS.success },
+  actionBtnDanger:  { backgroundColor: COLORS.error   },
+  actionBtnWarning: { backgroundColor: '#FFA500'      },
+  actionBtnPrimary: { backgroundColor: COLORS.primary },
   actionBtnText: {
     color:      COLORS.textWhite,
     fontSize:   FONTS.xs,
     fontWeight: '700',
   },
 
-  // Banned banner
+  // ─── Banned banner ─────────────────────
   bannedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -972,7 +980,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Review card
+  // ─── Review card ───────────────────────
   reviewCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
@@ -1005,7 +1013,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Notification form
+  // ─── Notification form ─────────────────
   fieldLabel: {
     fontSize: FONTS.md,
     fontWeight: '600',

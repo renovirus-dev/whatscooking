@@ -1,6 +1,5 @@
 // ============================================
 // FILE: src/screens/owner/ManageMenuScreen.js
-// CREATE THIS FILE
 // ============================================
 import React, { useState, useEffect } from 'react';
 import {
@@ -12,9 +11,10 @@ import {
   Switch,
   Alert,
   Image,
-  ActivityIndicator
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection,
   query,
@@ -23,28 +23,28 @@ import {
   doc,
   updateDoc,
   deleteDoc,
-  serverTimestamp
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 export default function ManageMenuScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [menuItems, setMenuItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
 
-  // Step 1: Get owner's restaurant
+  const [restaurantId, setRestaurantId] = useState(null);
+  const [menuItems, setMenuItems]       = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [filter, setFilter]             = useState('all');
+
+  // ── Step 1: Get owner's restaurant ───────
   useEffect(() => {
     if (!user) return;
-
     const q = query(
       collection(db, 'restaurants'),
       where('ownerId', '==', user.uid)
     );
-
     const unsub = onSnapshot(q, snap => {
       if (!snap.empty) {
         setRestaurantId(snap.docs[0].id);
@@ -52,25 +52,21 @@ export default function ManageMenuScreen({ navigation }) {
         setLoading(false);
       }
     });
-
     return unsub;
   }, [user]);
 
-  // Step 2: Get menu items when restaurantId is ready
+  // ── Step 2: Get menu items ────────────────
   useEffect(() => {
     if (!restaurantId) return;
-
     const q = query(
       collection(db, 'menuItems'),
       where('restaurantId', '==', restaurantId)
     );
-
     const unsub = onSnapshot(q, snap => {
       const items = snap.docs.map(d => ({
         id: d.id,
-        ...d.data()
+        ...d.data(),
       }));
-      // Sort by category then name
       items.sort((a, b) => {
         if (a.category < b.category) return -1;
         if (a.category > b.category) return 1;
@@ -79,23 +75,22 @@ export default function ManageMenuScreen({ navigation }) {
       setMenuItems(items);
       setLoading(false);
     });
-
     return unsub;
   }, [restaurantId]);
 
-  // Toggle item availability
+  // ── Toggle availability ───────────────────
   const toggleAvailability = async (itemId, current) => {
     try {
       await updateDoc(doc(db, 'menuItems', itemId), {
         isAvailable: !current,
-        updatedAt: serverTimestamp()
+        updatedAt:   serverTimestamp(),
       });
     } catch (error) {
       Alert.alert('Error', 'Could not update item');
     }
   };
 
-  // Delete item
+  // ── Delete item ───────────────────────────
   const handleDelete = (itemId, name) => {
     Alert.alert(
       'Delete Item',
@@ -111,20 +106,19 @@ export default function ManageMenuScreen({ navigation }) {
             } catch (error) {
               Alert.alert('Error', 'Could not delete item');
             }
-          }
-        }
+          },
+        },
       ]
     );
   };
 
-  // Filter items
+  // ── Filter & group ────────────────────────
   const filteredItems = menuItems.filter(item => {
-    if (filter === 'available') return item.isAvailable;
+    if (filter === 'available')   return item.isAvailable;
     if (filter === 'unavailable') return !item.isAvailable;
     return true;
   });
 
-  // Group by category
   const grouped = filteredItems.reduce((acc, item) => {
     const cat = item.category || 'other';
     if (!acc[cat]) acc[cat] = [];
@@ -132,65 +126,87 @@ export default function ManageMenuScreen({ navigation }) {
     return acc;
   }, {});
 
-  // No restaurant yet
+  // ── No restaurant ─────────────────────────
   if (!loading && !restaurantId) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
         <Text style={styles.centeredEmoji}>🍽️</Text>
-        <Text style={styles.centeredTitle}>
-          No Restaurant Found
-        </Text>
+        <Text style={styles.centeredTitle}>No Restaurant Found</Text>
         <Text style={styles.centeredText}>
           Set up your restaurant profile first
         </Text>
         <TouchableOpacity
           style={styles.setupBtn}
           onPress={() => navigation.navigate('RestaurantSetup')}
+          activeOpacity={0.8}
         >
-          <Text style={styles.setupBtnText}>
-            Setup Restaurant
-          </Text>
+          <Text style={styles.setupBtnText}>Setup Restaurant</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ── Loading ───────────────────────────────
+  if (loading) {
+    return (
+      <View style={[
+        styles.centered,
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading menu...</Text>
+      </View>
+    );
+  }
+
+  // ── Main render ───────────────────────────
   return (
     <View style={styles.container}>
-      {/* Header */}
+
+      {/* ── Header ──────────────────────────── */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>
           Menu Items ({menuItems.length})
         </Text>
         <TouchableOpacity
           style={styles.addBtn}
-          onPress={() => navigation.navigate('AddMenuItem', {
-            restaurantId
-          })}
+          onPress={() =>
+            navigation.navigate('AddMenuItem', { restaurantId })
+          }
+          activeOpacity={0.8}
         >
           <Ionicons name="add" size={22} color="#FFFFFF" />
           <Text style={styles.addBtnText}>Add Item</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Filter Tabs */}
+      {/* ── Filter tabs ─────────────────────── */}
       <View style={styles.filterRow}>
         {[
-          { key: 'all', label: 'All' },
-          { key: 'available', label: '✅ Available' },
+          { key: 'all',         label: 'All'           },
+          { key: 'available',   label: '✅ Available'   },
           { key: 'unavailable', label: '❌ Unavailable' },
         ].map(f => (
           <TouchableOpacity
             key={f.key}
             style={[
               styles.filterTab,
-              filter === f.key && styles.filterTabActive
+              filter === f.key && styles.filterTabActive,
             ]}
             onPress={() => setFilter(f.key)}
           >
             <Text style={[
               styles.filterTabText,
-              filter === f.key && styles.filterTabTextActive
+              filter === f.key && styles.filterTabTextActive,
             ]}>
               {f.label}
             </Text>
@@ -198,44 +214,43 @@ export default function ManageMenuScreen({ navigation }) {
         ))}
       </View>
 
-      {/* Loading */}
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#FF6B35" />
-          <Text style={styles.loadingText}>
-            Loading menu...
-          </Text>
-        </View>
-      ) : filteredItems.length === 0 ? (
-        // Empty State
-        <View style={styles.centered}>
+      {/* ── Empty state ─────────────────────── */}
+      {filteredItems.length === 0 ? (
+        <View style={[
+          styles.centered,
+          // ✅ Bottom inset so button clears nav bar
+          { paddingBottom: insets.bottom + SIZES.lg },
+        ]}>
           <Text style={styles.centeredEmoji}>🍴</Text>
-          <Text style={styles.centeredTitle}>
-            No Menu Items Yet
-          </Text>
+          <Text style={styles.centeredTitle}>No Menu Items Yet</Text>
           <Text style={styles.centeredText}>
             Tap "Add Item" to build your menu
           </Text>
           <TouchableOpacity
             style={styles.setupBtn}
-            onPress={() => navigation.navigate('AddMenuItem', {
-              restaurantId
-            })}
+            onPress={() =>
+              navigation.navigate('AddMenuItem', { restaurantId })
+            }
+            activeOpacity={0.8}
           >
-            <Text style={styles.setupBtnText}>
-              + Add First Item
-            </Text>
+            <Text style={styles.setupBtnText}>+ Add First Item</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        // Menu List grouped by category
+        /* ── Menu list grouped by category ─── */
         <FlatList
           data={Object.entries(grouped)}
           keyExtractor={([category]) => category}
-          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[
+            styles.listContent,
+            // ✅ Last card clears Android nav bar
+            { paddingBottom: insets.bottom + SIZES.xl },
+          ]}
           renderItem={({ item: [category, items] }) => (
             <View style={styles.categoryGroup}>
-              {/* Category Header */}
+
+              {/* Category header */}
               <Text style={styles.categoryHeader}>
                 {category
                   .replace(/_/g, ' ')
@@ -243,19 +258,25 @@ export default function ManageMenuScreen({ navigation }) {
                 {' '}({items.length})
               </Text>
 
-              {/* Items in this category */}
+              {/* Items in category */}
               {items.map(menuItem => (
-                <View key={menuItem.id} style={[
-                  styles.itemCard,
-                  !menuItem.isAvailable && styles.itemCardDim
-                ]}>
-                  {/* Food Image */}
+                <View
+                  key={menuItem.id}
+                  style={[
+                    styles.itemCard,
+                    !menuItem.isAvailable && styles.itemCardDim,
+                  ]}
+                >
+                  {/* Food image */}
                   <Image
-                    source={{ uri: menuItem.imageUrl }}
+                    source={{
+                      uri: menuItem.imageUrl ||
+                        'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100',
+                    }}
                     style={styles.itemImage}
                   />
 
-                  {/* Item Info */}
+                  {/* Item info */}
                   <View style={styles.itemInfo}>
                     <Text style={styles.itemName}>
                       {menuItem.name}
@@ -271,13 +292,47 @@ export default function ManageMenuScreen({ navigation }) {
                         {menuItem.description}
                       </Text>
                     ) : null}
+
+                    {/* ✅ Dietary tags inline */}
+                    {menuItem.dietaryInfo && (
+                      <View style={styles.dietaryRow}>
+                        {menuItem.dietaryInfo.isVegetarian && (
+                          <View style={styles.dietaryTag}>
+                            <Text style={styles.dietaryTagText}>
+                              🥬 Veg
+                            </Text>
+                          </View>
+                        )}
+                        {menuItem.dietaryInfo.isVegan && (
+                          <View style={styles.dietaryTag}>
+                            <Text style={styles.dietaryTagText}>
+                              🌱 Vegan
+                            </Text>
+                          </View>
+                        )}
+                        {menuItem.dietaryInfo.isHalal && (
+                          <View style={styles.dietaryTag}>
+                            <Text style={styles.dietaryTagText}>
+                              ☪️ Halal
+                            </Text>
+                          </View>
+                        )}
+                        {menuItem.dietaryInfo.isSpicy && (
+                          <View style={styles.dietaryTag}>
+                            <Text style={styles.dietaryTagText}>
+                              🌶️ Spicy
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
 
-                  {/* Actions */}
+                  {/* Actions column */}
                   <View style={styles.itemActions}>
-                    {/* Available Switch */}
+                    {/* Available toggle */}
                     <Switch
-                      value={menuItem.isAvailable}
+                      value={!!menuItem.isAvailable}
                       onValueChange={() =>
                         toggleAvailability(
                           menuItem.id,
@@ -286,41 +341,45 @@ export default function ManageMenuScreen({ navigation }) {
                       }
                       trackColor={{
                         false: '#E0E0E0',
-                        true: '#27AE6080'
+                        true:  COLORS.success + '80',
                       }}
                       thumbColor={
-                        menuItem.isAvailable ? '#27AE60' : '#f4f3f4'
+                        menuItem.isAvailable
+                          ? COLORS.success
+                          : '#f4f3f4'
                       }
                     />
 
-                    {/* Edit Button */}
+                    {/* Edit */}
                     <TouchableOpacity
                       style={styles.editBtn}
                       onPress={() =>
                         navigation.navigate('AddMenuItem', {
                           item: menuItem,
-                          restaurantId
+                          restaurantId,
                         })
                       }
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
                       <Ionicons
                         name="pencil"
                         size={16}
-                        color="#3498DB"
+                        color={COLORS.info}
                       />
                     </TouchableOpacity>
 
-                    {/* Delete Button */}
+                    {/* Delete */}
                     <TouchableOpacity
                       style={styles.deleteBtn}
                       onPress={() =>
                         handleDelete(menuItem.id, menuItem.name)
                       }
+                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                     >
                       <Ionicons
                         name="trash"
                         size={16}
-                        color="#E74C3C"
+                        color={COLORS.error}
                       />
                     </TouchableOpacity>
                   </View>
@@ -337,176 +396,204 @@ export default function ManageMenuScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA'
+    backgroundColor: COLORS.background,
   },
+
+  // ── Centered states ──────────────────────
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24
+    padding: SIZES.xl,
+    backgroundColor: COLORS.background,
   },
   centeredEmoji: {
     fontSize: 60,
-    marginBottom: 16
+    marginBottom: SIZES.md,
   },
   centeredTitle: {
-    fontSize: 20,
+    fontSize: FONTS.xl,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    textAlign: 'center'
+    color: COLORS.text,
+    textAlign: 'center',
   },
   centeredText: {
-    fontSize: 14,
-    color: '#7F8C8D',
+    fontSize: FONTS.md,
+    color: COLORS.textMuted,
     textAlign: 'center',
-    marginTop: 8
+    marginTop: SIZES.xs,
   },
   loadingText: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    marginTop: 12
+    fontSize: FONTS.md,
+    color: COLORS.textMuted,
+    marginTop: SIZES.md,
   },
   setupBtn: {
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 20
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SIZES.xl,
+    paddingVertical: SIZES.md,
+    borderRadius: RADIUS.lg,
+    marginTop: SIZES.lg,
   },
   setupBtnText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: 16
+    fontSize: FONTS.md,
   },
+
+  // ── Header ──────────────────────────────
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3
+    backgroundColor: COLORS.surface,
+    padding: SIZES.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    ...SHADOW,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: FONTS.xl,
     fontWeight: 'bold',
-    color: '#2C3E50'
+    color: COLORS.text,
   },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FF6B35',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 4
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm,
+    borderRadius: RADIUS.md,
+    gap: 4,
   },
   addBtnText: {
     color: '#FFFFFF',
     fontWeight: '600',
-    fontSize: 14
+    fontSize: FONTS.sm,
   },
+
+  // ── Filter row ───────────────────────────
   filterRow: {
     flexDirection: 'row',
-    padding: 12,
-    gap: 8,
-    backgroundColor: '#FFFFFF',
+    padding: SIZES.sm,
+    gap: SIZES.sm,
+    backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0'
+    borderBottomColor: COLORS.border,
   },
   filterTab: {
-    paddingHorizontal: 14,
+    paddingHorizontal: SIZES.md,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#F8F9FA',
+    borderRadius: RADIUS.round,
+    backgroundColor: COLORS.background,
     borderWidth: 1,
-    borderColor: '#E0E0E0'
+    borderColor: COLORS.border,
   },
   filterTabActive: {
-    backgroundColor: '#FF6B35',
-    borderColor: '#FF6B35'
+    backgroundColor: COLORS.primary,
+    borderColor:     COLORS.primary,
   },
   filterTabText: {
-    fontSize: 12,
-    color: '#7F8C8D',
-    fontWeight: '500'
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    fontWeight: '500',
   },
   filterTabTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '600'
+    color:      '#FFFFFF',
+    fontWeight: '600',
   },
+
+  // ── List ────────────────────────────────
   listContent: {
-    padding: 16,
-    paddingBottom: 40
+    padding: SIZES.md,
+    // ✅ paddingBottom set dynamically via insets
   },
+
+  // ── Category group ───────────────────────
   categoryGroup: {
-    marginBottom: 20
+    marginBottom: SIZES.lg,
   },
   categoryHeader: {
-    fontSize: 16,
+    fontSize: FONTS.md,
     fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 10,
+    color: COLORS.text,
+    marginBottom: SIZES.sm,
     paddingBottom: 6,
     borderBottomWidth: 2,
-    borderBottomColor: '#FF6B35'
+    borderBottomColor: COLORS.primary,
   },
+
+  // ── Item card ────────────────────────────
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SIZES.md,
+    marginBottom: SIZES.sm,
+    ...SHADOW,
   },
   itemCardDim: {
-    opacity: 0.6
+    opacity: 0.55,
   },
   itemImage: {
     width: 64,
     height: 64,
-    borderRadius: 10
+    borderRadius: RADIUS.md,
   },
   itemInfo: {
     flex: 1,
-    marginLeft: 12
+    marginLeft: SIZES.md,
+    gap: 2,
   },
   itemName: {
-    fontSize: 15,
+    fontSize: FONTS.md,
     fontWeight: '600',
-    color: '#2C3E50'
+    color: COLORS.text,
   },
   itemPrice: {
-    fontSize: 15,
+    fontSize: FONTS.md,
     fontWeight: 'bold',
-    color: '#FF6B35',
-    marginTop: 2
+    color: COLORS.primary,
   },
   itemDesc: {
-    fontSize: 12,
-    color: '#95A5A6',
-    marginTop: 2
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
   },
+
+  // ── Dietary tags ─────────────────────────
+  dietaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  dietaryTag: {
+    backgroundColor: COLORS.success + '15',
+    borderRadius: RADIUS.round,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  dietaryTagText: {
+    fontSize: 10,
+    color: COLORS.success,
+    fontWeight: '600',
+  },
+
+  // ── Item actions ─────────────────────────
   itemActions: {
     alignItems: 'center',
-    gap: 8
+    gap: SIZES.sm,
+    paddingLeft: SIZES.sm,
   },
   editBtn: {
-    padding: 8,
-    backgroundColor: '#3498DB15',
-    borderRadius: 8
+    padding: SIZES.sm,
+    backgroundColor: COLORS.info + '15',
+    borderRadius: RADIUS.md,
   },
   deleteBtn: {
-    padding: 8,
-    backgroundColor: '#E74C3C15',
-    borderRadius: 8
-  }
+    padding: SIZES.sm,
+    backgroundColor: COLORS.error + '15',
+    borderRadius: RADIUS.md,
+  },
 });

@@ -1,13 +1,22 @@
 // ============================================
 // FILE: src/screens/owner/AddMenuItemScreen.js
 // ============================================
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
-  ScrollView, StyleSheet, Image, Alert,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Image,
+  Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useMenu }          from '../../hooks/useMenu';
 import { getAutoFoodImage } from '../../utils/imageUpload';
@@ -15,16 +24,16 @@ import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ─── Constants ───────────────────────────────
 const CATEGORIES = [
-  { id: 'appetizer',    label: '🥗 Appetizer'   },
-  { id: 'soup',         label: '🍲 Soup'         },
-  { id: 'salad',        label: '🥙 Salad'        },
-  { id: 'main_course',  label: '🍽️ Main Course'  },
-  { id: 'side_dish',    label: '🍟 Side Dish'    },
-  { id: 'dessert',      label: '🧁 Dessert'      },
-  { id: 'beverage',     label: '🥤 Beverage'     },
-  { id: 'breakfast',    label: '🍳 Breakfast'    },
-  { id: 'combo_meal',   label: '🎁 Combo Meal'   },
-  { id: 'snack',        label: '🍿 Snack'        },
+  { id: 'appetizer',   label: '🥗 Appetizer'  },
+  { id: 'soup',        label: '🍲 Soup'        },
+  { id: 'salad',       label: '🥙 Salad'       },
+  { id: 'main_course', label: '🍽️ Main Course' },
+  { id: 'side_dish',   label: '🍟 Side Dish'   },
+  { id: 'dessert',     label: '🧁 Dessert'     },
+  { id: 'beverage',    label: '🥤 Beverage'    },
+  { id: 'breakfast',   label: '🍳 Breakfast'   },
+  { id: 'combo_meal',  label: '🎁 Combo Meal'  },
+  { id: 'snack',       label: '🍿 Snack'       },
 ];
 
 const DIETARY = [
@@ -37,8 +46,16 @@ const DIETARY = [
 
 // ─── Component ───────────────────────────────
 export default function AddMenuItemScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const { restaurantId, item: existingItem } = route.params || {};
   const { addMenuItem, updateMenuItem }       = useMenu(restaurantId);
+
+  // ── Input refs for keyboard focus chain ──
+  const descriptionRef     = useRef(null);
+  const priceRef           = useRef(null);
+  const prepTimeRef        = useRef(null);
+  const servingSizeRef     = useRef(null);
+  const tagsRef            = useRef(null);
 
   const [form, setForm] = useState({
     name:            existingItem?.name                        || '',
@@ -55,33 +72,21 @@ export default function AddMenuItemScreen({ route, navigation }) {
   const [customImage, setCustomImage] = useState(
     existingItem?.imageUrl || null
   );
-
-  // ✅ FIX: imageSeed drives which image shows
-  // When regenerate pressed → new timestamp → new image
-  const [imageSeed, setImageSeed] = useState(
+  const [imageSeed, setImageSeed]     = useState(
     () => existingItem?.id || Date.now().toString()
   );
-
-  // ✅ FIX: cacheBuster is appended to URL so React Native
-  // doesn't show the cached version of a previously loaded URL
   const [cacheBuster, setCacheBuster] = useState(
     () => Date.now()
   );
+  const [loading, setLoading]         = useState(false);
 
-  const [loading, setLoading] = useState(false);
-
-  // ✅ Auto image recalculates when name, category or seed changes
+  // ── Auto image ───────────────────────────
   const rawAutoImage = getAutoFoodImage(
     form.name,
     form.category,
-    imageSeed
+    imageSeed,
   );
-
-  // ✅ FIX: Append cacheBuster to force React Native to
-  // re-fetch even if URL happens to be the same string
-  const autoImage = `${rawAutoImage}&cb=${cacheBuster}`;
-
-  // ✅ What shows in preview
+  const autoImage    = `${rawAutoImage}&cb=${cacheBuster}`;
   const displayImage = customImage || autoImage;
 
   // ─── Handlers ────────────────────────────
@@ -99,11 +104,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }));
   };
 
-  // ─── Pick custom image ────────────────────
   const pickImage = async () => {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
-
     if (status !== 'granted') {
       Alert.alert(
         'Permission needed',
@@ -111,43 +114,31 @@ export default function AddMenuItemScreen({ route, navigation }) {
       );
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
     });
-
     if (!result.canceled) {
       setImageUri(result.assets[0].uri);
       setCustomImage(result.assets[0].uri);
     }
   };
 
-  // ─── Regenerate auto image ─────────────────
   const handleRegenerateImage = useCallback(() => {
-    // Clear custom image
     setImageUri(null);
     setCustomImage(null);
-
-    // ✅ New seed = different pool index
-    const newSeed = Date.now().toString();
-    setImageSeed(newSeed);
-
-    // ✅ New cache buster = React Native refetches the URL
+    setImageSeed(Date.now().toString());
     setCacheBuster(Date.now());
   }, []);
 
-  // ─── Remove custom image ──────────────────
   const handleRemoveCustomImage = () => {
     setImageUri(null);
     setCustomImage(null);
-    // Auto image shows again with fresh cache buster
     setCacheBuster(Date.now());
   };
 
-  // ─── Save ─────────────────────────────────
   const handleSave = async () => {
     if (!form.name.trim()) {
       Alert.alert('Error', 'Item name is required');
@@ -163,9 +154,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
 
     setLoading(true);
-
-    // ✅ Use rawAutoImage (without cacheBuster) for saving
-    // We don't want the cache buster in the stored URL
     const data = {
       name:            form.name.trim(),
       description:     form.description.trim(),
@@ -178,7 +166,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .split(',')
                          .map(t => t.trim())
                          .filter(Boolean),
-      // ✅ Pass clean URL (no cache buster) for Firestore storage
       autoImageUrl: customImage ? null : rawAutoImage,
     };
 
@@ -204,265 +191,297 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
   // ─── Render ───────────────────────────────
   return (
-    <ScrollView
+    // ✅ KeyboardAvoidingView outermost so keyboard
+    // never covers any input field
+    <KeyboardAvoidingView
       style={styles.container}
-      showsVerticalScrollIndicator={false}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={
+        Platform.OS === 'ios'
+          ? 0
+          // ✅ On Android with translucent status bar +
+          // stack header, offset = status bar + header height
+          : insets.top + 56
+      }
     >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            // ✅ Bottom clears Android nav bar
+            paddingBottom: insets.bottom + SIZES.xl,
+          },
+        ]}
+      >
 
-      {/* ── Image Section ──────────────────── */}
-      <View style={styles.imageSection}>
+        {/* ── Image Section ───────────────── */}
+        <View style={styles.imageSection}>
 
-        {/* Image preview — tap to upload custom */}
-        <TouchableOpacity
-          style={styles.imagePicker}
-          onPress={pickImage}
-          activeOpacity={0.85}
-        >
-          <Image
-            // ✅ FIX: key forces full remount when URL changes
-            // This bypasses React Native's image cache completely
-            key={displayImage}
-            source={{ uri: displayImage }}
-            style={styles.previewImage}
-            resizeMode="cover"
-          />
-
-          {/* Camera overlay */}
-          <View style={styles.imageOverlay}>
-            <Ionicons name="camera" size={24} color="#FFFFFF" />
-            <Text style={styles.imageOverlayText}>
-              {customImage ? 'Change Photo' : 'Upload Custom'}
-            </Text>
-          </View>
-
-          {/* Auto / Custom badge */}
-          {!customImage ? (
-            <View style={styles.autoBadge}>
-              <Ionicons name="sparkles" size={12} color="#FFFFFF" />
-              <Text style={styles.autoBadgeText}>Auto</Text>
-            </View>
-          ) : (
-            <View style={[styles.autoBadge, styles.customBadge]}>
-              <Ionicons name="person" size={12} color="#FFFFFF" />
-              <Text style={styles.autoBadgeText}>Custom</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* ── Image action buttons ──────────── */}
-        <View style={styles.imageActions}>
-
-          {/* Regenerate */}
+          {/* Preview — tap to upload */}
           <TouchableOpacity
-            style={styles.imageActionBtn}
-            onPress={handleRegenerateImage}
-            activeOpacity={0.7}
+            style={styles.imagePicker}
+            onPress={pickImage}
+            activeOpacity={0.85}
           >
-            <Ionicons name="refresh" size={16} color={COLORS.primary} />
-            <Text style={styles.imageActionText}>
-              New Auto Image
-            </Text>
+            <Image
+              key={displayImage}
+              source={{ uri: displayImage }}
+              style={styles.previewImage}
+              resizeMode="cover"
+            />
+
+            {/* Camera overlay */}
+            <View style={styles.imageOverlay}>
+              <Ionicons name="camera" size={24} color="#FFFFFF" />
+              <Text style={styles.imageOverlayText}>
+                {customImage ? 'Change Photo' : 'Upload Custom'}
+              </Text>
+            </View>
+
+            {/* Auto / Custom badge */}
+            {!customImage ? (
+              <View style={styles.autoBadge}>
+                <Ionicons name="sparkles" size={12} color="#FFFFFF" />
+                <Text style={styles.autoBadgeText}>Auto</Text>
+              </View>
+            ) : (
+              <View style={[styles.autoBadge, styles.customBadge]}>
+                <Ionicons name="person" size={12} color="#FFFFFF" />
+                <Text style={styles.autoBadgeText}>Custom</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
-          {/* Remove custom */}
-          {customImage && (
+          {/* Image action buttons */}
+          <View style={styles.imageActions}>
             <TouchableOpacity
-              style={[
-                styles.imageActionBtn,
-                styles.imageActionBtnDanger,
-              ]}
-              onPress={handleRemoveCustomImage}
+              style={styles.imageActionBtn}
+              onPress={handleRegenerateImage}
               activeOpacity={0.7}
             >
-              <Ionicons
-                name="trash-outline"
-                size={16}
-                color={COLORS.error}
-              />
-              <Text style={[
-                styles.imageActionText,
-                { color: COLORS.error },
-              ]}>
-                Remove Custom
-              </Text>
+              <Ionicons name="refresh" size={16} color={COLORS.primary} />
+              <Text style={styles.imageActionText}>New Auto Image</Text>
             </TouchableOpacity>
-          )}
-        </View>
 
-        {/* Hint text */}
-        <Text style={styles.imageHint}>
-          {customImage
-            ? '📷 Using your custom photo'
-            : '🤖 Based on name & category — tap 🔄 for a different image'}
-        </Text>
-      </View>
-
-      {/* ── Form ───────────────────────────── */}
-      <View style={styles.form}>
-
-        {/* Item Name */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Item Name *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Jerk Chicken, Fried Fish..."
-            placeholderTextColor={COLORS.textMuted}
-            value={form.name}
-            onChangeText={v => updateForm('name', v)}
-          />
-        </View>
-
-        {/* Description */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.textarea]}
-            placeholder="Describe the dish..."
-            placeholderTextColor={COLORS.textMuted}
-            value={form.description}
-            onChangeText={v => updateForm('description', v)}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-        {/* Price + Prep Time */}
-        <View style={styles.row}>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>Price ($) *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.price}
-              onChangeText={v => updateForm('price', v)}
-              keyboardType="decimal-pad"
-            />
-          </View>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>Prep Time (mins)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="15"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.preparationTime}
-              onChangeText={v => updateForm('preparationTime', v)}
-              keyboardType="number-pad"
-            />
-          </View>
-        </View>
-
-        {/* Serving Size */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Serving Size</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Serves 1, 1 plate, 500g"
-            placeholderTextColor={COLORS.textMuted}
-            value={form.servingSize}
-            onChangeText={v => updateForm('servingSize', v)}
-          />
-        </View>
-
-        {/* Category */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Category *</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: SIZES.sm }}
-          >
-            {CATEGORIES.map(cat => (
+            {customImage && (
               <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.categoryBtn,
-                  form.category === cat.id && styles.categoryBtnActive,
-                ]}
-                onPress={() => updateForm('category', cat.id)}
+                style={[styles.imageActionBtn, styles.imageActionBtnDanger]}
+                onPress={handleRemoveCustomImage}
                 activeOpacity={0.7}
               >
+                <Ionicons
+                  name="trash-outline"
+                  size={16}
+                  color={COLORS.error}
+                />
                 <Text style={[
-                  styles.categoryBtnText,
-                  form.category === cat.id &&
-                    styles.categoryBtnTextActive,
+                  styles.imageActionText,
+                  { color: COLORS.error },
                 ]}>
-                  {cat.label}
+                  Remove Custom
                 </Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Dietary Info */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Dietary Information</Text>
-          <View style={styles.dietaryGrid}>
-            {DIETARY.map(d => (
-              <TouchableOpacity
-                key={d.id}
-                style={[
-                  styles.dietaryBtn,
-                  form.dietaryInfo[d.id] && styles.dietaryBtnActive,
-                ]}
-                onPress={() => toggleDietary(d.id)}
-                activeOpacity={0.7}
-              >
-                <Text style={[
-                  styles.dietaryText,
-                  form.dietaryInfo[d.id] && styles.dietaryTextActive,
-                ]}>
-                  {d.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            )}
           </View>
-        </View>
 
-        {/* Tags */}
-        <View style={styles.field}>
-          <Text style={styles.label}>Tags</Text>
-          <Text style={styles.fieldHint}>
-            Comma separated e.g. popular, chef-special
+          <Text style={styles.imageHint}>
+            {customImage
+              ? '📷 Using your custom photo'
+              : '🤖 Based on name & category — tap 🔄 for a different image'}
           </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="popular, chef-special, new..."
-            placeholderTextColor={COLORS.textMuted}
-            value={form.tags}
-            onChangeText={v => updateForm('tags', v)}
-          />
         </View>
 
-        {/* Save Button */}
-        <TouchableOpacity
-          style={[
-            styles.saveBtn,
-            loading && styles.saveBtnDisabled,
-          ]}
-          onPress={handleSave}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          {loading ? (
-            <ActivityIndicator color={COLORS.textWhite} />
-          ) : (
-            <>
-              <Ionicons
-                name="checkmark-circle"
-                size={22}
-                color={COLORS.textWhite}
-              />
-              <Text style={styles.saveBtnText}>
-                {existingItem ? 'Update Item' : 'Add to Menu'}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+        {/* ── Form ────────────────────────── */}
+        <View style={styles.form}>
 
-      <View style={{ height: 48 }} />
-    </ScrollView>
+          {/* Item Name */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Item Name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Jerk Chicken, Fried Fish..."
+              placeholderTextColor={COLORS.textMuted}
+              value={form.name}
+              onChangeText={v => updateForm('name', v)}
+              autoCapitalize="words"
+              returnKeyType="next"
+              onSubmitEditing={() => descriptionRef.current?.focus()}
+            />
+          </View>
+
+          {/* Description */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              ref={descriptionRef}
+              style={[styles.input, styles.textarea]}
+              placeholder="Describe the dish..."
+              placeholderTextColor={COLORS.textMuted}
+              value={form.description}
+              onChangeText={v => updateForm('description', v)}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              returnKeyType="next"
+              onSubmitEditing={() => priceRef.current?.focus()}
+            />
+          </View>
+
+          {/* Price + Prep Time */}
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>Price ($) *</Text>
+              <TextInput
+                ref={priceRef}
+                style={styles.input}
+                placeholder="0.00"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.price}
+                onChangeText={v => updateForm('price', v)}
+                keyboardType="decimal-pad"
+                returnKeyType="next"
+                onSubmitEditing={() => prepTimeRef.current?.focus()}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>Prep Time (mins)</Text>
+              <TextInput
+                ref={prepTimeRef}
+                style={styles.input}
+                placeholder="15"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.preparationTime}
+                onChangeText={v => updateForm('preparationTime', v)}
+                keyboardType="number-pad"
+                returnKeyType="next"
+                onSubmitEditing={() => servingSizeRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          {/* Serving Size */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Serving Size</Text>
+            <TextInput
+              ref={servingSizeRef}
+              style={styles.input}
+              placeholder="e.g. Serves 1, 1 plate, 500g"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.servingSize}
+              onChangeText={v => updateForm('servingSize', v)}
+              returnKeyType="next"
+              onSubmitEditing={() => tagsRef.current?.focus()}
+            />
+          </View>
+
+          {/* Category */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Category *</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: SIZES.sm }}
+              // ✅ Prevents category scroll stealing
+              // vertical scroll from the parent
+              nestedScrollEnabled
+            >
+              {CATEGORIES.map(cat => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryBtn,
+                    form.category === cat.id &&
+                      styles.categoryBtnActive,
+                  ]}
+                  onPress={() => updateForm('category', cat.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.categoryBtnText,
+                    form.category === cat.id &&
+                      styles.categoryBtnTextActive,
+                  ]}>
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Dietary Info */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Dietary Information</Text>
+            <View style={styles.dietaryGrid}>
+              {DIETARY.map(d => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={[
+                    styles.dietaryBtn,
+                    form.dietaryInfo[d.id] && styles.dietaryBtnActive,
+                  ]}
+                  onPress={() => toggleDietary(d.id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.dietaryText,
+                    form.dietaryInfo[d.id] && styles.dietaryTextActive,
+                  ]}>
+                    {d.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Tags */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Tags</Text>
+            <Text style={styles.fieldHint}>
+              Comma separated e.g. popular, chef-special
+            </Text>
+            <TextInput
+              ref={tagsRef}
+              style={styles.input}
+              placeholder="popular, chef-special, new..."
+              placeholderTextColor={COLORS.textMuted}
+              value={form.tags}
+              onChangeText={v => updateForm('tags', v)}
+              returnKeyType="done"
+              onSubmitEditing={handleSave}
+            />
+          </View>
+
+          {/* Save Button */}
+          <TouchableOpacity
+            style={[
+              styles.saveBtn,
+              loading && styles.saveBtnDisabled,
+            ]}
+            onPress={handleSave}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator color={COLORS.textWhite} />
+            ) : (
+              <>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={22}
+                  color={COLORS.textWhite}
+                />
+                <Text style={styles.saveBtnText}>
+                  {existingItem ? 'Update Item' : 'Add to Menu'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -473,7 +492,13 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
 
-  // Image section
+  // ✅ Replaces the old inline style on ScrollView
+  // paddingBottom set dynamically from insets
+  scrollContent: {
+    flexGrow: 1,
+  },
+
+  // ── Image section ───────────────────────
   imageSection: {
     alignItems: 'center',
     padding: SIZES.lg,
@@ -527,8 +552,6 @@ const styles = StyleSheet.create({
     fontSize: FONTS.xs,
     fontWeight: '700',
   },
-
-  // Action buttons
   imageActions: {
     flexDirection: 'row',
     gap: SIZES.sm,
@@ -563,7 +586,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.md,
   },
 
-  // Form
+  // ── Form ────────────────────────────────
   form:      { padding: SIZES.md, gap: SIZES.md },
   field:     { gap: SIZES.xs },
   row:       { flexDirection: 'row', gap: SIZES.md },
@@ -584,7 +607,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  // Category
+  // ── Category ────────────────────────────
   categoryBtn: {
     paddingHorizontal: SIZES.md,
     paddingVertical: SIZES.sm,
@@ -600,7 +623,7 @@ const styles = StyleSheet.create({
   categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text },
   categoryBtnTextActive: { color: COLORS.textWhite, fontWeight: '600' },
 
-  // Dietary
+  // ── Dietary ─────────────────────────────
   dietaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -621,7 +644,7 @@ const styles = StyleSheet.create({
   dietaryText:       { fontSize: FONTS.sm, color: COLORS.text },
   dietaryTextActive: { color: COLORS.success, fontWeight: '600' },
 
-  // Save button
+  // ── Save button ─────────────────────────
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',

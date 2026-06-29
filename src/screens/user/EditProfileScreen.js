@@ -1,31 +1,48 @@
 // ============================================
 // FILE: src/screens/user/EditProfileScreen.js
 // ============================================
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
-  ScrollView, StyleSheet, Alert,
-  ActivityIndicator, Image,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { useAuth } from '../../hooks/useAuth';
-import { uploadImage } from '../../utils/imageUpload';
+import { useAuth }        from '../../hooks/useAuth';
+import { uploadImage }    from '../../utils/imageUpload';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 const DIETARY_OPTIONS = [
   { label: 'Vegetarian', emoji: '🥗' },
-  { label: 'Vegan', emoji: '🌱' },
-  { label: 'Gluten Free', emoji: '🌾' },
-  { label: 'Halal', emoji: '☪️' },
-  { label: 'Kosher', emoji: '✡️' },
+  { label: 'Vegan',      emoji: '🌱' },
+  { label: 'Gluten Free',emoji: '🌾' },
+  { label: 'Halal',      emoji: '☪️'  },
+  { label: 'Kosher',     emoji: '✡️'  },
   { label: 'Dairy Free', emoji: '🥛' },
-  { label: 'Nut Free', emoji: '🥜' },
-  { label: 'Keto', emoji: '🥩' },
+  { label: 'Nut Free',   emoji: '🥜' },
+  { label: 'Keto',       emoji: '🥩' },
 ];
 
 export default function EditProfileScreen({ navigation }) {
-  const { user, userProfile, updateUserProfile } = useAuth();
+  const insets = useSafeAreaInsets();
+  // ✅ Destructure forgotPassword here at component level
+  // — hooks must NEVER be called inside callbacks
+  const { user, userProfile, updateUserProfile, forgotPassword } = useAuth();
+
+  // ── Input refs for keyboard focus chain ──
+  const lastNameRef = useRef(null);
+  const phoneRef    = useRef(null);
+  const bioRef      = useRef(null);
 
   const [form, setForm] = useState({
     firstName: userProfile?.firstName || '',
@@ -34,14 +51,14 @@ export default function EditProfileScreen({ navigation }) {
     bio:       userProfile?.bio       || '',
   });
 
-  const [dietary, setDietary] = useState(
+  const [dietary, setDietary]             = useState(
     userProfile?.dietaryPreferences || []
   );
-  const [avatarUri, setAvatarUri]     = useState(null);
+  const [avatarUri, setAvatarUri]         = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(
     userProfile?.avatar || null
   );
-  const [loading, setLoading]         = useState(false);
+  const [loading, setLoading]             = useState(false);
   const [notifications, setNotifications] = useState(
     userProfile?.notifications || {
       pushEnabled: true,
@@ -69,14 +86,12 @@ export default function EditProfileScreen({ navigation }) {
       Alert.alert('Permission needed', 'Please allow photo library access');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],  // ✅ Updated API
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
     });
-
     if (!result.canceled) {
       setAvatarUri(result.assets[0].uri);
       setAvatarPreview(result.assets[0].uri);
@@ -90,12 +105,10 @@ export default function EditProfileScreen({ navigation }) {
     }
 
     setLoading(true);
-
     try {
-      let avatarUrl = userProfile?.avatar || '';
+      let avatarUrl  = userProfile?.avatar     || '';
       let avatarPath = userProfile?.avatarPath || '';
 
-      // ✅ Upload new avatar if selected
       if (avatarUri) {
         avatarPath = `avatars/${user.uid}_${Date.now()}`;
         const uploadResult = await uploadImage(avatarUri, avatarPath);
@@ -105,13 +118,13 @@ export default function EditProfileScreen({ navigation }) {
       }
 
       const result = await updateUserProfile({
-        firstName:            form.firstName.trim(),
-        lastName:             form.lastName.trim(),
-        phone:                form.phone.trim(),
-        bio:                  form.bio.trim(),
-        avatar:               avatarUrl,
+        firstName:          form.firstName.trim(),
+        lastName:           form.lastName.trim(),
+        phone:              form.phone.trim(),
+        bio:                form.bio.trim(),
+        avatar:             avatarUrl,
         avatarPath,
-        dietaryPreferences:   dietary,
+        dietaryPreferences: dietary,
         notifications,
       });
 
@@ -129,6 +142,7 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
+  // ✅ Fixed: forgotPassword called from component scope, not inside useAuth()
   const handleChangePassword = () => {
     Alert.alert(
       'Change Password',
@@ -138,7 +152,6 @@ export default function EditProfileScreen({ navigation }) {
         {
           text: 'Send Email',
           onPress: async () => {
-            const { forgotPassword } = useAuth();
             await forgotPassword(user?.email);
             Alert.alert(
               '📧 Email Sent',
@@ -151,217 +164,244 @@ export default function EditProfileScreen({ navigation }) {
   };
 
   return (
-    <ScrollView
+    // ✅ KeyboardAvoidingView outermost
+    <KeyboardAvoidingView
       style={styles.container}
-      showsVerticalScrollIndicator={false}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={
+        Platform.OS === 'ios'
+          ? 0
+          // ✅ Stack header (~56) + translucent status bar
+          : insets.top + 56
+      }
     >
-      {/* ── Avatar ─────────────────────────── */}
-      <View style={styles.avatarSection}>
-        <TouchableOpacity
-          style={styles.avatarContainer}
-          onPress={pickAvatar}
-          activeOpacity={0.8}
-        >
-          {avatarPreview ? (
-            <Image
-              source={{ uri: avatarPreview }}
-              style={styles.avatar}
-            />
-          ) : (
-            <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitial}>
-                {form.firstName?.[0]?.toUpperCase() || '👤'}
-              </Text>
-            </View>
-          )}
-          <View style={styles.avatarEditBadge}>
-            <Ionicons name="camera" size={14} color="#FFFFFF" />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.avatarHint}>Tap to change photo</Text>
-      </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          // ✅ Bottom clears Android nav bar
+          paddingBottom: insets.bottom + SIZES.xl,
+        }}
+      >
 
-      {/* ── Basic Info ─────────────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>👤 Basic Information</Text>
-
-        <View style={styles.row}>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>First Name *</Text>
-            <TextInput
-              style={styles.input}
-              value={form.firstName}
-              onChangeText={v => updateForm('firstName', v)}
-              placeholder="First name"
-              placeholderTextColor={COLORS.textMuted}
-            />
-          </View>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>Last Name *</Text>
-            <TextInput
-              style={styles.input}
-              value={form.lastName}
-              onChangeText={v => updateForm('lastName', v)}
-              placeholder="Last name"
-              placeholderTextColor={COLORS.textMuted}
-            />
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Email</Text>
-          <View style={[styles.input, styles.disabledInput]}>
-            <Text style={styles.disabledText}>{user?.email}</Text>
-          </View>
-          <Text style={styles.fieldHint}>
-            Email cannot be changed
-          </Text>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Phone Number</Text>
-          <TextInput
-            style={styles.input}
-            value={form.phone}
-            onChangeText={v => updateForm('phone', v)}
-            placeholder="+1 (555) 000-0000"
-            placeholderTextColor={COLORS.textMuted}
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Bio</Text>
-          <TextInput
-            style={[styles.input, styles.textarea]}
-            value={form.bio}
-            onChangeText={v => updateForm('bio', v)}
-            placeholder="Tell us a bit about yourself..."
-            placeholderTextColor={COLORS.textMuted}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-      </View>
-
-      {/* ── Dietary Preferences ────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          🥗 Dietary Preferences
-        </Text>
-        <Text style={styles.sectionHint}>
-          We'll highlight menu items that match your diet
-        </Text>
-        <View style={styles.chipGrid}>
-          {DIETARY_OPTIONS.map(opt => {
-            const active = dietary.includes(opt.label);
-            return (
-              <TouchableOpacity
-                key={opt.label}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => toggleDietary(opt.label)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.chipEmoji}>{opt.emoji}</Text>
-                <Text style={[
-                  styles.chipText,
-                  active && styles.chipTextActive,
-                ]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* ── Notifications ──────────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔔 Notifications</Text>
-        {[
-          {
-            key: 'menuUpdates',
-            label: "Daily Menu Updates",
-            desc: "Get notified when restaurants update their menu",
-          },
-          {
-            key: 'promotions',
-            label: "Promotions & Deals",
-            desc: "Special offers from your favorite restaurants",
-          },
-          {
-            key: 'pushEnabled',
-            label: "Push Notifications",
-            desc: "Allow push notifications on this device",
-          },
-        ].map(notif => (
+        {/* ── Avatar section ────────────────── */}
+        <View style={styles.avatarSection}>
           <TouchableOpacity
-            key={notif.key}
-            style={styles.notifRow}
-            onPress={() => setNotifications(prev => ({
-              ...prev,
-              [notif.key]: !prev[notif.key],
-            }))}
-            activeOpacity={0.7}
+            style={styles.avatarContainer}
+            onPress={pickAvatar}
+            activeOpacity={0.8}
           >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.notifLabel}>{notif.label}</Text>
-              <Text style={styles.notifDesc}>{notif.desc}</Text>
-            </View>
-            <View style={[
-              styles.toggle,
-              notifications[notif.key] && styles.toggleOn,
-            ]}>
-              <View style={[
-                styles.toggleThumb,
-                notifications[notif.key] && styles.toggleThumbOn,
-              ]} />
+            {avatarPreview ? (
+              <Image
+                source={{ uri: avatarPreview }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarInitial}>
+                  {form.firstName?.[0]?.toUpperCase() || '👤'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.avatarEditBadge}>
+              <Ionicons name="camera" size={14} color="#FFFFFF" />
             </View>
           </TouchableOpacity>
-        ))}
-      </View>
+          <Text style={styles.avatarHint}>Tap to change photo</Text>
+        </View>
 
-      {/* ── Security ───────────────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔒 Security</Text>
+        {/* ── Basic info ────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>👤 Basic Information</Text>
+
+          {/* Name row */}
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>First Name *</Text>
+              <TextInput
+                style={styles.input}
+                value={form.firstName}
+                onChangeText={v => updateForm('firstName', v)}
+                placeholder="First name"
+                placeholderTextColor={COLORS.textMuted}
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="next"
+                onSubmitEditing={() => lastNameRef.current?.focus()}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>Last Name *</Text>
+              <TextInput
+                ref={lastNameRef}
+                style={styles.input}
+                value={form.lastName}
+                onChangeText={v => updateForm('lastName', v)}
+                placeholder="Last name"
+                placeholderTextColor={COLORS.textMuted}
+                autoCapitalize="words"
+                autoCorrect={false}
+                returnKeyType="next"
+                onSubmitEditing={() => phoneRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          {/* Email — read only */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Email</Text>
+            <View style={[styles.input, styles.disabledInput]}>
+              <Text style={styles.disabledText}>{user?.email}</Text>
+            </View>
+            <Text style={styles.fieldHint}>Email cannot be changed</Text>
+          </View>
+
+          {/* Phone */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Phone Number</Text>
+            <TextInput
+              ref={phoneRef}
+              style={styles.input}
+              value={form.phone}
+              onChangeText={v => updateForm('phone', v)}
+              placeholder="+1 (555) 000-0000"
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType="phone-pad"
+              returnKeyType="next"
+              onSubmitEditing={() => bioRef.current?.focus()}
+            />
+          </View>
+
+          {/* Bio */}
+          <View style={styles.field}>
+            <Text style={styles.label}>Bio</Text>
+            <TextInput
+              ref={bioRef}
+              style={[styles.input, styles.textarea]}
+              value={form.bio}
+              onChangeText={v => updateForm('bio', v)}
+              placeholder="Tell us a bit about yourself..."
+              placeholderTextColor={COLORS.textMuted}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              returnKeyType="done"
+            />
+          </View>
+        </View>
+
+        {/* ── Dietary preferences ───────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🥗 Dietary Preferences</Text>
+          <Text style={styles.sectionHint}>
+            We'll highlight menu items that match your diet
+          </Text>
+          <View style={styles.chipGrid}>
+            {DIETARY_OPTIONS.map(opt => {
+              const active = dietary.includes(opt.label);
+              return (
+                <TouchableOpacity
+                  key={opt.label}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => toggleDietary(opt.label)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.chipEmoji}>{opt.emoji}</Text>
+                  <Text style={[
+                    styles.chipText,
+                    active && styles.chipTextActive,
+                  ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* ── Notifications ─────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🔔 Notifications</Text>
+          {[
+            {
+              key:   'menuUpdates',
+              label: 'Daily Menu Updates',
+              desc:  'Get notified when restaurants update their menu',
+            },
+            {
+              key:   'promotions',
+              label: 'Promotions & Deals',
+              desc:  'Special offers from your favorite restaurants',
+            },
+            {
+              key:   'pushEnabled',
+              label: 'Push Notifications',
+              desc:  'Allow push notifications on this device',
+            },
+          ].map(notif => (
+            <TouchableOpacity
+              key={notif.key}
+              style={styles.notifRow}
+              onPress={() => setNotifications(prev => ({
+                ...prev,
+                [notif.key]: !prev[notif.key],
+              }))}
+              activeOpacity={0.7}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.notifLabel}>{notif.label}</Text>
+                <Text style={styles.notifDesc}>{notif.desc}</Text>
+              </View>
+              <View style={[
+                styles.toggle,
+                notifications[notif.key] && styles.toggleOn,
+              ]}>
+                <View style={[
+                  styles.toggleThumb,
+                  notifications[notif.key] && styles.toggleThumbOn,
+                ]} />
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ── Security ──────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🔒 Security</Text>
+          <TouchableOpacity
+            style={styles.securityBtn}
+            onPress={handleChangePassword}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="key-outline" size={20} color={COLORS.primary} />
+            <Text style={styles.securityBtnText}>Change Password</Text>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={COLORS.textMuted}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Save button ───────────────────── */}
         <TouchableOpacity
-          style={styles.securityBtn}
-          onPress={handleChangePassword}
-          activeOpacity={0.7}
+          style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
+          onPress={handleSave}
+          disabled={loading}
+          activeOpacity={0.8}
         >
-          <Ionicons
-            name="key-outline"
-            size={20}
-            color={COLORS.primary}
-          />
-          <Text style={styles.securityBtnText}>Change Password</Text>
-          <Ionicons
-            name="chevron-forward"
-            size={18}
-            color={COLORS.textMuted}
-          />
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+              <Text style={styles.saveBtnText}>Save Changes</Text>
+            </>
+          )}
         </TouchableOpacity>
-      </View>
 
-      {/* ── Save Button ────────────────────── */}
-      <TouchableOpacity
-        style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
-        onPress={handleSave}
-        disabled={loading}
-        activeOpacity={0.8}
-      >
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" size="small" />
-        ) : (
-          <>
-            <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
-            <Text style={styles.saveBtnText}>Save Changes</Text>
-          </>
-        )}
-      </TouchableOpacity>
-
-      <View style={{ height: 48 }} />
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -371,7 +411,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
 
-  // Avatar
+  // ── Avatar ───────────────────────────────
   avatarSection: {
     alignItems: 'center',
     paddingVertical: SIZES.xl,
@@ -421,7 +461,7 @@ const styles = StyleSheet.create({
     marginTop: SIZES.sm,
   },
 
-  // Sections
+  // ── Sections ─────────────────────────────
   section: {
     backgroundColor: COLORS.surface,
     margin: SIZES.md,
@@ -441,7 +481,7 @@ const styles = StyleSheet.create({
     marginTop: -SIZES.sm,
   },
 
-  // Form fields
+  // ── Form fields ──────────────────────────
   row: {
     flexDirection: 'row',
     gap: SIZES.md,
@@ -481,7 +521,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
-  // Dietary chips
+  // ── Dietary chips ────────────────────────
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -500,19 +540,17 @@ const styles = StyleSheet.create({
   },
   chipActive: {
     backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    borderColor:     COLORS.primary,
   },
-  chipEmoji: { fontSize: 14 },
+  chipEmoji:       { fontSize: 14 },
   chipText: {
     fontSize: FONTS.sm,
     color: COLORS.text,
     fontWeight: '500',
   },
-  chipTextActive: {
-    color: '#FFFFFF',
-  },
+  chipTextActive:  { color: '#FFFFFF' },
 
-  // Notifications
+  // ── Notifications ────────────────────────
   notifRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -552,7 +590,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
 
-  // Security
+  // ── Security ─────────────────────────────
   securityBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -566,7 +604,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Save button
+  // ── Save button ──────────────────────────
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -578,9 +616,7 @@ const styles = StyleSheet.create({
     gap: SIZES.sm,
     ...SHADOW,
   },
-  saveBtnDisabled: {
-    opacity: 0.7,
-  },
+  saveBtnDisabled: { opacity: 0.7 },
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: FONTS.lg,

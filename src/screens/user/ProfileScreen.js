@@ -3,16 +3,24 @@
 // ============================================
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView,
-  Alert, StyleSheet, ActivityIndicator, Image,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  StyleSheet,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 export default function ProfileScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user, userProfile, logout } = useAuth();
-  const [signingOut, setSigningOut] = useState(false);
+  const [signingOut, setSigningOut]   = useState(false);
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -41,19 +49,44 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
+  // ── Loading ───────────────────────────────
   if (!userProfile) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          // ✅ Respect system bars on loading state
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{
+        // ✅ Bottom padding clears Android nav bar
+        paddingBottom: insets.bottom + SIZES.xl,
+      }}
+    >
 
-      {/* ── Header ─────────────────────────── */}
-      <View style={styles.header}>
+      {/* ── Header ──────────────────────────── */}
+      {/*
+        ✅ paddingTop uses insets.top so the avatar/name
+        never hides behind the translucent status bar.
+        The tab bar provides the bottom, stack screens
+        use the header — so only top inset needed here.
+      */}
+      <View style={[
+        styles.header,
+        { paddingTop: insets.top + SIZES.xl },
+      ]}>
+        {/* Avatar */}
         <TouchableOpacity
           style={styles.avatarContainer}
           onPress={() => navigation.navigate('EditProfile')}
@@ -76,16 +109,20 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </TouchableOpacity>
 
+        {/* Name */}
         <Text style={styles.displayName}>
           {userProfile?.firstName} {userProfile?.lastName}
         </Text>
 
+        {/* Bio */}
         {userProfile?.bio ? (
           <Text style={styles.bio}>{userProfile.bio}</Text>
         ) : null}
 
+        {/* Email */}
         <Text style={styles.email}>{user?.email}</Text>
 
+        {/* Role badge */}
         <View style={styles.roleBadge}>
           <Text style={styles.roleText}>
             {userProfile?.role === 'restaurant_owner'
@@ -96,7 +133,7 @@ export default function ProfileScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* ✅ Dietary preferences shown if set */}
+        {/* Dietary preferences */}
         {userProfile?.dietaryPreferences?.length > 0 && (
           <View style={styles.dietaryRow}>
             {userProfile.dietaryPreferences.slice(0, 3).map((pref, i) => (
@@ -115,7 +152,7 @@ export default function ProfileScreen({ navigation }) {
         )}
       </View>
 
-      {/* ── Stats ──────────────────────────── */}
+      {/* ── Stats row ───────────────────────── */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>
@@ -139,7 +176,7 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ── Account Section ────────────────── */}
+      {/* ── Account section ─────────────────── */}
       <Text style={styles.sectionLabel}>ACCOUNT</Text>
       <View style={styles.section}>
         <ProfileButton
@@ -163,29 +200,47 @@ export default function ProfileScreen({ navigation }) {
           icon="notifications-outline"
           label="Notifications"
           last
-          onPress={() => Alert.alert('Coming Soon', 'Notification settings coming soon!')}
+          onPress={() =>
+            Alert.alert(
+              'Coming Soon',
+              'Notification settings coming soon!'
+            )
+          }
         />
       </View>
 
-      {/* ── Support Section ────────────────── */}
+      {/* ── Support section ─────────────────── */}
       <Text style={styles.sectionLabel}>SUPPORT</Text>
       <View style={styles.section}>
         <ProfileButton
           icon="help-circle-outline"
           label="Help & Support"
-          onPress={() => Alert.alert('Help', 'Contact us at support@whatscooking.app')}
+          onPress={() =>
+            Alert.alert(
+              'Help',
+              'Contact us at support@whatscooking.app'
+            )
+          }
         />
         <ProfileButton
           icon="information-circle-outline"
           label="About"
           last
-          onPress={() => Alert.alert('About', "What's Cooking v1.0.0\nMade with ❤️")}
+          onPress={() =>
+            Alert.alert(
+              'About',
+              "What's Cooking v1.0.0\nMade with ❤️"
+            )
+          }
         />
       </View>
 
-      {/* ── Sign Out ───────────────────────── */}
+      {/* ── Sign out button ──────────────────── */}
       <TouchableOpacity
-        style={styles.signOutButton}
+        style={[
+          styles.signOutButton,
+          signingOut && styles.signOutButtonDisabled,
+        ]}
         onPress={handleSignOut}
         disabled={signingOut}
         activeOpacity={0.8}
@@ -200,22 +255,41 @@ export default function ProfileScreen({ navigation }) {
         )}
       </TouchableOpacity>
 
+      {/* Version */}
       <Text style={styles.version}>What's Cooking v1.0.0</Text>
 
-      <View style={{ height: 48 }} />
+      {/*
+        ✅ No hardcoded spacer here — paddingBottom on
+        contentContainerStyle handles the bottom clearance
+      */}
+
     </ScrollView>
   );
 }
 
-function ProfileButton({ icon, label, onPress, danger = false, last = false, badge }) {
+// ─── Profile Button ───────────────────────────
+function ProfileButton({
+  icon,
+  label,
+  onPress,
+  danger = false,
+  last  = false,
+  badge,
+}) {
   return (
     <TouchableOpacity
       style={[styles.menuItem, last && styles.menuItemLast]}
       onPress={onPress}
       activeOpacity={0.6}
     >
-      <Ionicons name={icon} size={22} color={danger ? COLORS.error : COLORS.primary} />
-      <Text style={[styles.menuLabel, danger && styles.dangerText]}>{label}</Text>
+      <Ionicons
+        name={icon}
+        size={22}
+        color={danger ? COLORS.error : COLORS.primary}
+      />
+      <Text style={[styles.menuLabel, danger && styles.dangerText]}>
+        {label}
+      </Text>
       {badge > 0 && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{badge}</Text>
@@ -227,54 +301,114 @@ function ProfileButton({ icon, label, onPress, danger = false, last = false, bad
 }
 
 const styles = StyleSheet.create({
-  container:   { flex: 1, backgroundColor: COLORS.background },
-  centered:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  // ✅ paddingTop/Bottom applied dynamically via insets in JSX
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
 
-  // Header
+  // ── Header ──────────────────────────────
+  // ✅ paddingTop set dynamically via insets in JSX
+  // so avatar never hides behind translucent status bar
   header: {
     backgroundColor: COLORS.primary,
     alignItems: 'center',
-    paddingTop: 60,
     paddingBottom: SIZES.xl,
     paddingHorizontal: SIZES.lg,
   },
-  avatarContainer: { position: 'relative', marginBottom: SIZES.md },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: SIZES.md,
+  },
   avatarImage: {
-    width: 90, height: 90, borderRadius: 45,
-    borderWidth: 3, borderColor: '#FFFFFF',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
   },
   avatarCircle: {
-    width: 90, height: 90, borderRadius: 45,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
     backgroundColor: 'rgba(255,255,255,0.3)',
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 3, borderColor: 'rgba(255,255,255,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  avatarText:    { fontSize: 36, fontWeight: 'bold', color: '#FFFFFF' },
+  avatarText: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
   editAvatarBadge: {
-    position: 'absolute', bottom: 0, right: 0,
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
     backgroundColor: COLORS.secondary,
-    width: 26, height: 26, borderRadius: 13,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#FFFFFF',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
-  displayName: { fontSize: FONTS.xxl, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 4 },
-  bio:         { fontSize: FONTS.sm, color: 'rgba(255,255,255,0.8)', textAlign: 'center', marginBottom: 4 },
-  email:       { fontSize: FONTS.sm, color: 'rgba(255,255,255,0.85)', marginBottom: SIZES.sm },
+  displayName: {
+    fontSize: FONTS.xxl,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  bio: {
+    fontSize: FONTS.sm,
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  email: {
+    fontSize: FONTS.sm,
+    color: 'rgba(255,255,255,0.85)',
+    marginBottom: SIZES.sm,
+  },
   roleBadge: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: SIZES.md, paddingVertical: 6,
+    paddingHorizontal: SIZES.md,
+    paddingVertical: 6,
     borderRadius: RADIUS.round,
   },
-  roleText: { color: '#FFFFFF', fontSize: FONTS.sm, fontWeight: '600' },
-  dietaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SIZES.xs, marginTop: SIZES.sm, justifyContent: 'center' },
+  roleText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.sm,
+    fontWeight: '600',
+  },
+  dietaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SIZES.xs,
+    marginTop: SIZES.sm,
+    justifyContent: 'center',
+  },
   dietaryChip: {
     backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: SIZES.sm, paddingVertical: 3,
+    paddingHorizontal: SIZES.sm,
+    paddingVertical: 3,
     borderRadius: RADIUS.round,
   },
-  dietaryChipText: { fontSize: FONTS.xs, color: '#FFFFFF', fontWeight: '500' },
+  dietaryChipText: {
+    fontSize: FONTS.xs,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
 
-  // Stats row
+  // ── Stats row ────────────────────────────
   statsRow: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
@@ -284,20 +418,37 @@ const styles = StyleSheet.create({
     padding: SIZES.md,
     ...SHADOW,
   },
-  statItem:    { flex: 1, alignItems: 'center' },
-  statValue:   { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text },
-  statLabel:   { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: COLORS.border },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: FONTS.xxl,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  statLabel: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: COLORS.border,
+  },
 
-  // Section label
+  // ── Section label ────────────────────────
   sectionLabel: {
-    fontSize: 11, fontWeight: '700',
-    color: COLORS.textMuted, letterSpacing: 1.2,
-    marginTop: SIZES.lg, marginBottom: SIZES.xs,
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    letterSpacing: 1.2,
+    marginTop: SIZES.lg,
+    marginBottom: SIZES.xs,
     marginHorizontal: SIZES.md,
   },
 
-  // Card
+  // ── Menu card ────────────────────────────
   section: {
     backgroundColor: COLORS.surface,
     marginHorizontal: SIZES.md,
@@ -306,32 +457,69 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   menuItem: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SIZES.md, paddingVertical: 15,
-    borderBottomWidth: 1, borderBottomColor: COLORS.divider,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SIZES.md,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
     gap: SIZES.sm,
   },
-  menuItemLast: { borderBottomWidth: 0 },
-  menuLabel:    { flex: 1, fontSize: FONTS.lg, color: COLORS.text },
-  dangerText:   { color: COLORS.error },
+  menuItemLast: {
+    borderBottomWidth: 0,
+  },
+  menuLabel: {
+    flex: 1,
+    fontSize: FONTS.lg,
+    color: COLORS.text,
+  },
+  dangerText: {
+    color: COLORS.error,
+  },
   badge: {
     backgroundColor: COLORS.primary,
-    minWidth: 20, height: 20,
+    minWidth: 20,
+    height: 20,
     borderRadius: 10,
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 4,
   },
-  badgeText: { color: '#FFFFFF', fontSize: FONTS.xs, fontWeight: 'bold' },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.xs,
+    fontWeight: 'bold',
+  },
 
-  // Sign out
+  // ── Sign out button ───────────────────────
   signOutButton: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.error,
-    marginHorizontal: SIZES.md, marginTop: SIZES.lg,
-    paddingVertical: SIZES.md, borderRadius: RADIUS.lg,
-    gap: SIZES.sm, ...SHADOW,
+    marginHorizontal: SIZES.md,
+    marginTop: SIZES.lg,
+    paddingVertical: SIZES.md,
+    borderRadius: RADIUS.lg,
+    gap: SIZES.sm,
+    ...SHADOW,
   },
-  signOutText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
-  version:     { textAlign: 'center', color: COLORS.textMuted, fontSize: FONTS.xs, marginTop: SIZES.md },
+  signOutButtonDisabled: {
+    opacity: 0.7,
+  },
+  signOutText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.lg,
+    fontWeight: 'bold',
+  },
+
+  // ── Version ──────────────────────────────
+  version: {
+    textAlign: 'center',
+    color: COLORS.textMuted,
+    fontSize: FONTS.xs,
+    marginTop: SIZES.md,
+    // ✅ No marginBottom needed — contentContainerStyle
+    // paddingBottom handles the bottom clearance
+  },
 });

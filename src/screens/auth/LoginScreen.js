@@ -3,31 +3,39 @@
 // ============================================
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 export default function LoginScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { login, forgotPassword } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+
+  const [email, setEmail]             = useState('');
+  const [password, setPassword]       = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]         = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     setLoading(true);
     const result = await login(email.trim().toLowerCase(), password);
     setLoading(false);
-
     if (!result.success) {
       Alert.alert('Login Failed', result.error);
     }
@@ -39,7 +47,6 @@ export default function LoginScreen({ navigation }) {
       Alert.alert('Info', 'Enter your email address first');
       return;
     }
-
     const result = await forgotPassword(email.trim());
     if (result.success) {
       Alert.alert(
@@ -52,26 +59,41 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
+    // ✅ KeyboardAvoidingView — outermost wrapper
+    // 'padding' on iOS pushes content up
+    // 'height' on Android shrinks the view so inputs stay visible
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      // ✅ On Android with translucent status bar,
+      // offset by insets.top so keyboard aligns correctly
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          {
+            // ✅ Top padding respects status bar
+            paddingTop: insets.top + SIZES.lg,
+            // ✅ Bottom padding clears Android nav bar
+            // and gives breathing room above keyboard
+            paddingBottom: insets.bottom + SIZES.xl,
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={styles.header}>
           <Text style={styles.logo}>🍳</Text>
           <Text style={styles.title}>What's Cooking</Text>
-          <Text style={styles.subtitle}>
-            Sign in to your account
-          </Text>
+          <Text style={styles.subtitle}>Sign in to your account</Text>
         </View>
 
-        {/* Form */}
+        {/* ── Form ── */}
         <View style={styles.form}>
-          {/* Email */}
+
+          {/* Email input */}
           <View style={styles.inputContainer}>
             <Ionicons
               name="mail-outline"
@@ -88,10 +110,12 @@ export default function LoginScreen({ navigation }) {
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
+              autoCorrect={false}
+              returnKeyType="next"
             />
           </View>
 
-          {/* Password */}
+          {/* Password input */}
           <View style={styles.inputContainer}>
             <Ionicons
               name="lock-closed-outline"
@@ -107,9 +131,14 @@ export default function LoginScreen({ navigation }) {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoComplete="password"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
             />
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons
                 name={showPassword ? 'eye-off' : 'eye'}
@@ -119,19 +148,24 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Forgot Password */}
+          {/* Forgot password */}
           <TouchableOpacity
             style={styles.forgotBtn}
             onPress={handleForgotPassword}
+            activeOpacity={0.7}
           >
             <Text style={styles.forgotText}>Forgot Password?</Text>
           </TouchableOpacity>
 
-          {/* Login Button */}
+          {/* Sign in button */}
           <TouchableOpacity
-            style={styles.loginBtn}
+            style={[
+              styles.loginBtn,
+              loading && styles.loginBtnDisabled,
+            ]}
             onPress={handleLogin}
             disabled={loading}
+            activeOpacity={0.8}
           >
             {loading ? (
               <ActivityIndicator color={COLORS.textWhite} />
@@ -140,19 +174,19 @@ export default function LoginScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Register Link */}
+          {/* Register link */}
           <View style={styles.registerRow}>
             <Text style={styles.registerLabel}>
               Don't have an account?
             </Text>
             <TouchableOpacity
               onPress={() => navigation.navigate('Register')}
+              activeOpacity={0.7}
             >
-              <Text style={styles.registerLink}>
-                {' '}Sign Up
-              </Text>
+              <Text style={styles.registerLink}> Sign Up</Text>
             </TouchableOpacity>
           </View>
+
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -160,13 +194,28 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  content: { flexGrow: 1, padding: SIZES.lg },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+
+  // ✅ flexGrow: 1 ensures content centres vertically
+  // when there is empty space (short content on tall screens)
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: SIZES.lg,
+    justifyContent: 'center',
+    // paddingTop and paddingBottom set dynamically via insets
+  },
+
+  // ── Header ─────────────────────────────
   header: {
     alignItems: 'center',
-    paddingVertical: SIZES.xxl,
+    marginBottom: SIZES.xxl,
   },
-  logo: { fontSize: 60 },
+  logo: {
+    fontSize: 60,
+  },
   title: {
     fontSize: FONTS.title,
     fontWeight: 'bold',
@@ -178,7 +227,13 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     marginTop: SIZES.xs,
   },
-  form: { gap: SIZES.md },
+
+  // ── Form ───────────────────────────────
+  form: {
+    gap: SIZES.md,
+  },
+
+  // ── Inputs ─────────────────────────────
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -188,36 +243,54 @@ const styles = StyleSheet.create({
     paddingVertical: SIZES.md,
     ...SHADOW,
   },
-  inputIcon: { marginRight: SIZES.sm },
+  inputIcon: {
+    marginRight: SIZES.sm,
+  },
   input: {
     flex: 1,
     fontSize: FONTS.lg,
     color: COLORS.text,
   },
+
+  // ── Forgot password ────────────────────
   forgotBtn: {
     alignSelf: 'flex-end',
+    paddingVertical: SIZES.xs,   // ✅ Larger tap area
+    paddingHorizontal: SIZES.xs,
   },
   forgotText: {
     color: COLORS.primary,
     fontSize: FONTS.md,
     fontWeight: '600',
   },
+
+  // ── Sign in button ─────────────────────
   loginBtn: {
     backgroundColor: COLORS.primary,
     padding: SIZES.md,
     borderRadius: RADIUS.lg,
     alignItems: 'center',
     marginTop: SIZES.sm,
+    ...SHADOW,
+  },
+  loginBtnDisabled: {
+    opacity: 0.7,
   },
   loginText: {
     color: COLORS.textWhite,
     fontSize: FONTS.xl,
     fontWeight: 'bold',
   },
+
+  // ── Register row ───────────────────────
   registerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     marginTop: SIZES.md,
+    // ✅ Extra bottom padding so this last element
+    // is never hidden behind the Android nav bar
+    paddingBottom: SIZES.md,
   },
   registerLabel: {
     color: COLORS.textLight,

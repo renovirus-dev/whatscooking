@@ -12,8 +12,11 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection,
   query,
@@ -46,12 +49,11 @@ const CUISINES = [
 const PRICE_RANGES = ['All', '$', '$$', '$$$', '$$$$'];
 
 const SORT_OPTIONS = [
-  { label: 'Top Rated',    value: 'rating'    },
-  { label: 'Most Reviews', value: 'reviews'   },
-  { label: 'Nearest',      value: 'distance'  }, // ✅ NEW
+  { label: 'Top Rated',    value: 'rating'   },
+  { label: 'Most Reviews', value: 'reviews'  },
+  { label: 'Nearest',      value: 'distance' },
 ];
 
-// ✅ NEW: Radius options for nearby filter
 const RADIUS_OPTIONS = [
   { label: '2km',  value: 2  },
   { label: '5km',  value: 5  },
@@ -59,7 +61,7 @@ const RADIUS_OPTIONS = [
   { label: '20km', value: 20 },
 ];
 
-// ─── Distance Calculator ──────────────────────
+// ─── Helpers ─────────────────────────────────
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) return null;
   const R    = 6371;
@@ -75,14 +77,12 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return Math.round(R * c * 10) / 10;
 };
 
-// ✅ Format distance for display
 const formatDistance = (km) => {
   if (km === null || km === undefined) return null;
   if (km < 1) return `${Math.round(km * 1000)}m`;
   return `${km.toFixed(1)}km`;
 };
 
-// ─── Geocode address using expo-location ──────
 const geocodeAddress = async (address) => {
   try {
     if (!address?.trim()) return null;
@@ -101,40 +101,36 @@ const geocodeAddress = async (address) => {
 
 // ─── Component ───────────────────────────────
 export default function ExploreScreen({ navigation, route }) {
-  const [restaurants, setRestaurants]           = useState([]);
-  const [filtered, setFiltered]                 = useState([]);
-  const [loading, setLoading]                   = useState(true);
-  const [error, setError]                       = useState(null);
-  const [search, setSearch]                     = useState('');
-  const [selectedCuisine, setSelectedCuisine]   = useState(
+  const insets = useSafeAreaInsets();
+
+  const [restaurants, setRestaurants]                     = useState([]);
+  const [filtered, setFiltered]                           = useState([]);
+  const [loading, setLoading]                             = useState(true);
+  const [error, setError]                                 = useState(null);
+  const [search, setSearch]                               = useState('');
+  const [selectedCuisine, setSelectedCuisine]             = useState(
     route.params?.cuisine || 'all'
   );
-  const [selectedPrice, setSelectedPrice]       = useState('All');
-  const [selectedSort, setSelectedSort]         = useState('rating');
-  const [showOpenOnly, setShowOpenOnly]         = useState(false);
-
-  // ✅ NEW: Location state
-  const [nearbyActive, setNearbyActive]         = useState(false);
-  const [userCoords, setUserCoords]             = useState(null);
-  const [locationLoading, setLocationLoading]   = useState(false);
-  const [selectedRadius, setSelectedRadius]     = useState(10);
+  const [selectedPrice, setSelectedPrice]                 = useState('All');
+  const [selectedSort, setSelectedSort]                   = useState('rating');
+  const [showOpenOnly, setShowOpenOnly]                   = useState(false);
+  const [nearbyActive, setNearbyActive]                   = useState(false);
+  const [userCoords, setUserCoords]                       = useState(null);
+  const [locationLoading, setLocationLoading]             = useState(false);
+  const [selectedRadius, setSelectedRadius]               = useState(10);
   const [restaurantsWithCoords, setRestaurantsWithCoords] = useState([]);
 
-  // ─── Firestore listener ──────────────────
+  // ── Firestore listener ────────────────────
   useEffect(() => {
     const q = query(
       collection(db, 'restaurants'),
       where('isActive', '==', true),
       limit(100)
     );
-
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        const data = snap.docs.map(d => ({
-          id: d.id,
-          ...d.data(),
-        }));
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setRestaurants(data);
         setLoading(false);
         setError(null);
@@ -145,60 +141,42 @@ export default function ExploreScreen({ navigation, route }) {
         setLoading(false);
       }
     );
-
     return unsubscribe;
   }, []);
 
-  // ✅ NEW: Geocode all restaurants when list loads
-  // Skips restaurants that already have coords stored
+  // ── Geocode all restaurants ───────────────
   useEffect(() => {
     if (restaurants.length === 0) return;
-
     const geocodeAll = async () => {
       const withCoords = await Promise.all(
         restaurants.map(async (r) => {
-          // ✅ Use stored coords if available (faster)
-          if (r.coords?.latitude && r.coords?.longitude) {
-            return { ...r };
-          }
-
-          // ✅ Geocode from address fields
+          if (r.coords?.latitude && r.coords?.longitude) return { ...r };
           const address = [
             r.address,
-            r.location?.city || r.city,
+            r.location?.city    || r.city,
             r.location?.country || r.country,
-          ]
-            .filter(Boolean)
-            .join(', ');
-
+          ].filter(Boolean).join(', ');
           const coords = await geocodeAddress(address);
           return { ...r, coords: coords || null };
         })
       );
       setRestaurantsWithCoords(withCoords);
     };
-
     geocodeAll();
   }, [restaurants]);
 
-  // ✅ NEW: Request location and activate nearby filter
+  // ── Near Me toggle ────────────────────────
   const handleNearbyToggle = async () => {
-    // If already active — turn it off
     if (nearbyActive) {
       setNearbyActive(false);
       setUserCoords(null);
-      // Reset sort if it was set to distance
       if (selectedSort === 'distance') setSelectedSort('rating');
       return;
     }
-
     setLocationLoading(true);
-
     try {
-      // Request permission
       const { status } =
         await Location.requestForegroundPermissionsAsync();
-
       if (status !== 'granted') {
         Alert.alert(
           '📍 Location Required',
@@ -208,39 +186,28 @@ export default function ExploreScreen({ navigation, route }) {
         setLocationLoading(false);
         return;
       }
-
-      // Get current position
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-
       setUserCoords({
         latitude:  location.coords.latitude,
         longitude: location.coords.longitude,
       });
-
       setNearbyActive(true);
-      setSelectedSort('distance'); // ✅ Auto sort by nearest
-
+      setSelectedSort('distance');
     } catch (err) {
-      Alert.alert(
-        'Location Error',
-        'Could not get your location. Please try again.',
-      );
+      Alert.alert('Location Error', 'Could not get your location. Please try again.');
       console.error('Location error:', err.message);
     }
-
     setLocationLoading(false);
   };
 
-  // ─── Apply filters ────────────────────────
+  // ── Apply filters ─────────────────────────
   const applyFilters = useCallback(() => {
-    // ✅ Use geocoded list when nearby is active
     let result = nearbyActive && restaurantsWithCoords.length > 0
       ? [...restaurantsWithCoords]
       : [...restaurants];
 
-    // ✅ Add distance to each restaurant
     if (userCoords) {
       result = result.map(r => ({
         ...r,
@@ -253,53 +220,40 @@ export default function ExploreScreen({ navigation, route }) {
       }));
     }
 
-    // ✅ Filter by radius when nearby is active
     if (nearbyActive && userCoords) {
       result = result.filter(
         r => r.distance !== null && r.distance <= selectedRadius
       );
     }
 
-    // Search filter
     if (search.trim()) {
       const lower = search.toLowerCase();
       result = result.filter(r =>
         r.name?.toLowerCase().includes(lower) ||
         r.location?.city?.toLowerCase().includes(lower) ||
-        r.cuisineTypes?.some(c =>
-          c.toLowerCase().includes(lower)
-        )
+        r.cuisineTypes?.some(c => c.toLowerCase().includes(lower))
       );
     }
 
-    // Cuisine filter
     if (selectedCuisine !== 'all') {
       result = result.filter(r =>
         r.cuisineTypes?.includes(selectedCuisine)
       );
     }
 
-    // Price filter
     if (selectedPrice !== 'All') {
       result = result.filter(r => r.priceRange === selectedPrice);
     }
 
-    // Open now filter
     if (showOpenOnly) {
       result = result.filter(r => r.isCurrentlyOpen);
     }
 
-    // Sort
     if (selectedSort === 'rating') {
-      result.sort((a, b) =>
-        (b.averageRating || 0) - (a.averageRating || 0)
-      );
+      result.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0));
     } else if (selectedSort === 'reviews') {
-      result.sort((a, b) =>
-        (b.totalReviews || 0) - (a.totalReviews || 0)
-      );
+      result.sort((a, b) => (b.totalReviews || 0) - (a.totalReviews || 0));
     } else if (selectedSort === 'distance') {
-      // ✅ Sort by nearest first - nulls go to end
       result.sort((a, b) => {
         if (a.distance === null) return 1;
         if (b.distance === null) return -1;
@@ -309,23 +263,14 @@ export default function ExploreScreen({ navigation, route }) {
 
     setFiltered(result);
   }, [
-    restaurants,
-    restaurantsWithCoords,
-    search,
-    selectedCuisine,
-    selectedPrice,
-    selectedSort,
-    showOpenOnly,
-    nearbyActive,
-    userCoords,
-    selectedRadius,
+    restaurants, restaurantsWithCoords,
+    search, selectedCuisine, selectedPrice,
+    selectedSort, showOpenOnly,
+    nearbyActive, userCoords, selectedRadius,
   ]);
 
-  useEffect(() => {
-    applyFilters();
-  }, [applyFilters]);
+  useEffect(() => { applyFilters(); }, [applyFilters]);
 
-  // ─── Reset all filters ───────────────────
   const handleReset = () => {
     setSearch('');
     setSelectedCuisine('all');
@@ -337,20 +282,32 @@ export default function ExploreScreen({ navigation, route }) {
     setSelectedRadius(10);
   };
 
-  // ─── Loading ─────────────────────────────
+  // ── Loading ───────────────────────────────
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Finding restaurants...</Text>
       </View>
     );
   }
 
-  // ─── Error ───────────────────────────────
+  // ── Error ─────────────────────────────────
   if (error) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
         <Text style={{ fontSize: 48 }}>⚠️</Text>
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorText}>{error}</Text>
@@ -358,11 +315,22 @@ export default function ExploreScreen({ navigation, route }) {
     );
   }
 
-  // ─── Render ──────────────────────────────
+  // ── Main render ───────────────────────────
   return (
-    <View style={styles.container}>
+    // ✅ KeyboardAvoidingView so search bar is not
+    // hidden when keyboard opens on Android
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={
+        Platform.OS === 'ios'
+          ? 0
+          // ✅ Tab bar (~56) + translucent status bar
+          : insets.top + 56
+      }
+    >
 
-      {/* ── Search Bar ─────────────────────── */}
+      {/* ── Search bar ──────────────────────── */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={20} color={COLORS.textMuted} />
         <TextInput
@@ -371,18 +339,16 @@ export default function ExploreScreen({ navigation, route }) {
           placeholderTextColor={COLORS.textMuted}
           value={search}
           onChangeText={setSearch}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons
-              name="close-circle"
-              size={20}
-              color={COLORS.textMuted}
-            />
+            <Ionicons name="close-circle" size={20} color={COLORS.textMuted} />
           </TouchableOpacity>
         )}
 
-        {/* ✅ NEW: Near Me button inside search bar */}
+        {/* Near Me button */}
         <TouchableOpacity
           style={[
             styles.nearMeBtn,
@@ -415,14 +381,10 @@ export default function ExploreScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {/* ✅ NEW: Radius selector - only shows when nearby is active */}
+      {/* ── Radius selector (nearby only) ───── */}
       {nearbyActive && (
         <View style={styles.radiusRow}>
-          <Ionicons
-            name="radio-button-on"
-            size={14}
-            color={COLORS.primary}
-          />
+          <Ionicons name="radio-button-on" size={14} color={COLORS.primary} />
           <Text style={styles.radiusLabel}>Radius:</Text>
           {RADIUS_OPTIONS.map(opt => (
             <TouchableOpacity
@@ -436,8 +398,7 @@ export default function ExploreScreen({ navigation, route }) {
             >
               <Text style={[
                 styles.radiusChipText,
-                selectedRadius === opt.value &&
-                  styles.radiusChipTextActive,
+                selectedRadius === opt.value && styles.radiusChipTextActive,
               ]}>
                 {opt.label}
               </Text>
@@ -446,12 +407,13 @@ export default function ExploreScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* ── Cuisine Filter ─────────────────── */}
+      {/* ── Cuisine filter ───────────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.cuisineScroll}
         contentContainerStyle={styles.cuisineContent}
+        nestedScrollEnabled
       >
         {CUISINES.map(c => (
           <TouchableOpacity
@@ -474,12 +436,13 @@ export default function ExploreScreen({ navigation, route }) {
         ))}
       </ScrollView>
 
-      {/* ── Price + Open Now Filters ────────── */}
+      {/* ── Price + Open Now filters ─────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterScroll}
         contentContainerStyle={styles.filterContent}
+        nestedScrollEnabled
       >
         {PRICE_RANGES.map(p => (
           <TouchableOpacity
@@ -517,7 +480,7 @@ export default function ExploreScreen({ navigation, route }) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* ── Sort Row ───────────────────────── */}
+      {/* ── Sort row ────────────────────────── */}
       <View style={styles.sortRow}>
         <Text style={styles.sortLabel}>Sort:</Text>
         {SORT_OPTIONS.map(s => (
@@ -539,7 +502,6 @@ export default function ExploreScreen({ navigation, route }) {
           </TouchableOpacity>
         ))}
 
-        {/* Reset button */}
         {(selectedCuisine !== 'all' ||
           selectedPrice !== 'All' ||
           showOpenOnly ||
@@ -556,7 +518,7 @@ export default function ExploreScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* ✅ NEW: Nearby active banner */}
+      {/* ── Nearby active banner ─────────────── */}
       {nearbyActive && userCoords && (
         <View style={styles.nearbyBanner}>
           <Ionicons name="navigate" size={14} color={COLORS.primary} />
@@ -566,24 +528,28 @@ export default function ExploreScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* ── Results count ──────────────────── */}
+      {/* ── Results count ────────────────────── */}
       <Text style={styles.resultsText}>
         {filtered.length} restaurant
         {filtered.length !== 1 ? 's' : ''} found
       </Text>
 
-      {/* ── List ───────────────────────────── */}
+      {/* ── Restaurant list ──────────────────── */}
       <FlatList
         data={filtered}
         keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.listContent,
+          // ✅ Last card clears Android nav bar
+          { paddingBottom: insets.bottom + SIZES.xl },
+        ]}
         renderItem={({ item }) => (
           <RestaurantCard
             restaurant={item}
             horizontal
             style={styles.card}
-            // ✅ Pass distance so card can show it
             distance={nearbyActive ? formatDistance(item.distance) : null}
             onPress={() =>
               navigation.navigate('RestaurantDetail', {
@@ -618,7 +584,8 @@ export default function ExploreScreen({ navigation, route }) {
           </View>
         }
       />
-    </View>
+
+    </KeyboardAvoidingView>
   );
 }
 
@@ -653,7 +620,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Search bar
+  // ── Search bar ───────────────────────────
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -672,7 +639,7 @@ const styles = StyleSheet.create({
     paddingVertical: SIZES.sm,
   },
 
-  // ✅ NEW: Near Me button
+  // ── Near Me ──────────────────────────────
   nearMeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -690,14 +657,12 @@ const styles = StyleSheet.create({
   },
   nearMeText: {
     fontSize: FONTS.xs,
-    color:      COLORS.primary,
+    color:    COLORS.primary,
     fontWeight: '700',
   },
-  nearMeTextActive: {
-    color: COLORS.textWhite,
-  },
+  nearMeTextActive: { color: COLORS.textWhite },
 
-  // ✅ NEW: Radius row
+  // ── Radius ───────────────────────────────
   radiusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -709,7 +674,7 @@ const styles = StyleSheet.create({
   },
   radiusLabel: {
     fontSize: FONTS.xs,
-    color:      COLORS.primary,
+    color:    COLORS.primary,
     fontWeight: '600',
     marginRight: 2,
   },
@@ -727,14 +692,12 @@ const styles = StyleSheet.create({
   },
   radiusChipText: {
     fontSize: FONTS.xs,
-    color:      COLORS.text,
+    color:    COLORS.text,
     fontWeight: '600',
   },
-  radiusChipTextActive: {
-    color: COLORS.textWhite,
-  },
+  radiusChipTextActive: { color: COLORS.textWhite },
 
-  // ✅ NEW: Nearby active banner
+  // ── Nearby banner ────────────────────────
   nearbyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -745,11 +708,11 @@ const styles = StyleSheet.create({
   },
   nearbyBannerText: {
     fontSize: FONTS.xs,
-    color:      COLORS.primary,
+    color:    COLORS.primary,
     fontWeight: '500',
   },
 
-  // Cuisine chips
+  // ── Cuisine chips ────────────────────────
   cuisineScroll:  { maxHeight: 60 },
   cuisineContent: {
     paddingHorizontal: SIZES.md,
@@ -757,11 +720,11 @@ const styles = StyleSheet.create({
     paddingBottom:     SIZES.sm,
   },
   cuisineChip: {
-    flexDirection:  'row',
-    alignItems:     'center',
+    flexDirection: 'row',
+    alignItems:    'center',
     paddingHorizontal: SIZES.md,
     paddingVertical:   SIZES.sm,
-    borderRadius:   RADIUS.round,
+    borderRadius:  RADIUS.round,
     backgroundColor: COLORS.surface,
     gap: 6,
     ...SHADOW,
@@ -775,7 +738,7 @@ const styles = StyleSheet.create({
   },
   cuisineLabelActive: { color: '#FFFFFF' },
 
-  // Filter chips
+  // ── Filter chips ─────────────────────────
   filterScroll:  { maxHeight: 44 },
   filterContent: {
     paddingHorizontal: SIZES.md,
@@ -805,14 +768,14 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: { color: '#FFFFFF' },
 
-  // Sort row
+  // ── Sort row ─────────────────────────────
   sortRow: {
-    flexDirection:  'row',
-    alignItems:     'center',
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
     paddingVertical:   SIZES.sm,
-    gap:            SIZES.sm,
-    flexWrap:       'wrap',
+    gap:               SIZES.sm,
+    flexWrap:          'wrap',
   },
   sortLabel: {
     fontSize:   FONTS.sm,
@@ -856,28 +819,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Results
+  // ── Results count ────────────────────────
   resultsText: {
-    fontSize: FONTS.sm,
-    color:    COLORS.textMuted,
+    fontSize:          FONTS.sm,
+    color:             COLORS.textMuted,
     paddingHorizontal: SIZES.md,
     marginBottom:      SIZES.xs,
   },
 
-  // List
+  // ── List ─────────────────────────────────
+  // ✅ paddingBottom set dynamically via insets
   listContent: {
-    padding:       SIZES.md,
-    gap:           SIZES.md,
-    paddingBottom: 40,
-    flexGrow:      1,
+    padding:  SIZES.md,
+    gap:      SIZES.md,
+    flexGrow: 1,
   },
   card: { marginBottom: 0 },
 
-  // Empty state
+  // ── Empty state ──────────────────────────
   emptyState: {
-    alignItems:    'center',
+    alignItems:      'center',
     paddingVertical: SIZES.xxl * 2,
-    gap:           SIZES.sm,
+    gap:             SIZES.sm,
   },
   emptyEmoji: { fontSize: 60 },
   emptyTitle: {
@@ -892,11 +855,11 @@ const styles = StyleSheet.create({
     color:    COLORS.textMuted,
   },
   resetBtn: {
-    backgroundColor: COLORS.primary,
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.lg,
     paddingVertical:   SIZES.sm,
-    borderRadius:    RADIUS.lg,
-    marginTop:       SIZES.lg,
+    borderRadius:      RADIUS.lg,
+    marginTop:         SIZES.lg,
   },
   resetBtnText: {
     color:      '#FFFFFF',

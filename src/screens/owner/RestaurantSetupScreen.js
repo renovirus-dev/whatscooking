@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/screens/owner/RestaurantSetupScreen.js
 // ============================================
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,35 +11,35 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-  Image
+  Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';          // ✅ NEW
-import { useAuth } from '../../hooks/useAuth';
-import { useRestaurants } from '../../hooks/useRestaurants';
+import * as Location from 'expo-location';
+import { useAuth }         from '../../hooks/useAuth';
+import { useRestaurants }  from '../../hooks/useRestaurants';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 const CUISINE_OPTIONS = [
   'caribbean', 'jamaican', 'american', 'chinese',
   'indian', 'italian', 'mexican', 'japanese',
   'thai', 'mediterranean', 'seafood', 'bbq',
-  'fast-food', 'vegetarian', 'bakery', 'other'
+  'fast-food', 'vegetarian', 'bakery', 'other',
 ];
 
 const PRICE_OPTIONS = ['$', '$$', '$$$', '$$$$'];
 
-// ✅ NEW: Geocode address to coordinates
+// ── Geocode helper ────────────────────────────
 const geocodeAddress = async (address, city, state, country) => {
   try {
     const fullAddress = [address, city, state, country]
       .filter(Boolean)
       .join(', ');
-
     if (!fullAddress.trim()) return null;
-
     const results = await Location.geocodeAsync(fullAddress);
-
     if (results && results.length > 0) {
       return {
         latitude:  results[0].latitude,
@@ -53,30 +53,39 @@ const geocodeAddress = async (address, city, state, country) => {
   }
 };
 
-export default function RestaurantSetupScreen({
-  navigation,
-  route
-}) {
-  const { user }                          = useAuth();
+export default function RestaurantSetupScreen({ navigation, route }) {
+  const insets = useSafeAreaInsets();
+  const { user }                               = useAuth();
   const { createRestaurant, updateRestaurant } = useRestaurants();
-  const existingRestaurant                = route.params?.restaurant;
+  const existingRestaurant                     = route.params?.restaurant;
+
+  // ── Input refs for keyboard focus chain ──
+  const descriptionRef = useRef(null);
+  const phoneRef       = useRef(null);
+  const whatsappRef    = useRef(null);
+  const emailRef       = useRef(null);
+  const websiteRef     = useRef(null);
+  const addressRef     = useRef(null);
+  const cityRef        = useRef(null);
+  const stateRef       = useRef(null);
+  const countryRef     = useRef(null);
 
   const [form, setForm] = useState({
-    name:         existingRestaurant?.name                    || '',
-    description:  existingRestaurant?.description             || '',
-    phone:        existingRestaurant?.contact?.phone          || '',
-    email:        existingRestaurant?.contact?.email          || '',
-    whatsapp:     existingRestaurant?.contact?.whatsapp       || '',
-    website:      existingRestaurant?.contact?.website        || '',
-    address:      existingRestaurant?.location?.address       || '',
-    city:         existingRestaurant?.location?.city          || '',
-    state:        existingRestaurant?.location?.state         || '',
-    country:      existingRestaurant?.location?.country       || '',
-    cuisineTypes: existingRestaurant?.cuisineTypes            || [],
-    priceRange:   existingRestaurant?.priceRange              || '$$',
-    hasDelivery:  existingRestaurant?.hasDelivery             || false,
-    hasTakeout:   existingRestaurant?.hasTakeout              || true,
-    hasDineIn:    existingRestaurant?.hasDineIn               || true,
+    name:         existingRestaurant?.name               || '',
+    description:  existingRestaurant?.description        || '',
+    phone:        existingRestaurant?.contact?.phone     || '',
+    email:        existingRestaurant?.contact?.email     || '',
+    whatsapp:     existingRestaurant?.contact?.whatsapp  || '',
+    website:      existingRestaurant?.contact?.website   || '',
+    address:      existingRestaurant?.location?.address  || '',
+    city:         existingRestaurant?.location?.city     || '',
+    state:        existingRestaurant?.location?.state    || '',
+    country:      existingRestaurant?.location?.country  || '',
+    cuisineTypes: existingRestaurant?.cuisineTypes       || [],
+    priceRange:   existingRestaurant?.priceRange         || '$$',
+    hasDelivery:  existingRestaurant?.hasDelivery        || false,
+    hasTakeout:   existingRestaurant?.hasTakeout         || true,
+    hasDineIn:    existingRestaurant?.hasDineIn          || true,
   });
 
   const [logoUri, setLogoUri]           = useState(null);
@@ -88,17 +97,13 @@ export default function RestaurantSetupScreen({
     existingRestaurant?.coverUrl || null
   );
   const [loading, setLoading]           = useState(false);
-
-  // ✅ NEW: Track geocoding status
   const [geocoding, setGeocoding]       = useState(false);
   const [coordsFound, setCoordsFound]   = useState(
-    // If existing restaurant already has coords stored
     !!(existingRestaurant?.coords?.latitude)
   );
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
-    // ✅ Reset coords status when address fields change
     if (['address', 'city', 'state', 'country'].includes(field)) {
       setCoordsFound(false);
     }
@@ -107,39 +112,28 @@ export default function RestaurantSetupScreen({
   const toggleCuisine = (cuisine) => {
     setForm(prev => {
       const current = prev.cuisineTypes;
-      if (current.includes(cuisine)) {
-        return {
-          ...prev,
-          cuisineTypes: current.filter(c => c !== cuisine),
-        };
-      }
       return {
         ...prev,
-        cuisineTypes: [...current, cuisine],
+        cuisineTypes: current.includes(cuisine)
+          ? current.filter(c => c !== cuisine)
+          : [...current, cuisine],
       };
     });
   };
 
-  // ✅ Updated: uses new mediaTypes format
   const pickImage = async (type) => {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
-
     if (status !== 'granted') {
-      Alert.alert(
-        'Permission needed',
-        'Please allow photo library access'
-      );
+      Alert.alert('Permission needed', 'Please allow photo library access');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],                        // ✅ Updated
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: type === 'logo' ? [1, 1] : [16, 9],
       quality: 0.8,
     });
-
     if (!result.canceled) {
       const uri = result.assets[0].uri;
       if (type === 'logo') {
@@ -152,7 +146,6 @@ export default function RestaurantSetupScreen({
     }
   };
 
-  // ✅ NEW: Manual geocode button handler
   const handleVerifyAddress = async () => {
     if (!form.address.trim() || !form.city.trim()) {
       Alert.alert(
@@ -161,16 +154,11 @@ export default function RestaurantSetupScreen({
       );
       return;
     }
-
     setGeocoding(true);
     const coords = await geocodeAddress(
-      form.address,
-      form.city,
-      form.state,
-      form.country,
+      form.address, form.city, form.state, form.country,
     );
     setGeocoding(false);
-
     if (coords) {
       setCoordsFound(true);
       Alert.alert(
@@ -203,19 +191,12 @@ export default function RestaurantSetupScreen({
 
     setLoading(true);
 
-    // ✅ NEW: Auto geocode address when saving
     let coords = null;
-
-    // Use existing coords if address not changed
     if (existingRestaurant?.coords?.latitude && coordsFound) {
       coords = existingRestaurant.coords;
     } else {
-      // Geocode the address
       coords = await geocodeAddress(
-        form.address,
-        form.city,
-        form.state,
-        form.country,
+        form.address, form.city, form.state, form.country,
       );
     }
 
@@ -234,14 +215,9 @@ export default function RestaurantSetupScreen({
         state:   form.state.trim(),
         country: form.country.trim(),
       },
-      // ✅ NEW: Store coords for fast Near Me searches
       coords: coords
-        ? {
-            latitude:  coords.latitude,
-            longitude: coords.longitude,
-          }
+        ? { latitude: coords.latitude, longitude: coords.longitude }
         : existingRestaurant?.coords || null,
-
       cuisineTypes: form.cuisineTypes,
       priceRange:   form.priceRange,
       hasDelivery:  form.hasDelivery,
@@ -253,10 +229,7 @@ export default function RestaurantSetupScreen({
     let result;
     if (existingRestaurant) {
       result = await updateRestaurant(
-        existingRestaurant.id,
-        data,
-        logoUri,
-        coverUri,
+        existingRestaurant.id, data, logoUri, coverUri,
       );
     } else {
       result = await createRestaurant(data, logoUri, coverUri);
@@ -278,394 +251,400 @@ export default function RestaurantSetupScreen({
   };
 
   return (
-    <ScrollView
+    // ✅ KeyboardAvoidingView outermost
+    <KeyboardAvoidingView
       style={styles.container}
-      showsVerticalScrollIndicator={false}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={
+        Platform.OS === 'ios'
+          ? 0
+          // ✅ Stack header (~56) + translucent status bar
+          : insets.top + 56
+      }
     >
-      {/* ── Cover Photo ──────────────────────── */}
-      <TouchableOpacity
-        style={styles.coverPicker}
-        onPress={() => pickImage('cover')}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          // ✅ Bottom clears Android nav bar
+          paddingBottom: insets.bottom + SIZES.xl,
+        }}
       >
-        {coverPreview ? (
-          <Image
-            source={{ uri: coverPreview }}
-            style={styles.coverImage}
-          />
-        ) : (
-          <View style={styles.coverPlaceholder}>
-            <Ionicons
-              name="image-outline"
-              size={40}
-              color={COLORS.textMuted}
-            />
-            <Text style={styles.pickerText}>
-              Tap to add cover photo
-            </Text>
-          </View>
-        )}
-        <View style={styles.coverEditBadge}>
-          <Ionicons name="camera" size={14} color="#FFFFFF" />
-        </View>
-      </TouchableOpacity>
 
-      {/* ── Logo ─────────────────────────────── */}
-      <TouchableOpacity
-        style={styles.logoPicker}
-        onPress={() => pickImage('logo')}
-      >
-        {logoPreview ? (
-          <Image
-            source={{ uri: logoPreview }}
-            style={styles.logoImage}
-          />
-        ) : (
-          <View style={styles.logoPlaceholder}>
-            <Ionicons
-              name="camera"
-              size={22}
-              color={COLORS.textMuted}
-            />
-          </View>
-        )}
-        <View style={styles.logoEditBadge}>
-          <Ionicons name="pencil" size={10} color="#FFFFFF" />
-        </View>
-      </TouchableOpacity>
-
-      <View style={styles.form}>
-
-        {/* ── Basic Info ──────────────────────── */}
-        <Text style={styles.sectionTitle}>📋 Basic Information</Text>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Restaurant Name *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Mama's Kitchen"
-            placeholderTextColor={COLORS.textMuted}
-            value={form.name}
-            onChangeText={v => updateForm('name', v)}
-          />
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.textarea]}
-            placeholder="Tell customers about your restaurant..."
-            placeholderTextColor={COLORS.textMuted}
-            value={form.description}
-            onChangeText={v => updateForm('description', v)}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-        {/* ── Contact ─────────────────────────── */}
-        <Text style={styles.sectionTitle}>📞 Contact Info</Text>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Phone Number *</Text>
-          <View style={styles.inputRow}>
-            <Ionicons
-              name="call-outline"
-              size={18}
-              color={COLORS.textMuted}
-            />
-            <TextInput
-              style={styles.inputFlex}
-              placeholder="+1 (555) 000-0000"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.phone}
-              onChangeText={v => updateForm('phone', v)}
-              keyboardType="phone-pad"
-            />
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>WhatsApp Number</Text>
-          <View style={styles.inputRow}>
-            <Ionicons
-              name="logo-whatsapp"
-              size={18}
-              color={COLORS.success}
-            />
-            <TextInput
-              style={styles.inputFlex}
-              placeholder="+1 (555) 000-0000"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.whatsapp}
-              onChangeText={v => updateForm('whatsapp', v)}
-              keyboardType="phone-pad"
-            />
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Email Address</Text>
-          <View style={styles.inputRow}>
-            <Ionicons
-              name="mail-outline"
-              size={18}
-              color={COLORS.textMuted}
-            />
-            <TextInput
-              style={styles.inputFlex}
-              placeholder="restaurant@email.com"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.email}
-              onChangeText={v => updateForm('email', v)}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Website</Text>
-          <View style={styles.inputRow}>
-            <Ionicons
-              name="globe-outline"
-              size={18}
-              color={COLORS.textMuted}
-            />
-            <TextInput
-              style={styles.inputFlex}
-              placeholder="https://yourwebsite.com"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.website}
-              onChangeText={v => updateForm('website', v)}
-              autoCapitalize="none"
-            />
-          </View>
-        </View>
-
-        {/* ── Location ────────────────────────── */}
-        <Text style={styles.sectionTitle}>📍 Location</Text>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Street Address *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="123 Main Street"
-            placeholderTextColor={COLORS.textMuted}
-            value={form.address}
-            onChangeText={v => updateForm('address', v)}
-          />
-        </View>
-
-        <View style={styles.twoCol}>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>City *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Kingston"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.city}
-              onChangeText={v => updateForm('city', v)}
-            />
-          </View>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={styles.label}>State/Parish</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="St. Andrew"
-              placeholderTextColor={COLORS.textMuted}
-              value={form.state}
-              onChangeText={v => updateForm('state', v)}
-            />
-          </View>
-        </View>
-
-        <View style={styles.field}>
-          <Text style={styles.label}>Country</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Jamaica"
-            placeholderTextColor={COLORS.textMuted}
-            value={form.country}
-            onChangeText={v => updateForm('country', v)}
-          />
-        </View>
-
-        {/* ✅ NEW: Verify address button + status */}
+        {/* ── Cover photo ──────────────────────── */}
         <TouchableOpacity
-          style={[
-            styles.verifyBtn,
-            coordsFound && styles.verifyBtnSuccess,
-          ]}
-          onPress={handleVerifyAddress}
-          disabled={geocoding}
-          activeOpacity={0.8}
+          style={styles.coverPicker}
+          onPress={() => pickImage('cover')}
+          activeOpacity={0.85}
         >
-          {geocoding ? (
-            <>
-              <ActivityIndicator
-                size="small"
-                color={COLORS.textWhite}
-              />
-              <Text style={styles.verifyBtnText}>
-                Finding location...
-              </Text>
-            </>
-          ) : coordsFound ? (
-            <>
-              <Ionicons
-                name="checkmark-circle"
-                size={18}
-                color={COLORS.textWhite}
-              />
-              <Text style={styles.verifyBtnText}>
-                ✅ Address Verified
-              </Text>
-            </>
+          {coverPreview ? (
+            <Image
+              source={{ uri: coverPreview }}
+              style={styles.coverImage}
+            />
           ) : (
-            <>
+            <View style={styles.coverPlaceholder}>
               <Ionicons
-                name="navigate"
-                size={18}
-                color={COLORS.textWhite}
+                name="image-outline"
+                size={40}
+                color={COLORS.textMuted}
               />
-              <Text style={styles.verifyBtnText}>
-                Verify Address on Map
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        {/* ✅ NEW: Hint about Near Me */}
-        <View style={styles.locationHint}>
-          <Ionicons
-            name="information-circle-outline"
-            size={16}
-            color={COLORS.primary}
-          />
-          <Text style={styles.locationHintText}>
-            Verifying your address lets customers find you
-            when using "Near Me" search.
-          </Text>
-        </View>
-
-        {/* ── Cuisine Types ────────────────────── */}
-        <Text style={styles.sectionTitle}>🍴 Cuisine Type</Text>
-        <Text style={styles.sectionHint}>Select all that apply</Text>
-        <View style={styles.chipGrid}>
-          {CUISINE_OPTIONS.map(cuisine => (
-            <TouchableOpacity
-              key={cuisine}
-              style={[
-                styles.chip,
-                form.cuisineTypes.includes(cuisine) &&
-                  styles.chipActive,
-              ]}
-              onPress={() => toggleCuisine(cuisine)}
-            >
-              <Text style={[
-                styles.chipText,
-                form.cuisineTypes.includes(cuisine) &&
-                  styles.chipTextActive,
-              ]}>
-                {cuisine.charAt(0).toUpperCase() + cuisine.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ── Price Range ──────────────────────── */}
-        <Text style={styles.sectionTitle}>💰 Price Range</Text>
-        <View style={styles.priceRow}>
-          {PRICE_OPTIONS.map(p => (
-            <TouchableOpacity
-              key={p}
-              style={[
-                styles.priceBtn,
-                form.priceRange === p && styles.priceBtnActive,
-              ]}
-              onPress={() => updateForm('priceRange', p)}
-            >
-              <Text style={[
-                styles.priceBtnText,
-                form.priceRange === p && styles.priceBtnTextActive,
-              ]}>
-                {p}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ── Services ────────────────────────── */}
-        <Text style={styles.sectionTitle}>🛎️ Services Offered</Text>
-        {[
-          { key: 'hasDineIn',   label: 'Dine In',  icon: '🪑' },
-          { key: 'hasTakeout',  label: 'Takeout',  icon: '🥡' },
-          { key: 'hasDelivery', label: 'Delivery', icon: '🛵' },
-        ].map(service => (
-          <TouchableOpacity
-            key={service.key}
-            style={styles.serviceRow}
-            onPress={() =>
-              updateForm(service.key, !form[service.key])
-            }
-          >
-            <Text style={styles.serviceEmoji}>{service.icon}</Text>
-            <Text style={styles.serviceLabel}>{service.label}</Text>
-            <View style={[
-              styles.serviceToggle,
-              form[service.key] && styles.serviceToggleOn,
-            ]}>
-              <Text style={styles.serviceToggleText}>
-                {form[service.key] ? '✅ Yes' : '❌ No'}
+              <Text style={styles.pickerText}>
+                Tap to add cover photo
               </Text>
             </View>
-          </TouchableOpacity>
-        ))}
-
-        {/* ── Save Button ──────────────────────── */}
-        <TouchableOpacity
-          style={[
-            styles.saveBtn,
-            loading && styles.saveBtnDisabled,
-          ]}
-          onPress={handleSave}
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <ActivityIndicator color="#FFFFFF" />
-              <Text style={styles.saveBtnText}>
-                Saving...
-              </Text>
-            </>
-          ) : (
-            <>
-              <Ionicons
-                name="checkmark-circle"
-                size={22}
-                color="#FFFFFF"
-              />
-              <Text style={styles.saveBtnText}>
-                {existingRestaurant
-                  ? 'Update Restaurant'
-                  : 'Create Restaurant'}
-              </Text>
-            </>
           )}
+          <View style={styles.coverEditBadge}>
+            <Ionicons name="camera" size={14} color="#FFFFFF" />
+          </View>
         </TouchableOpacity>
-      </View>
 
-      <View style={{ height: 50 }} />
-    </ScrollView>
+        {/* ── Logo ─────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.logoPicker}
+          onPress={() => pickImage('logo')}
+          activeOpacity={0.85}
+        >
+          {logoPreview ? (
+            <Image source={{ uri: logoPreview }} style={styles.logoImage} />
+          ) : (
+            <View style={styles.logoPlaceholder}>
+              <Ionicons name="camera" size={22} color={COLORS.textMuted} />
+            </View>
+          )}
+          <View style={styles.logoEditBadge}>
+            <Ionicons name="pencil" size={10} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
+
+        {/* ── Form ─────────────────────────────── */}
+        <View style={styles.form}>
+
+          {/* Basic info */}
+          <Text style={styles.sectionTitle}>📋 Basic Information</Text>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Restaurant Name *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. Mama's Kitchen"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.name}
+              onChangeText={v => updateForm('name', v)}
+              autoCapitalize="words"
+              returnKeyType="next"
+              onSubmitEditing={() => descriptionRef.current?.focus()}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              ref={descriptionRef}
+              style={[styles.input, styles.textarea]}
+              placeholder="Tell customers about your restaurant..."
+              placeholderTextColor={COLORS.textMuted}
+              value={form.description}
+              onChangeText={v => updateForm('description', v)}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+              returnKeyType="next"
+              onSubmitEditing={() => phoneRef.current?.focus()}
+            />
+          </View>
+
+          {/* Contact */}
+          <Text style={styles.sectionTitle}>📞 Contact Info</Text>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Phone Number *</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="call-outline" size={18} color={COLORS.textMuted} />
+              <TextInput
+                ref={phoneRef}
+                style={styles.inputFlex}
+                placeholder="+1 (555) 000-0000"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.phone}
+                onChangeText={v => updateForm('phone', v)}
+                keyboardType="phone-pad"
+                returnKeyType="next"
+                onSubmitEditing={() => whatsappRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>WhatsApp Number</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="logo-whatsapp" size={18} color={COLORS.success} />
+              <TextInput
+                ref={whatsappRef}
+                style={styles.inputFlex}
+                placeholder="+1 (555) 000-0000"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.whatsapp}
+                onChangeText={v => updateForm('whatsapp', v)}
+                keyboardType="phone-pad"
+                returnKeyType="next"
+                onSubmitEditing={() => emailRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
+              <TextInput
+                ref={emailRef}
+                style={styles.inputFlex}
+                placeholder="restaurant@email.com"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.email}
+                onChangeText={v => updateForm('email', v)}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                onSubmitEditing={() => websiteRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Website</Text>
+            <View style={styles.inputRow}>
+              <Ionicons name="globe-outline" size={18} color={COLORS.textMuted} />
+              <TextInput
+                ref={websiteRef}
+                style={styles.inputFlex}
+                placeholder="https://yourwebsite.com"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.website}
+                onChangeText={v => updateForm('website', v)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                onSubmitEditing={() => addressRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          {/* Location */}
+          <Text style={styles.sectionTitle}>📍 Location</Text>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Street Address *</Text>
+            <TextInput
+              ref={addressRef}
+              style={styles.input}
+              placeholder="123 Main Street"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.address}
+              onChangeText={v => updateForm('address', v)}
+              returnKeyType="next"
+              onSubmitEditing={() => cityRef.current?.focus()}
+            />
+          </View>
+
+          <View style={styles.twoCol}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>City *</Text>
+              <TextInput
+                ref={cityRef}
+                style={styles.input}
+                placeholder="Kingston"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.city}
+                onChangeText={v => updateForm('city', v)}
+                returnKeyType="next"
+                onSubmitEditing={() => stateRef.current?.focus()}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={styles.label}>State/Parish</Text>
+              <TextInput
+                ref={stateRef}
+                style={styles.input}
+                placeholder="St. Andrew"
+                placeholderTextColor={COLORS.textMuted}
+                value={form.state}
+                onChangeText={v => updateForm('state', v)}
+                returnKeyType="next"
+                onSubmitEditing={() => countryRef.current?.focus()}
+              />
+            </View>
+          </View>
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Country</Text>
+            <TextInput
+              ref={countryRef}
+              style={styles.input}
+              placeholder="Jamaica"
+              placeholderTextColor={COLORS.textMuted}
+              value={form.country}
+              onChangeText={v => updateForm('country', v)}
+              returnKeyType="done"
+            />
+          </View>
+
+          {/* Verify address */}
+          <TouchableOpacity
+            style={[
+              styles.verifyBtn,
+              coordsFound && styles.verifyBtnSuccess,
+            ]}
+            onPress={handleVerifyAddress}
+            disabled={geocoding}
+            activeOpacity={0.8}
+          >
+            {geocoding ? (
+              <>
+                <ActivityIndicator size="small" color={COLORS.textWhite} />
+                <Text style={styles.verifyBtnText}>Finding location...</Text>
+              </>
+            ) : coordsFound ? (
+              <>
+                <Ionicons name="checkmark-circle" size={18} color={COLORS.textWhite} />
+                <Text style={styles.verifyBtnText}>✅ Address Verified</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="navigate" size={18} color={COLORS.textWhite} />
+                <Text style={styles.verifyBtnText}>Verify Address on Map</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Location hint */}
+          <View style={styles.locationHint}>
+            <Ionicons
+              name="information-circle-outline"
+              size={16}
+              color={COLORS.primary}
+            />
+            <Text style={styles.locationHintText}>
+              Verifying your address lets customers find you
+              when using "Near Me" search.
+            </Text>
+          </View>
+
+          {/* Cuisine types */}
+          <Text style={styles.sectionTitle}>🍴 Cuisine Type</Text>
+          <Text style={styles.sectionHint}>Select all that apply</Text>
+          <View style={styles.chipGrid}>
+            {CUISINE_OPTIONS.map(cuisine => (
+              <TouchableOpacity
+                key={cuisine}
+                style={[
+                  styles.chip,
+                  form.cuisineTypes.includes(cuisine) && styles.chipActive,
+                ]}
+                onPress={() => toggleCuisine(cuisine)}
+                activeOpacity={0.7}
+              >
+                <Text style={[
+                  styles.chipText,
+                  form.cuisineTypes.includes(cuisine) && styles.chipTextActive,
+                ]}>
+                  {cuisine.charAt(0).toUpperCase() + cuisine.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Price range */}
+          <Text style={styles.sectionTitle}>💰 Price Range</Text>
+          <View style={styles.priceRow}>
+            {PRICE_OPTIONS.map(p => (
+              <TouchableOpacity
+                key={p}
+                style={[
+                  styles.priceBtn,
+                  form.priceRange === p && styles.priceBtnActive,
+                ]}
+                onPress={() => updateForm('priceRange', p)}
+                activeOpacity={0.7}
+              >
+                <Text style={[
+                  styles.priceBtnText,
+                  form.priceRange === p && styles.priceBtnTextActive,
+                ]}>
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Services */}
+          <Text style={styles.sectionTitle}>🛎️ Services Offered</Text>
+          {[
+            { key: 'hasDineIn',   label: 'Dine In',  icon: '🪑' },
+            { key: 'hasTakeout',  label: 'Takeout',  icon: '🥡' },
+            { key: 'hasDelivery', label: 'Delivery', icon: '🛵' },
+          ].map(service => (
+            <TouchableOpacity
+              key={service.key}
+              style={styles.serviceRow}
+              onPress={() => updateForm(service.key, !form[service.key])}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.serviceEmoji}>{service.icon}</Text>
+              <Text style={styles.serviceLabel}>{service.label}</Text>
+              <View style={[
+                styles.serviceToggle,
+                form[service.key] && styles.serviceToggleOn,
+              ]}>
+                <Text style={styles.serviceToggleText}>
+                  {form[service.key] ? '✅ Yes' : '❌ No'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          {/* Save button */}
+          <TouchableOpacity
+            style={[
+              styles.saveBtn,
+              loading && styles.saveBtnDisabled,
+            ]}
+            onPress={handleSave}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <>
+                <ActivityIndicator color="#FFFFFF" />
+                <Text style={styles.saveBtnText}>Saving...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+                <Text style={styles.saveBtnText}>
+                  {existingRestaurant
+                    ? 'Update Restaurant'
+                    : 'Create Restaurant'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
-// ─── Styles ──────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
+  // ── Cover photo ──────────────────────────
   coverPicker: {
     height: 180,
     backgroundColor: COLORS.border,
@@ -697,6 +676,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  // ── Logo ─────────────────────────────────
   logoPicker: {
     width: 80,
     height: 80,
@@ -736,6 +717,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFFFFF',
   },
+
+  // ── Form ─────────────────────────────────
   form: {
     padding: SIZES.md,
     gap: SIZES.md,
@@ -754,18 +737,15 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.sm,
     marginTop: -SIZES.xs,
   },
-  field: {
-    gap: SIZES.xs,
-  },
-  twoCol: {
-    flexDirection: 'row',
-    gap: SIZES.md,
-  },
+  field:  { gap: SIZES.xs },
+  twoCol: { flexDirection: 'row', gap: SIZES.md },
   label: {
     fontSize: FONTS.md,
     fontWeight: '600',
     color: COLORS.text,
   },
+
+  // ── Inputs ───────────────────────────────
   input: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
@@ -795,7 +775,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
 
-  // ✅ NEW: Verify button
+  // ── Verify button ────────────────────────
   verifyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -815,7 +795,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ✅ NEW: Location hint
+  // ── Location hint ────────────────────────
   locationHint: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -834,6 +814,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  // ── Cuisine chips ────────────────────────
   chipGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -849,7 +830,7 @@ const styles = StyleSheet.create({
   },
   chipActive: {
     backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    borderColor:     COLORS.primary,
   },
   chipText: {
     fontSize: FONTS.sm,
@@ -857,9 +838,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   chipTextActive: {
-    color: '#FFFFFF',
+    color:      '#FFFFFF',
     fontWeight: '600',
   },
+
+  // ── Price range ──────────────────────────
   priceRow: {
     flexDirection: 'row',
     gap: SIZES.md,
@@ -876,7 +859,7 @@ const styles = StyleSheet.create({
   },
   priceBtnActive: {
     backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
+    borderColor:     COLORS.accent,
   },
   priceBtnText: {
     fontSize: FONTS.xl,
@@ -886,6 +869,8 @@ const styles = StyleSheet.create({
   priceBtnTextActive: {
     color: '#FFFFFF',
   },
+
+  // ── Services ─────────────────────────────
   serviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -895,9 +880,7 @@ const styles = StyleSheet.create({
     gap: SIZES.md,
     ...SHADOW,
   },
-  serviceEmoji: {
-    fontSize: 22,
-  },
+  serviceEmoji: { fontSize: 22 },
   serviceLabel: {
     flex: 1,
     fontSize: FONTS.lg,
@@ -914,13 +897,15 @@ const styles = StyleSheet.create({
   },
   serviceToggleOn: {
     backgroundColor: COLORS.success + '15',
-    borderColor: COLORS.success + '30',
+    borderColor:     COLORS.success + '30',
   },
   serviceToggleText: {
     fontSize: FONTS.sm,
     fontWeight: '600',
     color: COLORS.text,
   },
+
+  // ── Save button ──────────────────────────
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -932,9 +917,7 @@ const styles = StyleSheet.create({
     marginTop: SIZES.md,
     ...SHADOW,
   },
-  saveBtnDisabled: {
-    opacity: 0.7,
-  },
+  saveBtnDisabled: { opacity: 0.7 },
   saveBtnText: {
     color: '#FFFFFF',
     fontSize: FONTS.xl,

@@ -3,17 +3,24 @@
 // ============================================
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSubscription, PLANS } from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 export default function SubscriptionScreen({ route, navigation }) {
-  const { restaurant } = route.params;
+  const insets = useSafeAreaInsets();
+  const { restaurant }              = route.params;
   const { upgradePlan, cancelPlan } = useSubscription();
-  const [loading, setLoading] = useState(null); // stores planId being processed
+  const [loading, setLoading]       = useState(null);
 
   const currentPlan = restaurant?.subscription?.plan || 'free_trial';
 
@@ -77,8 +84,13 @@ export default function SubscriptionScreen({ route, navigation }) {
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
+      contentContainerStyle={{
+        // ✅ Bottom padding clears Android nav bar
+        paddingBottom: insets.bottom + SIZES.xl,
+      }}
     >
-      {/* ── Header ─────────────────────────── */}
+
+      {/* ── Header ──────────────────────────── */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Choose Your Plan</Text>
         <Text style={styles.headerSubtitle}>
@@ -87,14 +99,18 @@ export default function SubscriptionScreen({ route, navigation }) {
 
         {/* Current plan badge */}
         <View style={styles.currentPlanBadge}>
-          <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
+          <Ionicons
+            name="checkmark-circle"
+            size={16}
+            color={COLORS.success}
+          />
           <Text style={styles.currentPlanText}>
             Current: {PLANS[currentPlan]?.name || 'Free Trial'}
           </Text>
         </View>
       </View>
 
-      {/* ── Plan Cards ─────────────────────── */}
+      {/* ── Plan cards ──────────────────────── */}
       {Object.values(PLANS)
         .filter(p => p.id !== 'free_trial')
         .map(plan => {
@@ -107,8 +123,8 @@ export default function SubscriptionScreen({ route, navigation }) {
               key={plan.id}
               style={[
                 styles.planCard,
-                isCurrent && styles.planCardActive,
-                isPremium && styles.planCardPremium,
+                isCurrent  && styles.planCardActive,
+                isPremium  && styles.planCardPremium,
               ]}
             >
               {/* Popular badge */}
@@ -126,6 +142,7 @@ export default function SubscriptionScreen({ route, navigation }) {
                 ]}>
                   <Text style={styles.planEmoji}>{plan.emoji}</Text>
                 </View>
+
                 <View style={{ flex: 1 }}>
                   <Text style={[
                     styles.planName,
@@ -145,6 +162,7 @@ export default function SubscriptionScreen({ route, navigation }) {
                     </Text>
                   </View>
                 </View>
+
                 {isCurrent && (
                   <View style={styles.activeTag}>
                     <Text style={styles.activeTagText}>Active</Text>
@@ -166,11 +184,15 @@ export default function SubscriptionScreen({ route, navigation }) {
                 ))}
               </View>
 
-              {/* CTA Button */}
+              {/* CTA button */}
               <TouchableOpacity
                 style={[
                   styles.upgradeBtn,
-                  { backgroundColor: isCurrent ? COLORS.border : plan.color },
+                  {
+                    backgroundColor: isCurrent
+                      ? COLORS.border
+                      : plan.color,
+                  },
                   isCurrent && styles.upgradeBtnCurrent,
                 ]}
                 onPress={() => handleUpgrade(plan.id)}
@@ -190,7 +212,9 @@ export default function SubscriptionScreen({ route, navigation }) {
                       styles.upgradeBtnText,
                       isCurrent && styles.upgradeBtnTextCurrent,
                     ]}>
-                      {isCurrent ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                      {isCurrent
+                        ? 'Current Plan'
+                        : `Upgrade to ${plan.name}`}
                     </Text>
                   </>
                 )}
@@ -199,7 +223,7 @@ export default function SubscriptionScreen({ route, navigation }) {
           );
         })}
 
-      {/* ── Free Trial Info ─────────────────── */}
+      {/* ── Free trial info ──────────────────── */}
       <View style={styles.freeTrialCard}>
         <Text style={styles.freeTrialTitle}>🆓 Free Trial Includes:</Text>
         {PLANS.free_trial.features.map((f, i) => (
@@ -210,11 +234,12 @@ export default function SubscriptionScreen({ route, navigation }) {
         ))}
       </View>
 
-      {/* ── Cancel subscription ─────────────── */}
+      {/* ── Cancel subscription ──────────────── */}
       {currentPlan !== 'free_trial' && (
         <TouchableOpacity
           style={styles.cancelBtn}
           onPress={handleCancel}
+          activeOpacity={0.7}
         >
           <Text style={styles.cancelBtnText}>
             Cancel Current Subscription
@@ -222,7 +247,7 @@ export default function SubscriptionScreen({ route, navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ── Payment note ────────────────────── */}
+      {/* ── Payment note ─────────────────────── */}
       <View style={styles.paymentNote}>
         <Ionicons name="lock-closed" size={14} color={COLORS.textMuted} />
         <Text style={styles.paymentNoteText}>
@@ -231,7 +256,6 @@ export default function SubscriptionScreen({ route, navigation }) {
         </Text>
       </View>
 
-      <View style={{ height: 48 }} />
     </ScrollView>
   );
 }
@@ -242,7 +266,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
 
-  // Header
+  // ── Header ──────────────────────────────
+  // Stack navigator provides the top inset via its header
+  // so we only need generous internal padding here
   header: {
     backgroundColor: COLORS.primary,
     padding: SIZES.xl,
@@ -250,7 +276,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: FONTS.xxxl || 28,
+    // ✅ Replaced FONTS.xxxl (may not exist) with explicit 28
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#FFFFFF',
     textAlign: 'center',
@@ -277,7 +304,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Plan cards
+  // ── Plan cards ───────────────────────────
   planCard: {
     backgroundColor: COLORS.surface,
     margin: SIZES.md,
@@ -322,17 +349,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  planEmoji: {
-    fontSize: 28,
-  },
+  planEmoji:       { fontSize: 28 },
   planName: {
     fontSize: FONTS.xl,
     fontWeight: 'bold',
     color: COLORS.text,
   },
-  planNamePremium: {
-    color: COLORS.primary,
-  },
+  planNamePremium: { color: COLORS.primary },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -361,7 +384,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Features
+  // ── Features ─────────────────────────────
   featuresList: {
     gap: SIZES.sm,
     marginBottom: SIZES.lg,
@@ -377,7 +400,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Upgrade button
+  // ── Upgrade button ───────────────────────
   upgradeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -398,7 +421,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
 
-  // Free trial card
+  // ── Free trial card ──────────────────────
   freeTrialCard: {
     backgroundColor: COLORS.surface,
     margin: SIZES.md,
@@ -419,12 +442,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Cancel
+  // ── Cancel button ────────────────────────
   cancelBtn: {
     marginHorizontal: SIZES.md,
     marginTop: SIZES.sm,
     paddingVertical: SIZES.md,
     alignItems: 'center',
+    // ✅ Larger tap area
+    paddingHorizontal: SIZES.md,
   },
   cancelBtnText: {
     color: COLORS.error,
@@ -433,7 +458,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 
-  // Payment note
+  // ── Payment note ─────────────────────────
   paymentNote: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -442,6 +467,8 @@ const styles = StyleSheet.create({
     padding: SIZES.md,
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
+    // ✅ No marginBottom needed — contentContainerStyle
+    // paddingBottom on ScrollView handles the spacing
   },
   paymentNoteText: {
     fontSize: FONTS.xs,

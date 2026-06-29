@@ -3,23 +3,29 @@
 // ============================================
 import React from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator,
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotifications } from '../../hooks/useNotifications';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
-// ─── Notification type icons ──────────────────
+// ─── Notification type config ─────────────────
 const TYPE_CONFIG = {
-  general:    { icon: 'notifications',     color: COLORS.primary  },
-  promotion:  { icon: 'pricetag',          color: COLORS.accent   },
-  review:     { icon: 'star',              color: '#FFD700'        },
-  order:      { icon: 'receipt',           color: COLORS.success  },
-  restaurant: { icon: 'restaurant',        color: COLORS.secondary},
-  system:     { icon: 'settings',          color: COLORS.textMuted},
+  general:    { icon: 'notifications', color: COLORS.primary   },
+  promotion:  { icon: 'pricetag',      color: COLORS.accent    },
+  review:     { icon: 'star',          color: '#FFD700'         },
+  order:      { icon: 'receipt',       color: COLORS.success   },
+  restaurant: { icon: 'restaurant',    color: COLORS.secondary },
+  system:     { icon: 'settings',      color: COLORS.textMuted },
 };
 
+// ─── Time formatter ───────────────────────────
 const formatTime = (timestamp) => {
   if (!timestamp) return '';
   const date  = timestamp.toDate?.() || new Date(timestamp);
@@ -29,14 +35,15 @@ const formatTime = (timestamp) => {
   const hours = Math.floor(diff / 3600000);
   const days  = Math.floor(diff / 86400000);
 
-  if (mins < 1)   return 'Just now';
-  if (mins < 60)  return `${mins}m ago`;
+  if (mins  < 1)  return 'Just now';
+  if (mins  < 60) return `${mins}m ago`;
   if (hours < 24) return `${hours}h ago`;
-  if (days < 7)   return `${days}d ago`;
+  if (days  < 7)  return `${days}d ago`;
   return date.toLocaleDateString();
 };
 
 export default function NotificationsScreen() {
+  const insets = useSafeAreaInsets();
   const {
     notifications,
     unreadCount,
@@ -45,14 +52,24 @@ export default function NotificationsScreen() {
     markAllAsRead,
   } = useNotifications();
 
+  // ── Loading ───────────────────────────────
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          // ✅ Respect system bars on loading state
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading notifications...</Text>
       </View>
     );
   }
 
+  // ── Notification card ─────────────────────
   const renderItem = ({ item }) => {
     const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.general;
 
@@ -70,11 +87,7 @@ export default function NotificationsScreen() {
           styles.iconBox,
           { backgroundColor: config.color + '20' },
         ]}>
-          <Ionicons
-            name={config.icon}
-            size={22}
-            color={config.color}
-          />
+          <Ionicons name={config.icon} size={22} color={config.color} />
         </View>
 
         {/* Content */}
@@ -93,17 +106,16 @@ export default function NotificationsScreen() {
         </View>
 
         {/* Unread dot */}
-        {!item.isRead && (
-          <View style={styles.unreadDot} />
-        )}
+        {!item.isRead && <View style={styles.unreadDot} />}
       </TouchableOpacity>
     );
   };
 
+  // ── Main render ───────────────────────────
   return (
     <View style={styles.container}>
 
-      {/* Header */}
+      {/* ── Unread header ───────────────────── */}
       {unreadCount > 0 && (
         <View style={styles.header}>
           <Text style={styles.unreadText}>
@@ -112,22 +124,34 @@ export default function NotificationsScreen() {
           <TouchableOpacity
             onPress={markAllAsRead}
             activeOpacity={0.7}
+            // ✅ Larger tap target
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={styles.markAllText}>
-              Mark all as read
-            </Text>
+            <Text style={styles.markAllText}>Mark all as read</Text>
           </TouchableOpacity>
         </View>
       )}
 
+      {/* ── Notifications list ───────────────── */}
       <FlatList
         data={notifications}
         keyExtractor={item => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.list,
+          {
+            // ✅ Last notification card clears Android nav bar
+            paddingBottom: insets.bottom + SIZES.xl,
+          },
+        ]}
         ListEmptyComponent={
-          <View style={styles.empty}>
+          <View style={[
+            styles.empty,
+            // ✅ Centre vertically accounting for header
+            { paddingBottom: insets.bottom + SIZES.xl },
+          ]}>
             <Ionicons
               name="notifications-off-outline"
               size={64}
@@ -137,11 +161,12 @@ export default function NotificationsScreen() {
               No notifications yet
             </Text>
             <Text style={styles.emptySubtext}>
-              We will notify you about promotions and updates
+              We'll notify you about promotions and updates
             </Text>
           </View>
         }
       />
+
     </View>
   );
 }
@@ -151,11 +176,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
+  // ── Loading ──────────────────────────────
+  // paddingTop/Bottom applied dynamically via insets
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: SIZES.sm,
   },
+  loadingText: {
+    fontSize: FONTS.md,
+    color: COLORS.textMuted,
+    marginTop: SIZES.xs,
+  },
+
+  // ── Unread header ────────────────────────
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -176,11 +212,16 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '700',
   },
+
+  // ── List ─────────────────────────────────
+  // ✅ paddingBottom set dynamically via insets
   list: {
     padding: SIZES.md,
     gap: SIZES.sm,
     flexGrow: 1,
   },
+
+  // ── Notification card ────────────────────
   notifCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -233,6 +274,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     marginTop: 6,
   },
+
+  // ── Empty state ──────────────────────────
   empty: {
     flex: 1,
     alignItems: 'center',

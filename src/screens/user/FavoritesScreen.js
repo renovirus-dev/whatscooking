@@ -9,19 +9,22 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase/config';
-import { useAuth } from '../../hooks/useAuth';
+import { db }          from '../../firebase/config';
+import { useAuth }     from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import RestaurantCard from '../../components/RestaurantCard';
+import RestaurantCard  from '../../components/RestaurantCard';
 
 export default function FavoritesScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const { user, userProfile } = useAuth();
-  const [favorites, setFavorites] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const [favorites, setFavorites]   = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -61,10 +64,17 @@ export default function FavoritesScreen({ navigation }) {
     await loadFavorites();
   };
 
-  // Not logged in
+  // ── Not logged in ─────────────────────────
   if (!user) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          // ✅ Respect system bars on all empty/auth states
+          paddingTop:    insets.top    + SIZES.xl,
+          paddingBottom: insets.bottom + SIZES.xl,
+        },
+      ]}>
         <Text style={styles.emoji}>❤️</Text>
         <Text style={styles.title}>Your Favorites</Text>
         <Text style={styles.subtitle}>
@@ -73,34 +83,41 @@ export default function FavoritesScreen({ navigation }) {
         <TouchableOpacity
           style={styles.actionBtn}
           onPress={() => navigation.navigate('Login')}
+          activeOpacity={0.8}
         >
-          <Ionicons
-            name="log-in-outline"
-            size={20}
-            color="#FFFFFF"
-          />
+          <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
           <Text style={styles.actionBtnText}>Login</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // Loading
+  // ── Loading ───────────────────────────────
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
+      ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>
-          Loading favorites...
-        </Text>
+        <Text style={styles.loadingText}>Loading favorites...</Text>
       </View>
     );
   }
 
-  // Empty favorites
+  // ── Empty favorites ───────────────────────
   if (favorites.length === 0) {
     return (
-      <View style={styles.centered}>
+      <View style={[
+        styles.centered,
+        {
+          paddingTop:    insets.top    + SIZES.xl,
+          paddingBottom: insets.bottom + SIZES.xl,
+        },
+      ]}>
         <Text style={styles.emoji}>🤍</Text>
         <Text style={styles.title}>No Favorites Yet</Text>
         <Text style={styles.subtitle}>
@@ -109,41 +126,47 @@ export default function FavoritesScreen({ navigation }) {
         <TouchableOpacity
           style={styles.actionBtn}
           onPress={() => navigation.navigate('Explore')}
+          activeOpacity={0.8}
         >
           <Ionicons name="compass" size={20} color="#FFFFFF" />
-          <Text style={styles.actionBtnText}>
-            Explore Restaurants
-          </Text>
+          <Text style={styles.actionBtnText}>Explore Restaurants</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ── Main list ─────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Header */}
+
+      {/* ── Header ──────────────────────────── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          ❤️ My Favorites
-        </Text>
+        <Text style={styles.headerTitle}>❤️ My Favorites</Text>
         <View style={styles.countBadge}>
-          <Text style={styles.countText}>
-            {favorites.length}
-          </Text>
+          <Text style={styles.countText}>{favorites.length}</Text>
         </View>
       </View>
 
-      {/* List */}
+      {/* ── Favorites list ───────────────────── */}
       <FlatList
         data={favorites}
         keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            // ✅ Last card clears Android nav bar
+            // Replaces hardcoded paddingBottom: 40
+            paddingBottom: insets.bottom + SIZES.xl,
+          },
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
             colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
           />
         }
         renderItem={({ item }) => (
@@ -151,11 +174,17 @@ export default function FavoritesScreen({ navigation }) {
             restaurant={item}
             horizontal
             style={styles.card}
-            onPress={() => navigation.navigate(
-              'RestaurantDetail',
-              { restaurantId: item.id, name: item.name }
-            )}
+            onPress={() =>
+              navigation.navigate('RestaurantDetail', {
+                restaurantId: item.id,
+                name:         item.name,
+              })
+            }
           />
+        )}
+        // ✅ Separator between cards instead of relying on gap
+        ItemSeparatorComponent={() => (
+          <View style={styles.separator} />
         )}
       />
     </View>
@@ -165,37 +194,40 @@ export default function FavoritesScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background
+    backgroundColor: COLORS.background,
   },
+
+  // ── Centered states ──────────────────────
+  // paddingTop / paddingBottom applied dynamically via insets
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SIZES.xl,
-    backgroundColor: COLORS.background
+    paddingHorizontal: SIZES.xl,
+    backgroundColor: COLORS.background,
   },
   emoji: {
     fontSize: 70,
-    marginBottom: SIZES.md
+    marginBottom: SIZES.md,
   },
   title: {
     fontSize: FONTS.xxl,
     fontWeight: 'bold',
     color: COLORS.text,
     textAlign: 'center',
-    marginBottom: SIZES.sm
+    marginBottom: SIZES.sm,
   },
   subtitle: {
     fontSize: FONTS.md,
     color: COLORS.textLight,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: SIZES.xl
+    marginBottom: SIZES.xl,
   },
   loadingText: {
     fontSize: FONTS.md,
     color: COLORS.textMuted,
-    marginTop: SIZES.md
+    marginTop: SIZES.md,
   },
   actionBtn: {
     flexDirection: 'row',
@@ -204,23 +236,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.xl,
     paddingVertical: SIZES.md,
     borderRadius: RADIUS.lg,
-    gap: SIZES.sm
+    gap: SIZES.sm,
+    ...SHADOW,
   },
   actionBtnText: {
     color: '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: FONTS.lg
+    fontSize: FONTS.lg,
   },
+
+  // ── Header ───────────────────────────────
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: SIZES.md,
-    gap: SIZES.sm
+    gap: SIZES.sm,
   },
   headerTitle: {
     fontSize: FONTS.xl,
     fontWeight: 'bold',
-    color: COLORS.text
+    color: COLORS.text,
   },
   countBadge: {
     backgroundColor: COLORS.primary,
@@ -228,19 +263,25 @@ const styles = StyleSheet.create({
     height: 26,
     borderRadius: 13,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
   },
   countText: {
     color: '#FFFFFF',
     fontSize: FONTS.sm,
-    fontWeight: 'bold'
+    fontWeight: 'bold',
   },
+
+  // ── List ─────────────────────────────────
+  // ✅ paddingBottom set dynamically via insets
   listContent: {
     padding: SIZES.md,
-    gap: SIZES.md,
-    paddingBottom: 40
   },
   card: {
-    marginBottom: 0
-  }
+    marginBottom: 0,
+  },
+
+  // ── Separator ────────────────────────────
+  separator: {
+    height: SIZES.md,
+  },
 });
