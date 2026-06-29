@@ -12,24 +12,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection, query, where,
   getDocs, updateDoc, deleteDoc,
-  doc, onSnapshot, orderBy, limit,
+  doc, orderBy, limit,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db }      from '../../firebase/config';
+import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ─── Tab config ───────────────────────────────
 const TABS = [
-  { id: 'overview',     label: 'Overview',     icon: 'grid'          },
-  { id: 'restaurants',  label: 'Restaurants',  icon: 'restaurant'    },
-  { id: 'users',        label: 'Users',        icon: 'people'        },
-  { id: 'reviews',      label: 'Reviews',      icon: 'star'          },
-  { id: 'notify',       label: 'Notify',       icon: 'notifications' },
+  { id: 'overview',    label: 'Overview',    icon: 'grid'          },
+  { id: 'restaurants', label: 'Restaurants', icon: 'restaurant'    },
+  { id: 'users',       label: 'Users',       icon: 'people'        },
+  { id: 'reviews',     label: 'Reviews',     icon: 'star'          },
+  { id: 'notify',      label: 'Notify',      icon: 'notifications' },
 ];
 
 export default function AdminDashboardScreen({ navigation }) {
-  // ✅ Safe area insets — respect system bars
   const insets = useSafeAreaInsets();
+  // ✅ Get logout from useAuth
+  const { logout } = useAuth();
 
   const [activeTab, setActiveTab]     = useState('overview');
   const [restaurants, setRestaurants] = useState([]);
@@ -43,6 +45,7 @@ export default function AdminDashboardScreen({ navigation }) {
     pendingApprovals:  0,
   });
   const [loading, setLoading]         = useState(true);
+  const [signingOut, setSigningOut]   = useState(false);
 
   // Notification form
   const [notifTitle, setNotifTitle]   = useState('');
@@ -50,7 +53,6 @@ export default function AdminDashboardScreen({ navigation }) {
   const [notifTarget, setNotifTarget] = useState('all');
   const [sending, setSending]         = useState(false);
 
-  // ─── Load all data ───────────────────────
   useEffect(() => {
     loadDashboardData();
   }, []);
@@ -101,6 +103,34 @@ export default function AdminDashboardScreen({ navigation }) {
     setStats(prev => ({ ...prev, totalReviews: data.length }));
   };
 
+  // ✅ Sign out handler
+  const handleSignOut = async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setSigningOut(true);
+              const result = await logout();
+              if (!result.success) {
+                Alert.alert('Error', result.error || 'Failed to sign out');
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            } finally {
+              setSigningOut(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // ─── Restaurant actions ──────────────────
   const toggleRestaurantActive = async (restaurant) => {
     try {
@@ -135,7 +165,7 @@ export default function AdminDashboardScreen({ navigation }) {
   const deleteRestaurant = async (restaurant) => {
     Alert.alert(
       '⚠️ Delete Restaurant',
-      `Are you sure you want to delete ${restaurant.name}? This cannot be undone.`,
+      `Are you sure you want to delete ${restaurant.name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -216,13 +246,12 @@ export default function AdminDashboardScreen({ navigation }) {
     );
   };
 
-  // ─── Send broadcast notification ──────────
+  // ─── Send notification ────────────────────
   const handleSendNotification = async () => {
     if (!notifTitle.trim() || !notifBody.trim()) {
       Alert.alert('Error', 'Title and message are required');
       return;
     }
-
     setSending(true);
     try {
       let targetUsers = users;
@@ -231,7 +260,6 @@ export default function AdminDashboardScreen({ navigation }) {
       } else if (notifTarget === 'owners') {
         targetUsers = users.filter(u => u.role === 'restaurant_owner');
       }
-
       await Promise.all(
         targetUsers.map(u =>
           fetch('https://exp.host/--/api/v2/push/send', {
@@ -250,66 +278,33 @@ export default function AdminDashboardScreen({ navigation }) {
           }).catch(() => null)
         )
       );
-
       setNotifTitle('');
       setNotifBody('');
-      Alert.alert(
-        '✅ Sent!',
-        `Notification sent to ${targetUsers.length} users`
-      );
+      Alert.alert('✅ Sent!', `Notification sent to ${targetUsers.length} users`);
     } catch (err) {
       Alert.alert('Error', err.message);
     }
     setSending(false);
   };
 
-  // ─── Render tabs ──────────────────────────
+  // ─── Tab renders ─────────────────────────
 
   const renderOverview = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
-      // ✅ Bottom padding so last card clears Android nav bar
       contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.md }}
     >
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
         {[
-          {
-            label: 'Total Restaurants',
-            value: stats.totalRestaurants,
-            icon:  'restaurant',
-            color: COLORS.primary,
-          },
-          {
-            label: 'Active',
-            value: stats.activeRestaurants,
-            icon:  'checkmark-circle',
-            color: COLORS.success,
-          },
-          {
-            label: 'Total Users',
-            value: stats.totalUsers,
-            icon:  'people',
-            color: COLORS.secondary,
-          },
-          {
-            label: 'Reviews',
-            value: stats.totalReviews,
-            icon:  'star',
-            color: '#FFD700',
-          },
-          {
-            label: 'Pending',
-            value: stats.pendingApprovals,
-            icon:  'time',
-            color: COLORS.error,
-          },
+          { label: 'Total Restaurants', value: stats.totalRestaurants, icon: 'restaurant', color: COLORS.primary  },
+          { label: 'Active',            value: stats.activeRestaurants, icon: 'checkmark-circle', color: COLORS.success  },
+          { label: 'Total Users',       value: stats.totalUsers,        icon: 'people',     color: COLORS.secondary},
+          { label: 'Reviews',           value: stats.totalReviews,      icon: 'star',       color: '#FFD700'       },
+          { label: 'Pending',           value: stats.pendingApprovals,  icon: 'time',       color: COLORS.error    },
         ].map((stat, i) => (
           <View key={i} style={styles.statCard}>
-            <View style={[
-              styles.statIcon,
-              { backgroundColor: stat.color + '20' },
-            ]}>
+            <View style={[styles.statIcon, { backgroundColor: stat.color + '20' }]}>
               <Ionicons name={stat.icon} size={24} color={stat.color} />
             </View>
             <Text style={styles.statValue}>{stat.value}</Text>
@@ -322,24 +317,20 @@ export default function AdminDashboardScreen({ navigation }) {
       {stats.pendingApprovals > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>⏳ Pending Approvals</Text>
-          {restaurants
-            .filter(r => !r.isApproved)
-            .map(r => (
-              <View key={r.id} style={styles.pendingCard}>
-                <View style={styles.pendingInfo}>
-                  <Text style={styles.pendingName}>{r.name}</Text>
-                  <Text style={styles.pendingCity}>
-                    {r.location?.city}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.approveBtn}
-                  onPress={() => approveRestaurant(r)}
-                >
-                  <Text style={styles.approveBtnText}>Approve</Text>
-                </TouchableOpacity>
+          {restaurants.filter(r => !r.isApproved).map(r => (
+            <View key={r.id} style={styles.pendingCard}>
+              <View style={styles.pendingInfo}>
+                <Text style={styles.pendingName}>{r.name}</Text>
+                <Text style={styles.pendingCity}>{r.location?.city}</Text>
               </View>
-            ))}
+              <TouchableOpacity
+                style={styles.approveBtn}
+                onPress={() => approveRestaurant(r)}
+              >
+                <Text style={styles.approveBtnText}>Approve</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
         </View>
       )}
 
@@ -361,6 +352,26 @@ export default function AdminDashboardScreen({ navigation }) {
           </View>
         ))}
       </View>
+
+      {/* ✅ Sign Out Button at bottom of overview */}
+      <TouchableOpacity
+        style={[
+          styles.signOutBtn,
+          signingOut && styles.signOutBtnDisabled,
+        ]}
+        onPress={handleSignOut}
+        disabled={signingOut}
+        activeOpacity={0.8}
+      >
+        {signingOut ? (
+          <ActivityIndicator color="#FFFFFF" size="small" />
+        ) : (
+          <>
+            <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.signOutBtnText}>Sign Out</Text>
+          </>
+        )}
+      </TouchableOpacity>
     </ScrollView>
   );
 
@@ -370,7 +381,6 @@ export default function AdminDashboardScreen({ navigation }) {
       keyExtractor={item => item.id}
       contentContainerStyle={[
         styles.tabList,
-        // ✅ Last card clears Android nav bar
         { paddingBottom: insets.bottom + SIZES.md },
       ]}
       showsVerticalScrollIndicator={false}
@@ -399,7 +409,6 @@ export default function AdminDashboardScreen({ navigation }) {
               )}
             </View>
           </View>
-
           <View style={styles.listCardActions}>
             {!item.isApproved && (
               <TouchableOpacity
@@ -410,13 +419,10 @@ export default function AdminDashboardScreen({ navigation }) {
                 <Text style={styles.actionBtnText}>Approve</Text>
               </TouchableOpacity>
             )}
-
             <TouchableOpacity
               style={[
                 styles.actionBtn,
-                item.isActive
-                  ? styles.actionBtnWarning
-                  : styles.actionBtnSuccess,
+                item.isActive ? styles.actionBtnWarning : styles.actionBtnSuccess,
               ]}
               onPress={() => toggleRestaurantActive(item)}
             >
@@ -429,7 +435,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 {item.isActive ? 'Disable' : 'Enable'}
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteRestaurant(item)}
@@ -449,7 +454,6 @@ export default function AdminDashboardScreen({ navigation }) {
       keyExtractor={item => item.id}
       contentContainerStyle={[
         styles.tabList,
-        // ✅ Last card clears Android nav bar
         { paddingBottom: insets.bottom + SIZES.md },
       ]}
       showsVerticalScrollIndicator={false}
@@ -473,14 +477,12 @@ export default function AdminDashboardScreen({ navigation }) {
               <Text style={styles.badgeText}>{item.role}</Text>
             </View>
           </View>
-
           {item.isBanned && (
             <View style={styles.bannedBanner}>
               <Ionicons name="ban" size={14} color={COLORS.error} />
               <Text style={styles.bannedText}>User is banned</Text>
             </View>
           )}
-
           <View style={styles.listCardActions}>
             {item.role !== 'admin' && (
               <TouchableOpacity
@@ -494,11 +496,7 @@ export default function AdminDashboardScreen({ navigation }) {
                   )
                 }
               >
-                <Ionicons
-                  name="swap-horizontal"
-                  size={14}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="swap-horizontal" size={14} color={COLORS.textWhite} />
                 <Text style={styles.actionBtnText}>
                   {item.role === 'restaurant_owner'
                     ? 'Make Customer'
@@ -506,7 +504,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
             )}
-
             {!item.isBanned && item.role !== 'admin' && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnDanger]}
@@ -528,7 +525,6 @@ export default function AdminDashboardScreen({ navigation }) {
       keyExtractor={item => item.id}
       contentContainerStyle={[
         styles.tabList,
-        // ✅ Last card clears Android nav bar
         { paddingBottom: insets.bottom + SIZES.md },
       ]}
       showsVerticalScrollIndicator={false}
@@ -564,20 +560,15 @@ export default function AdminDashboardScreen({ navigation }) {
     />
   );
 
-  // ✅ Notify tab wrapped in KeyboardAvoidingView
-  // so the keyboard doesn't cover the TextInput fields
   const renderNotify = () => (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      // ✅ On Android with translucent status bar we offset
-      // by the status bar height so keyboard sits correctly
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
       <ScrollView
         contentContainerStyle={[
           styles.tabList,
-          // ✅ Extra bottom padding clears nav bar + keyboard buffer
           { paddingBottom: insets.bottom + SIZES.xl },
         ]}
         showsVerticalScrollIndicator={false}
@@ -587,7 +578,6 @@ export default function AdminDashboardScreen({ navigation }) {
           📢 Send Broadcast Notification
         </Text>
 
-        {/* Target audience */}
         <Text style={styles.fieldLabel}>Send To</Text>
         <View style={styles.targetRow}>
           {[
@@ -613,7 +603,6 @@ export default function AdminDashboardScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Title */}
         <Text style={styles.fieldLabel}>Notification Title</Text>
         <TextInput
           style={styles.notifInput}
@@ -624,7 +613,6 @@ export default function AdminDashboardScreen({ navigation }) {
           returnKeyType="next"
         />
 
-        {/* Message */}
         <Text style={styles.fieldLabel}>Message</Text>
         <TextInput
           style={[styles.notifInput, styles.notifTextarea]}
@@ -638,29 +626,6 @@ export default function AdminDashboardScreen({ navigation }) {
           returnKeyType="done"
         />
 
-        {/* Preview */}
-        {(notifTitle || notifBody) && (
-          <View style={styles.previewCard}>
-            <Text style={styles.previewLabel}>Preview</Text>
-            <View style={styles.previewNotif}>
-              <Ionicons
-                name="notifications"
-                size={20}
-                color={COLORS.primary}
-              />
-              <View style={styles.previewContent}>
-                <Text style={styles.previewTitle}>
-                  {notifTitle || 'Title'}
-                </Text>
-                <Text style={styles.previewBody} numberOfLines={2}>
-                  {notifBody || 'Message'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* Send button */}
         <TouchableOpacity
           style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
           onPress={handleSendNotification}
@@ -676,7 +641,6 @@ export default function AdminDashboardScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {/* Stats */}
         <View style={styles.notifStats}>
           <View style={styles.notifStatItem}>
             <Text style={styles.notifStatValue}>
@@ -695,7 +659,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </KeyboardAvoidingView>
   );
 
-  // ─── Loading state ────────────────────────
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -707,14 +670,36 @@ export default function AdminDashboardScreen({ navigation }) {
     );
   }
 
-  // ─── Main render ──────────────────────────
   return (
-    // ✅ Root container respects bottom safe area inset
-    // The top inset is handled by the stack navigator header
-    <View style={[
-      styles.container,
-      { paddingBottom: 0 }, // tabs handle their own bottom padding
-    ]}>
+    <View style={styles.container}>
+
+      {/* ✅ Admin Header with Sign Out button */}
+      <View style={[
+        styles.adminHeader,
+        { paddingTop: insets.top + SIZES.sm },
+      ]}>
+        <View>
+          <Text style={styles.adminHeaderTitle}>⚡ Admin Panel</Text>
+          <Text style={styles.adminHeaderSubtitle}>
+            What's Cooking
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.headerSignOutBtn}
+          onPress={handleSignOut}
+          disabled={signingOut}
+          activeOpacity={0.8}
+        >
+          {signingOut ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.headerSignOutText}>Sign Out</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Horizontal Tab Bar */}
       <ScrollView
@@ -776,7 +761,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // ─── Tab bar ───────────────────────────
+  // ✅ Admin header
+  adminHeader: {
+    backgroundColor: '#2C3E50',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SIZES.md,
+    paddingBottom: SIZES.md,
+  },
+  adminHeaderTitle: {
+    fontSize: FONTS.xl,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  adminHeaderSubtitle: {
+    fontSize: FONTS.sm,
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 2,
+  },
+  headerSignOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.error,
+    paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm,
+    borderRadius: RADIUS.lg,
+  },
+  headerSignOutText: {
+    color: '#FFFFFF',
+    fontSize: FONTS.sm,
+    fontWeight: '700',
+  },
+
+  // Tab bar
   tabBar: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
@@ -810,15 +829,13 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '700',
   },
-  tabContent: {
-    flex: 1,
-  },
+  tabContent: { flex: 1 },
   tabList: {
     padding: SIZES.md,
     gap: SIZES.md,
   },
 
-  // ─── Stats grid ────────────────────────
+  // Stats grid
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -852,7 +869,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ─── Section ───────────────────────────
+  // Section
   section: {
     padding: SIZES.md,
     gap: SIZES.sm,
@@ -864,7 +881,7 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.xs,
   },
 
-  // ─── Pending cards ─────────────────────
+  // Pending cards
   pendingCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -895,7 +912,7 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
   },
 
-  // ─── List cards ────────────────────────
+  // List cards
   listCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -930,7 +947,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
 
-  // ─── Badges ────────────────────────────
+  // Badges
   badge: {
     paddingHorizontal: SIZES.sm,
     paddingVertical: 3,
@@ -946,7 +963,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
-  // ─── Action buttons ────────────────────
+  // Action buttons
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -965,7 +982,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ─── Banned banner ─────────────────────
+  // Banned banner
   bannedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -980,7 +997,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ─── Review card ───────────────────────
+  // Review card
   reviewCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
@@ -1013,7 +1030,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // ─── Notification form ─────────────────
+  // Notification form
   fieldLabel: {
     fontSize: FONTS.md,
     fontWeight: '600',
@@ -1062,37 +1079,6 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
-  previewCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.md,
-    marginBottom: SIZES.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  previewLabel: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-    marginBottom: SIZES.sm,
-    textTransform: 'uppercase',
-  },
-  previewNotif: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SIZES.sm,
-  },
-  previewContent: { flex: 1 },
-  previewTitle: {
-    fontSize: FONTS.md,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  previewBody: {
-    fontSize: FONTS.sm,
-    color: COLORS.textLight,
-    marginTop: 2,
-  },
   sendBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1133,5 +1119,26 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     textAlign: 'center',
     marginTop: 4,
+  },
+
+  // ✅ Sign out button (in overview tab)
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.error,
+    marginHorizontal: SIZES.md,
+    marginTop: SIZES.lg,
+    marginBottom: SIZES.md,
+    paddingVertical: SIZES.md,
+    borderRadius: RADIUS.lg,
+    gap: SIZES.sm,
+    ...SHADOW,
+  },
+  signOutBtnDisabled: { opacity: 0.7 },
+  signOutBtnText: {
+    color:      '#FFFFFF',
+    fontSize:   FONTS.lg,
+    fontWeight: 'bold',
   },
 });
