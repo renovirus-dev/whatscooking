@@ -11,7 +11,7 @@ import {
   View, Text, ActivityIndicator,
   TouchableOpacity, ScrollView,
 } from 'react-native';
-import React, { useState, useEffect } from 'react';
+
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
