@@ -16,13 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import { useNotifications } from '../../hooks/useNotifications';
+// ✅ REMOVED: useNotifications import
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { user, userProfile, logout } = useAuth();
   const [signingOut, setSigningOut]   = useState(false);
-  const { unreadCount } = useNotifications();
+  // ✅ REMOVED: const { unreadCount } = useNotifications();
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -57,7 +57,6 @@ export default function ProfileScreen({ navigation }) {
       <View style={[
         styles.centered,
         {
-          // ✅ Respect system bars on loading state
           paddingTop:    insets.top,
           paddingBottom: insets.bottom,
         },
@@ -72,18 +71,11 @@ export default function ProfileScreen({ navigation }) {
       style={styles.container}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{
-        // ✅ Bottom padding clears Android nav bar
         paddingBottom: insets.bottom + SIZES.xl,
       }}
     >
 
       {/* ── Header ──────────────────────────── */}
-      {/*
-        ✅ paddingTop uses insets.top so the avatar/name
-        never hides behind the translucent status bar.
-        The tab bar provides the bottom, stack screens
-        use the header — so only top inset needed here.
-      */}
       <View style={[
         styles.header,
         { paddingTop: insets.top + SIZES.xl },
@@ -198,14 +190,13 @@ export default function ProfileScreen({ navigation }) {
           badge={userProfile?.favoriteRestaurants?.length || null}
           onPress={() => navigation.navigate('Favorites')}
         />
-       <ProfileButton
-		  icon="notifications-outline"
-		  label="Notifications"
-		  // ✅ Shows unread count badge
-		  badge={unreadCount > 0 ? unreadCount : null}
-		  last
-		  onPress={() => navigation.navigate('Notifications')}
-		/>
+        {/* ✅ REMOVED: badge={unreadCount > 0 ? unreadCount : null} */}
+        <ProfileButton
+          icon="notifications-outline"
+          label="Notifications"
+          last
+          onPress={() => navigation.navigate('Notifications')}
+        />
       </View>
 
       {/* ── Support section ─────────────────── */}
@@ -257,11 +248,6 @@ export default function ProfileScreen({ navigation }) {
       {/* Version */}
       <Text style={styles.version}>What's Cooking v1.0.0</Text>
 
-      {/*
-        ✅ No hardcoded spacer here — paddingBottom on
-        contentContainerStyle handles the bottom clearance
-      */}
-
     </ScrollView>
   );
 }
@@ -304,7 +290,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  // ✅ paddingTop/Bottom applied dynamically via insets in JSX
   centered: {
     flex: 1,
     justifyContent: 'center',
@@ -313,8 +298,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Header ──────────────────────────────
-  // ✅ paddingTop set dynamically via insets in JSX
-  // so avatar never hides behind translucent status bar
   header: {
     backgroundColor: COLORS.primary,
     alignItems: 'center',
@@ -518,7 +501,5 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     fontSize: FONTS.xs,
     marginTop: SIZES.md,
-    // ✅ No marginBottom needed — contentContainerStyle
-    // paddingBottom handles the bottom clearance
   },
 });
