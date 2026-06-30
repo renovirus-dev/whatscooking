@@ -478,6 +478,11 @@ function UserNavigator() {
         component={FavoriteDishesScreen}
         options={{ title: 'Favourite Dishes' }}
       />
+	  <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: 'Notifications' }}
+      />
     </Stack.Navigator>
   );
 }
@@ -526,6 +531,11 @@ function OwnerNavigator() {
         name="Analytics"
         component={AnalyticsScreen}
         options={{ title: 'Analytics' }}
+      />
+	  <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: 'Notifications' }}
       />
     </Stack.Navigator>
   );

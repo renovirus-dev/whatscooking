@@ -16,11 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { useNotifications } from '../../hooks/useNotifications';
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { user, userProfile, logout } = useAuth();
   const [signingOut, setSigningOut]   = useState(false);
+  const { unreadCount } = useNotifications();
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -196,17 +198,14 @@ export default function ProfileScreen({ navigation }) {
           badge={userProfile?.favoriteRestaurants?.length || null}
           onPress={() => navigation.navigate('Favorites')}
         />
-        <ProfileButton
-          icon="notifications-outline"
-          label="Notifications"
-          last
-          onPress={() =>
-            Alert.alert(
-              'Coming Soon',
-              'Notification settings coming soon!'
-            )
-          }
-        />
+       <ProfileButton
+		  icon="notifications-outline"
+		  label="Notifications"
+		  // ✅ Shows unread count badge
+		  badge={unreadCount > 0 ? unreadCount : null}
+		  last
+		  onPress={() => navigation.navigate('Notifications')}
+		/>
       </View>
 
       {/* ── Support section ─────────────────── */}
