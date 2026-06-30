@@ -22,37 +22,44 @@ import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ─── Notification type config ─────────────────
 const TYPE_CONFIG = {
-  general:    { icon: 'notifications', color: COLORS.primary   },
-  promotion:  { icon: 'pricetag',      color: COLORS.accent    },
-  review:     { icon: 'star',          color: '#FFD700'         },
-  order:      { icon: 'receipt',       color: COLORS.success   },
-  restaurant: { icon: 'restaurant',    color: COLORS.secondary },
-  system:     { icon: 'settings',      color: COLORS.textMuted },
+  general:    { icon: 'notifications', color: COLORS.primary              },
+  promotion:  { icon: 'pricetag',      color: COLORS.warning || '#F39C12' },
+  review:     { icon: 'star',          color: '#FFD700'                    },
+  order:      { icon: 'receipt',       color: COLORS.success              },
+  restaurant: { icon: 'restaurant',    color: COLORS.secondary            },
+  system:     { icon: 'settings',      color: COLORS.textMuted            },
 };
 
 // ─── Time formatter ───────────────────────────
 const formatTime = (timestamp) => {
   if (!timestamp) return '';
-  const date  = timestamp.toDate?.() || new Date(timestamp);
-  const now   = new Date();
-  const diff  = now - date;
-  const mins  = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days  = Math.floor(diff / 86400000);
+  try {
+    const date  = timestamp.toDate?.() || new Date(timestamp);
+    const now   = new Date();
+    const diff  = now - date;
+    const mins  = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days  = Math.floor(diff / 86400000);
 
-  if (mins  < 1)  return 'Just now';
-  if (mins  < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days  < 7)  return `${days}d ago`;
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day:   'numeric',
-  });
+    if (mins  < 1)  return 'Just now';
+    if (mins  < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days  < 7)  return `${days}d ago`;
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day:   'numeric',
+    });
+  } catch {
+    return '';
+  }
 };
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
+
+  // ✅ Get user safely
   const { user, userProfile } = useAuth();
+
   const {
     notifications,
     unreadCount,
@@ -61,30 +68,49 @@ export default function NotificationsScreen() {
     markAllAsRead,
   } = useNotifications();
 
-  // ✅ Notification preferences pulled from userProfile
+  // ✅ Safe defaults — fall back to false if undefined
   const [prefs, setPrefs] = useState({
     pushEnabled: userProfile?.notifications?.pushEnabled ?? true,
     menuUpdates: userProfile?.notifications?.menuUpdates ?? true,
     promotions:  userProfile?.notifications?.promotions  ?? false,
   });
-  const [savingPrefs, setSavingPrefs] = useState(false);
 
-  // ── Toggle a preference and save to Firestore ──
+  // ✅ Track which pref is currently saving
+  const [savingKey, setSavingKey] = useState(null);
+
+  // ── Toggle preference ─────────────────────
   const handleTogglePref = async (key) => {
-    const newPrefs = { ...prefs, [key]: !prefs[key] };
+    // ✅ Guard — do nothing if no user
+    if (!user?.uid) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in to manage notifications'
+      );
+      return;
+    }
+
+    // ✅ Optimistic update — update UI immediately
+    const newValue = !prefs[key];
+    const newPrefs = { ...prefs, [key]: newValue };
     setPrefs(newPrefs);
+    setSavingKey(key);
 
     try {
-      setSavingPrefs(true);
+      // ✅ Only save this specific key — not the whole object
+      // Prevents overwriting other notification settings
       await updateDoc(doc(db, 'users', user.uid), {
-        notifications: newPrefs,
+        [`notifications.${key}`]: newValue,
       });
     } catch (err) {
-      // Revert on error
-      setPrefs(prefs);
-      Alert.alert('Error', 'Could not save preferences');
+      console.error('Toggle pref error:', err);
+      // ✅ Revert on failure
+      setPrefs(prev => ({ ...prev, [key]: !newValue }));
+      Alert.alert(
+        'Error',
+        'Could not save preference. Please try again.'
+      );
     } finally {
-      setSavingPrefs(false);
+      setSavingKey(null);
     }
   };
 
@@ -106,7 +132,11 @@ export default function NotificationsScreen() {
           styles.iconBox,
           { backgroundColor: config.color + '20' },
         ]}>
-          <Ionicons name={config.icon} size={22} color={config.color} />
+          <Ionicons
+            name={config.icon}
+            size={22}
+            color={config.color}
+          />
         </View>
 
         {/* Content */}
@@ -122,7 +152,8 @@ export default function NotificationsScreen() {
           <Text style={styles.notifBody} numberOfLines={2}>
             {item.body}
           </Text>
-          {/* ✅ Show type badge */}
+
+          {/* Type badge */}
           {item.type && item.type !== 'general' && (
             <View style={[
               styles.typeBadge,
@@ -175,11 +206,10 @@ export default function NotificationsScreen() {
           paddingBottom: insets.bottom + SIZES.xl,
         }}
 
-        // ✅ Header — settings + unread bar
         ListHeaderComponent={
           <View>
 
-            {/* ── Notification Settings ─────── */}
+            {/* ── Settings card ─────────────── */}
             <View style={styles.settingsCard}>
               <View style={styles.settingsHeader}>
                 <Ionicons
@@ -190,120 +220,44 @@ export default function NotificationsScreen() {
                 <Text style={styles.settingsTitle}>
                   Notification Settings
                 </Text>
-                {savingPrefs && (
-                  <ActivityIndicator
-                    size="small"
-                    color={COLORS.primary}
-                    style={{ marginLeft: 'auto' }}
-                  />
-                )}
               </View>
 
-              {/* Push notifications toggle */}
-              <View style={styles.prefRow}>
-                <View style={styles.prefInfo}>
-                  <View style={styles.prefIconBox}>
-                    <Ionicons
-                      name="phone-portrait-outline"
-                      size={18}
-                      color={COLORS.primary}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.prefLabel}>
-                      Push Notifications
-                    </Text>
-                    <Text style={styles.prefDesc}>
-                      Receive alerts on your device
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={prefs.pushEnabled}
-                  onValueChange={() => handleTogglePref('pushEnabled')}
-                  trackColor={{
-                    false: COLORS.border,
-                    true:  COLORS.primary + '80',
-                  }}
-                  thumbColor={
-                    prefs.pushEnabled ? COLORS.primary : '#f4f3f4'
-                  }
-                />
-              </View>
+              {/* Push notifications */}
+              <PrefRow
+                icon="phone-portrait-outline"
+                iconColor={COLORS.primary}
+                label="Push Notifications"
+                desc="Receive alerts on your device"
+                value={prefs.pushEnabled}
+                saving={savingKey === 'pushEnabled'}
+                onToggle={() => handleTogglePref('pushEnabled')}
+              />
 
               <View style={styles.prefDivider} />
 
-              {/* Menu updates toggle */}
-              <View style={styles.prefRow}>
-                <View style={styles.prefInfo}>
-                  <View style={[
-                    styles.prefIconBox,
-                    { backgroundColor: COLORS.success + '15' },
-                  ]}>
-                    <Ionicons
-                      name="restaurant-outline"
-                      size={18}
-                      color={COLORS.success}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.prefLabel}>
-                      Daily Menu Updates
-                    </Text>
-                    <Text style={styles.prefDesc}>
-                      When restaurants post today's menu
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={prefs.menuUpdates}
-                  onValueChange={() => handleTogglePref('menuUpdates')}
-                  trackColor={{
-                    false: COLORS.border,
-                    true:  COLORS.success + '80',
-                  }}
-                  thumbColor={
-                    prefs.menuUpdates ? COLORS.success : '#f4f3f4'
-                  }
-                />
-              </View>
+              {/* Menu updates */}
+              <PrefRow
+                icon="restaurant-outline"
+                iconColor={COLORS.success}
+                label="Daily Menu Updates"
+                desc="When restaurants post today's menu"
+                value={prefs.menuUpdates}
+                saving={savingKey === 'menuUpdates'}
+                onToggle={() => handleTogglePref('menuUpdates')}
+              />
 
               <View style={styles.prefDivider} />
 
-              {/* Promotions toggle */}
-              <View style={styles.prefRow}>
-                <View style={styles.prefInfo}>
-                  <View style={[
-                    styles.prefIconBox,
-                    { backgroundColor: COLORS.accent + '15' },
-                  ]}>
-                    <Ionicons
-                      name="pricetag-outline"
-                      size={18}
-                      color={COLORS.accent}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.prefLabel}>
-                      Promotions & Deals
-                    </Text>
-                    <Text style={styles.prefDesc}>
-                      Special offers from restaurants
-                    </Text>
-                  </View>
-                </View>
-                <Switch
-                  value={prefs.promotions}
-                  onValueChange={() => handleTogglePref('promotions')}
-                  trackColor={{
-                    false: COLORS.border,
-                    true:  COLORS.accent + '80',
-                  }}
-                  thumbColor={
-                    prefs.promotions ? COLORS.accent : '#f4f3f4'
-                  }
-                />
-              </View>
+              {/* Promotions */}
+              <PrefRow
+                icon="pricetag-outline"
+                iconColor={COLORS.warning || '#F39C12'}
+                label="Promotions & Deals"
+                desc="Special offers from restaurants"
+                value={prefs.promotions}
+                saving={savingKey === 'promotions'}
+                onToggle={() => handleTogglePref('promotions')}
+              />
             </View>
 
             {/* ── Unread bar ────────────────── */}
@@ -326,7 +280,7 @@ export default function NotificationsScreen() {
               </View>
             )}
 
-            {/* ── Section label ─────────────── */}
+            {/* Section label */}
             {notifications.length > 0 && (
               <Text style={styles.sectionLabel}>
                 RECENT NOTIFICATIONS
@@ -341,7 +295,6 @@ export default function NotificationsScreen() {
           <View style={styles.separator} />
         )}
 
-        // ✅ Empty state
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIconBg}>
@@ -355,12 +308,67 @@ export default function NotificationsScreen() {
               No notifications yet
             </Text>
             <Text style={styles.emptySubtext}>
-              We'll notify you when restaurants update their
-              menu or you have new activity
+              We'll notify you when restaurants update
+              their menu or you have new activity
             </Text>
           </View>
         }
       />
+    </View>
+  );
+}
+
+// ─── Preference Row Component ─────────────────
+// ✅ Extracted to its own component to prevent
+// re-render crashes when toggling
+function PrefRow({
+  icon,
+  iconColor,
+  label,
+  desc,
+  value,
+  saving,
+  onToggle,
+}) {
+  return (
+    <View style={styles.prefRow}>
+      <View style={styles.prefInfo}>
+        <View style={[
+          styles.prefIconBox,
+          { backgroundColor: iconColor + '15' },
+        ]}>
+          <Ionicons
+            name={icon}
+            size={18}
+            color={iconColor}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.prefLabel}>{label}</Text>
+          <Text style={styles.prefDesc}>{desc}</Text>
+        </View>
+      </View>
+
+      {/* ✅ Show spinner while saving, switch when done */}
+      {saving ? (
+        <ActivityIndicator
+          size="small"
+          color={COLORS.primary}
+          style={{ marginRight: 4 }}
+        />
+      ) : (
+        <Switch
+          value={!!value}
+          onValueChange={onToggle}
+          trackColor={{
+            false: COLORS.border,
+            true:  COLORS.primary + '80',
+          }}
+          thumbColor={value ? COLORS.primary : '#f4f3f4'}
+          // ✅ ios_backgroundColor prevents grey bg on iOS
+          ios_backgroundColor={COLORS.border}
+        />
+      )}
     </View>
   );
 }
@@ -415,6 +423,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: SIZES.sm,
     gap: SIZES.sm,
+    minHeight: 56,
   },
   prefInfo: {
     flexDirection: 'row',
@@ -426,7 +435,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primary + '15',
     justifyContent: 'center',
     alignItems: 'center',
   },
