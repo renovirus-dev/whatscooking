@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../hooks/useAuth';
 
 // =============================================
-// SAFE IMPORTS - every screen wrapped in try/catch
+// SAFE IMPORTS
 // =============================================
 function makePlaceholder(name) {
   return function PlaceholderScreen() {
@@ -29,10 +29,10 @@ function makePlaceholder(name) {
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#F8F9FA',
-        paddingTop: insets.top,
+        paddingTop:    insets.top,
         paddingBottom: insets.bottom,
-        paddingLeft: insets.left,
-        paddingRight: insets.right,
+        paddingLeft:   insets.left,
+        paddingRight:  insets.right,
         padding: 20,
       }}>
         <Text style={{ fontSize: 50 }}>🚧</Text>
@@ -53,21 +53,17 @@ function makePlaceholder(name) {
   };
 }
 
-// =============================================
-// AUTH SCREENS
-// =============================================
+// ── Auth screens ──────────────────────────
 let LoginScreen, RegisterScreen;
 try { LoginScreen    = require('../screens/auth/LoginScreen').default;    }
 catch(e) { LoginScreen    = makePlaceholder('Login');    }
 try { RegisterScreen = require('../screens/auth/RegisterScreen').default; }
 catch(e) { RegisterScreen = makePlaceholder('Register'); }
 
-// =============================================
-// USER SCREENS
-// =============================================
+// ── User screens ──────────────────────────
 let HomeScreen, ExploreScreen, RestaurantDetailScreen,
     FavoritesScreen, ProfileScreen, EditProfileScreen,
-    FavoriteDishesScreen;
+    FavoriteDishesScreen, NotificationsScreen;
 
 try { HomeScreen             = require('../screens/user/HomeScreen').default;             }
 catch(e) { HomeScreen             = makePlaceholder('Home');              }
@@ -83,10 +79,11 @@ try { EditProfileScreen      = require('../screens/user/EditProfileScreen').defa
 catch(e) { EditProfileScreen      = makePlaceholder('Edit Profile');      }
 try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').default;   }
 catch(e) { FavoriteDishesScreen   = makePlaceholder('Favourite Dishes');  }
+// ✅ NEW — NotificationsScreen added
+try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
+catch(e) { NotificationsScreen    = makePlaceholder('Notifications');     }
 
-// =============================================
-// OWNER SCREENS
-// =============================================
+// ── Owner screens ─────────────────────────
 let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
     DailyMenuScreen, RestaurantSetupScreen,
     SubscriptionScreen, AnalyticsScreen;
@@ -106,9 +103,7 @@ catch(e) { SubscriptionScreen    = makePlaceholder('Subscription');       }
 try { AnalyticsScreen       = require('../screens/owner/AnalyticsScreen').default;       }
 catch(e) { AnalyticsScreen       = makePlaceholder('Analytics');          }
 
-// =============================================
-// ADMIN SCREENS
-// =============================================
+// ── Admin screens ─────────────────────────
 let AdminDashboardScreen, ManageRestaurantsScreen;
 try { AdminDashboardScreen    = require('../screens/admin/AdminDashboardScreen').default;    }
 catch(e) { AdminDashboardScreen    = makePlaceholder('Admin');   }
@@ -129,7 +124,7 @@ function LoadingScreen() {
       justifyContent: 'center',
       alignItems: 'center',
       backgroundColor: '#F8F9FA',
-      paddingTop: insets.top,
+      paddingTop:    insets.top,
       paddingBottom: insets.bottom,
     }}>
       <Text style={{ fontSize: 60, marginBottom: 20 }}>🍳</Text>
@@ -159,7 +154,7 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           justifyContent: 'center',
           alignItems: 'center',
           paddingHorizontal: 32,
-          paddingTop: insets.top + 32,
+          paddingTop:    insets.top + 32,
           paddingBottom: insets.bottom + 32,
         }}
         keyboardShouldPersistTaps="handled"
@@ -173,17 +168,23 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           What's Cooking
         </Text>
         <Text style={{
-          fontSize: 16, color: 'rgba(255,255,255,0.85)',
-          textAlign: 'center', marginBottom: 40, lineHeight: 24,
+          fontSize: 16,
+          color: 'rgba(255,255,255,0.85)',
+          textAlign: 'center',
+          marginBottom: 40,
+          lineHeight: 24,
         }}>
           Discover daily menus from restaurants near you
         </Text>
 
         <TouchableOpacity
           style={{
-            backgroundColor: '#FFFFFF', paddingVertical: 14,
-            borderRadius: 12, width: '100%',
-            alignItems: 'center', marginBottom: 12,
+            backgroundColor: '#FFFFFF',
+            paddingVertical: 14,
+            borderRadius: 12,
+            width: '100%',
+            alignItems: 'center',
+            marginBottom: 12,
           }}
           onPress={onLogin}
           activeOpacity={0.8}
@@ -196,9 +197,12 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255,255,255,0.2)',
-            paddingVertical: 14, borderRadius: 12,
-            width: '100%', alignItems: 'center',
-            borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
+            paddingVertical: 14,
+            borderRadius: 12,
+            width: '100%',
+            alignItems: 'center',
+            borderWidth: 2,
+            borderColor: 'rgba(255,255,255,0.5)',
             marginBottom: 12,
           }}
           onPress={onRegister}
@@ -215,8 +219,10 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           activeOpacity={0.7}
         >
           <Text style={{
-            color: 'rgba(255,255,255,0.8)', fontSize: 16,
-            fontWeight: '600', textDecorationLine: 'underline',
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: 16,
+            fontWeight: '600',
+            textDecorationLine: 'underline',
           }}>
             Browse as Guest
           </Text>
@@ -233,12 +239,15 @@ function GuestFavoritesScreen({ onLogin }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{
-      flex: 1, backgroundColor: '#F8F9FA',
+      flex: 1,
+      backgroundColor: '#F8F9FA',
       paddingBottom: insets.bottom,
     }}>
       <View style={{
-        flex: 1, justifyContent: 'center',
-        alignItems: 'center', padding: 32,
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 32,
       }}>
         <Text style={{ fontSize: 70, marginBottom: 16 }}>❤️</Text>
         <Text style={{
@@ -256,7 +265,8 @@ function GuestFavoritesScreen({ onLogin }) {
         <TouchableOpacity
           style={{
             backgroundColor: '#FF6B35',
-            paddingHorizontal: 32, paddingVertical: 12,
+            paddingHorizontal: 32,
+            paddingVertical: 12,
             borderRadius: 12,
           }}
           onPress={onLogin}
@@ -280,8 +290,10 @@ function GuestProfileScreen({ onLogin, onRegister }) {
     <ScrollView
       style={{ flex: 1, backgroundColor: '#F8F9FA' }}
       contentContainerStyle={{
-        flexGrow: 1, justifyContent: 'center',
-        alignItems: 'center', padding: 32,
+        flexGrow: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 32,
         paddingBottom: insets.bottom + 32,
       }}
       keyboardShouldPersistTaps="handled"
@@ -318,7 +330,8 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         style={{
           backgroundColor: '#FFFFFF',
           paddingHorizontal: 48, paddingVertical: 14,
-          borderRadius: 12, width: '100%', alignItems: 'center',
+          borderRadius: 12, width: '100%',
+          alignItems: 'center',
           borderWidth: 2, borderColor: '#FF6B35',
         }}
         onPress={onRegister}
@@ -349,7 +362,7 @@ function getTabIcon(routeName, focused) {
 }
 
 // =============================================
-// TAB BAR SCREEN OPTIONS
+// TAB BAR OPTIONS
 // =============================================
 const tabBarScreenOptions = ({ route }) => ({
   headerShown: false,
@@ -452,6 +465,7 @@ function AuthStack({ initialRoute = 'Login' }) {
 
 // =============================================
 // USER NAVIGATOR
+// ✅ NotificationsScreen added
 // =============================================
 function UserNavigator() {
   return (
@@ -478,7 +492,8 @@ function UserNavigator() {
         component={FavoriteDishesScreen}
         options={{ title: 'Favourite Dishes' }}
       />
-	  <Stack.Screen
+      {/* ✅ ADDED */}
+      <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{ title: 'Notifications' }}
@@ -489,6 +504,7 @@ function UserNavigator() {
 
 // =============================================
 // OWNER NAVIGATOR
+// ✅ NotificationsScreen added
 // =============================================
 function OwnerNavigator() {
   return (
@@ -532,7 +548,8 @@ function OwnerNavigator() {
         component={AnalyticsScreen}
         options={{ title: 'Analytics' }}
       />
-	  <Stack.Screen
+      {/* ✅ ADDED */}
+      <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{ title: 'Notifications' }}
@@ -543,32 +560,22 @@ function OwnerNavigator() {
 
 // =============================================
 // ADMIN NAVIGATOR
-// ✅ KEY FIX: headerShown false on ALL admin screens
-// because AdminDashboardScreen has its own custom header
-// with the sign out button built in
+// ✅ headerShown false — custom header in screen
 // =============================================
 function AdminNavigator() {
   return (
-    <Stack.Navigator
-      screenOptions={{
-        // ✅ Hide the default stack header for ALL admin screens
-        // AdminDashboardScreen has its own custom header
-        headerShown: false,
-      }}
-    >
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen
         name="AdminDashboard"
         component={AdminDashboardScreen}
-        // ✅ No header — custom header is inside AdminDashboardScreen
         options={{ headerShown: false }}
       />
       <Stack.Screen
         name="ManageRestaurants"
         component={ManageRestaurantsScreen}
-        // ✅ This screen gets its own header with back button
         options={{
-          headerShown: true,
-          title: 'Manage Restaurants',
+          headerShown:      true,
+          title:            'Manage Restaurants',
           headerStyle:      { backgroundColor: '#2C3E50' },
           headerTintColor:  '#FFFFFF',
           headerTitleStyle: { fontWeight: 'bold' },
@@ -618,14 +625,11 @@ export default function AppNavigator() {
     }
   }, [user]);
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
+  if (loading) return <LoadingScreen />;
 
   return (
     <NavigationContainer>
       {(() => {
-        // Logged in user
         if (user) {
           if (!userProfile) return <LoadingScreen />;
           if (userProfile.role === 'admin')
@@ -635,26 +639,31 @@ export default function AppNavigator() {
           return <UserNavigator />;
         }
 
-        // Auth screens
         if (authScreen) {
           return (
             <AuthStack
-              initialRoute={authScreen === 'login' ? 'Login' : 'Register'}
+              initialRoute={
+                authScreen === 'login' ? 'Login' : 'Register'
+              }
             />
           );
         }
 
-        // Guest mode
         if (isGuest) {
           return (
             <GuestNavigator
-              onLogin={()    => { setIsGuest(false); setAuthScreen('login');    }}
-              onRegister={() => { setIsGuest(false); setAuthScreen('register'); }}
+              onLogin={() => {
+                setIsGuest(false);
+                setAuthScreen('login');
+              }}
+              onRegister={() => {
+                setIsGuest(false);
+                setAuthScreen('register');
+              }}
             />
           );
         }
 
-        // Welcome screen
         return (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Welcome">
