@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/hooks/useNotifications.js
 // ============================================
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Notifications from 'expo-notifications';
 import * as Device        from 'expo-device';
 import Constants          from 'expo-constants';
@@ -22,7 +22,6 @@ import {
 import { db }      from '../firebase/config';
 import { useAuth } from './useAuth';
 
-// ✅ How notifications appear when app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -31,7 +30,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ✅ Read project ID from app.json
 const EXPO_PROJECT_ID =
   Constants.expoConfig?.extra?.eas?.projectId ||
   Constants.manifest?.extra?.eas?.projectId  ||
@@ -40,23 +38,28 @@ const EXPO_PROJECT_ID =
 export const useNotifications = () => {
   const { user } = useAuth();
 
-  const [expoPushToken, setExpoPushToken] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount]     = useState(0);
-  const [loading, setLoading]             = useState(true);
+  const [expoPushToken,    setExpoPushToken]    = useState(null);
+  const [notifications,    setNotifications]    = useState([]);
+  const [unreadCount,      setUnreadCount]      = useState(0);
+  const [loading,          setLoading]          = useState(true);
   const [permissionStatus, setPermissionStatus] = useState(null);
 
   const notificationListener = useRef();
   const responseListener     = useRef();
 
-  // ✅ Track if component is still mounted
-  // Prevents setState calls after unmount (the crash)
+  // ✅ ONE single isMounted ref — not reset in multiple effects
   const isMounted = useRef(true);
 
-  // ─── Push notification setup ──────────────
+  // ✅ Mark unmounted on hook cleanup only
   useEffect(() => {
     isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []); // ← empty array = only runs on mount/unmount
 
+  // ─── Push notification listeners ──────────
+  useEffect(() => {
     registerForPushNotifications();
 
     notificationListener.current =
@@ -73,9 +76,7 @@ export const useNotifications = () => {
       });
 
     return () => {
-      // ✅ Mark as unmounted so no setState fires after this
-      isMounted.current = false;
-
+      // ✅ Only remove listeners — don't touch isMounted here
       if (notificationListener.current) {
         Notifications.removeNotificationSubscription(
           notificationListener.current
@@ -91,9 +92,6 @@ export const useNotifications = () => {
 
   // ─── Firestore listener ───────────────────
   useEffect(() => {
-    // ✅ Reset mounted ref on each effect run
-    isMounted.current = true;
-
     if (!user?.uid) {
       if (isMounted.current) {
         setNotifications([]);
@@ -103,67 +101,59 @@ export const useNotifications = () => {
       return;
     }
 
-    // ✅ Hold reference to unsubscribe function
     let unsubscribe = null;
 
-    const setupListener = () => {
-      try {
-        const q = query(
-          collection(db, 'notifications'),
-          where('userId', '==', user.uid),
-          orderBy('createdAt', 'desc'),
-          limit(50),
-        );
+    try {
+      const q = query(
+        collection(db, 'notifications'),
+        where('userId', '==', user.uid),
+        orderBy('createdAt', 'desc'),
+        limit(50),
+      );
 
-        unsubscribe = onSnapshot(
-          q,
-          (snap) => {
-            // ✅ Only update state if still mounted
-            if (!isMounted.current) return;
+      unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          // ✅ Guard with single shared isMounted
+          if (!isMounted.current) return;
 
-            const data = snap.docs.map(d => ({
-              id: d.id,
-              ...d.data(),
-            }));
-            setNotifications(data);
-            setUnreadCount(data.filter(n => !n.isRead).length);
-            setLoading(false);
-          },
-          (err) => {
-            // ✅ Only update state if still mounted
-            if (!isMounted.current) return;
+          const data = snap.docs.map(d => ({
+            id: d.id,
+            ...d.data(),
+          }));
 
-            if (err.code === 'failed-precondition') {
-              console.warn(
-                '⚠️ Firestore index needed.\n' +
-                'Add composite index in Firebase Console:\n' +
-                'Collection: notifications\n' +
-                'Fields: userId ASC, createdAt DESC'
-              );
-            } else {
-              console.error('Notifications listener error:', err);
-            }
+          setNotifications(data);
+          setUnreadCount(data.filter(n => !n.isRead).length);
+          setLoading(false);
+        },
+        (err) => {
+          // ✅ Guard with single shared isMounted
+          if (!isMounted.current) return;
 
-            setNotifications([]);
-            setUnreadCount(0);
-            setLoading(false);
+          if (err.code === 'failed-precondition') {
+            console.warn(
+              '⚠️ Firestore index needed.\n' +
+              'Collection: notifications\n' +
+              'Fields: userId ASC, createdAt DESC'
+            );
+          } else {
+            console.error('Notifications listener error:', err);
           }
-        );
-      } catch (err) {
-        console.error('Notifications setup error:', err);
-        if (isMounted.current) {
+
+          setNotifications([]);
+          setUnreadCount(0);
           setLoading(false);
         }
+      );
+    } catch (err) {
+      console.error('Notifications setup error:', err);
+      if (isMounted.current) {
+        setLoading(false);
       }
-    };
+    }
 
-    setupListener();
-
-    // ✅ Cleanup — called when:
-    // 1. Component unmounts (navigating back)
-    // 2. user.uid changes
     return () => {
-      isMounted.current = false;
+      // ✅ Only unsubscribe — don't touch isMounted here
       if (unsubscribe) {
         unsubscribe();
         unsubscribe = null;
@@ -184,17 +174,13 @@ export const useNotifications = () => {
 
       let finalStatus = existingStatus;
 
-      if (isMounted.current) {
-        setPermissionStatus(existingStatus);
-      }
+      if (isMounted.current) setPermissionStatus(existingStatus);
 
       if (existingStatus !== 'granted') {
         const { status } =
           await Notifications.requestPermissionsAsync();
         finalStatus = status;
-        if (isMounted.current) {
-          setPermissionStatus(status);
-        }
+        if (isMounted.current) setPermissionStatus(status);
       }
 
       if (finalStatus !== 'granted') {
@@ -208,10 +194,9 @@ export const useNotifications = () => {
 
       const token = tokenData.data;
 
-      if (isMounted.current) {
-        setExpoPushToken(token);
-      }
+      if (isMounted.current) setExpoPushToken(token);
 
+      // ✅ Safe — no setState after this
       if (user?.uid && token) {
         await updateDoc(doc(db, 'users', user.uid), {
           expoPushToken:  token,
@@ -230,24 +215,18 @@ export const useNotifications = () => {
           sound:            'default',
         });
 
-        await Notifications.setNotificationChannelAsync(
-          'menu-updates',
-          {
-            name:       'Menu Updates',
-            importance: Notifications.AndroidImportance.HIGH,
-            sound:      'default',
-            lightColor: '#FF6B35',
-          }
-        );
+        await Notifications.setNotificationChannelAsync('menu-updates', {
+          name:       'Menu Updates',
+          importance: Notifications.AndroidImportance.HIGH,
+          sound:      'default',
+          lightColor: '#FF6B35',
+        });
 
-        await Notifications.setNotificationChannelAsync(
-          'promotions',
-          {
-            name:       'Promotions & Deals',
-            importance: Notifications.AndroidImportance.DEFAULT,
-            sound:      'default',
-          }
-        );
+        await Notifications.setNotificationChannelAsync('promotions', {
+          name:       'Promotions & Deals',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          sound:      'default',
+        });
       }
 
       return token;
@@ -258,7 +237,7 @@ export const useNotifications = () => {
   };
 
   // ─── Mark single as read ──────────────────
-  const markAsRead = async (notificationId) => {
+  const markAsRead = useCallback(async (notificationId) => {
     try {
       await updateDoc(
         doc(db, 'notifications', notificationId),
@@ -267,10 +246,10 @@ export const useNotifications = () => {
     } catch (err) {
       console.error('markAsRead error:', err);
     }
-  };
+  }, []);
 
   // ─── Mark all as read ─────────────────────
-  const markAllAsRead = async () => {
+  const markAllAsRead = useCallback(async () => {
     try {
       const unread = notifications.filter(n => !n.isRead);
       if (unread.length === 0) return;
@@ -285,24 +264,21 @@ export const useNotifications = () => {
     } catch (err) {
       console.error('markAllAsRead error:', err);
     }
-  };
+  }, [notifications]);
 
   // ─── Delete notification ──────────────────
-  const deleteNotification = async (notificationId) => {
+  const deleteNotification = useCallback(async (notificationId) => {
     try {
       await deleteDoc(doc(db, 'notifications', notificationId));
     } catch (err) {
       console.error('deleteNotification error:', err);
     }
-  };
+  }, []);
 
   // ─── Send to user ─────────────────────────
-  const sendNotificationToUser = async ({
-    userId,
-    title,
-    body,
-    data  = {},
-    type  = 'general',
+  const sendNotificationToUser = useCallback(async ({
+    userId, title, body,
+    data = {}, type = 'general',
   }) => {
     try {
       await addDoc(collection(db, 'notifications'), {
@@ -319,35 +295,28 @@ export const useNotifications = () => {
       console.error('sendNotificationToUser error:', err);
       return { success: false, error: err.message };
     }
-  };
+  }, []);
 
   // ─── Send local notification ──────────────
-  const sendLocalNotification = async (
-    title,
-    body,
-    data = {}
+  const sendLocalNotification = useCallback(async (
+    title, body, data = {}
   ) => {
     try {
       await Notifications.scheduleNotificationAsync({
-        content: {
-          title,
-          body,
-          data,
-          sound: 'default',
-        },
+        content: { title, body, data, sound: 'default' },
         trigger: null,
       });
     } catch (err) {
       console.error('sendLocalNotification error:', err);
     }
-  };
+  }, []);
 
   // ─── Handle tap navigation ────────────────
-  const handleNotificationTap = (data) => {
+  const handleNotificationTap = useCallback((data) => {
     if (data?.screen) {
       console.log('📱 Navigate to:', data.screen, data.params);
     }
-  };
+  }, []);
 
   return {
     expoPushToken,
