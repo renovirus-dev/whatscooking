@@ -9,6 +9,7 @@ import {
 } from 'firebase/storage';
 import { storage } from '../firebase/config';
 
+// ─── Curated Unsplash photo IDs ──────────────
 const IMAGE_POOLS = {
 
   // ── Breakfast ──────────────────────────────
@@ -34,6 +35,8 @@ const IMAGE_POOLS = {
     'photo-1512058564366-18510be2db19',
     'photo-1527477396000-e27163b481c2',
   ],
+
+  // ── Lunch special ──────────────────────────
   lunch_special: [
     'photo-1546069901-ba9599a7e63c',
     'photo-1567620905732-2d1ec7ab7445',
@@ -43,6 +46,8 @@ const IMAGE_POOLS = {
     'photo-1544025162-d76694265947',
     'photo-1512058564366-18510be2db19',
   ],
+
+  // ── Dinner special ─────────────────────────
   dinner_special: [
     'photo-1544025162-d76694265947',
     'photo-1504674900247-0877df9cc836',
@@ -82,7 +87,6 @@ const IMAGE_POOLS = {
     'photo-1546793665-c74683f339c1',
     'photo-1543352634-99a5d50ae78e',
     'photo-1505253716362-afaea1d3d1af',
-    // ✅ Mediterranean style salads
     'photo-1551248429-40975aa4de74',
     'photo-1529059997568-3d847b1154f0',
   ],
@@ -156,10 +160,8 @@ const IMAGE_POOLS = {
   ],
 
   // ══════════════════════════════════════════
-  // CUISINE SPECIFIC POOLS
+  // AMERICAN
   // ══════════════════════════════════════════
-
-  // ── American ───────────────────────────────
   burger: [
     'photo-1568901346375-23c9450c58cd',
     'photo-1553979459-d2229ba7433b',
@@ -203,7 +205,9 @@ const IMAGE_POOLS = {
     'photo-1565299507177-b0ac66763828',
   ],
 
-  // ── Italian ────────────────────────────────
+  // ══════════════════════════════════════════
+  // ITALIAN
+  // ══════════════════════════════════════════
   pizza: [
     'photo-1565299624946-b28f40a0ae38',
     'photo-1574071318508-1cdbab80d002',
@@ -240,7 +244,9 @@ const IMAGE_POOLS = {
     'photo-1497034825429-c343d7c6a68f',
   ],
 
-  // ── Chinese ────────────────────────────────
+  // ══════════════════════════════════════════
+  // CHINESE
+  // ══════════════════════════════════════════
   chinese: [
     'photo-1563245372-f21724e3856d',
     'photo-1455619452474-d2be8b1e70cd',
@@ -277,7 +283,9 @@ const IMAGE_POOLS = {
     'photo-1455619452474-d2be8b1e70cd',
   ],
 
-  // ── Japanese ───────────────────────────────
+  // ══════════════════════════════════════════
+  // JAPANESE
+  // ══════════════════════════════════════════
   sushi: [
     'photo-1579584425555-c3ce17fd4351',
     'photo-1617196034183-421b4040ed20',
@@ -314,7 +322,9 @@ const IMAGE_POOLS = {
     'photo-1555126634-323283e090fa',
   ],
 
-  // ── Mexican ────────────────────────────────
+  // ══════════════════════════════════════════
+  // MEXICAN
+  // ══════════════════════════════════════════
   taco: [
     'photo-1565299585323-38d6b0865b47',
     'photo-1604467794349-0b74285de7e7',
@@ -351,7 +361,9 @@ const IMAGE_POOLS = {
     'photo-1604467794349-0b74285de7e7',
   ],
 
-  // ── Indian ─────────────────────────────────
+  // ══════════════════════════════════════════
+  // INDIAN
+  // ══════════════════════════════════════════
   curry: [
     'photo-1585937421612-70a008356fbe',
     'photo-1596797038530-2c107229654b',
@@ -388,7 +400,9 @@ const IMAGE_POOLS = {
     'photo-1562967914-608f82629710',
   ],
 
-  // ── Thai ───────────────────────────────────
+  // ══════════════════════════════════════════
+  // THAI
+  // ══════════════════════════════════════════
   thai: [
     'photo-1562565652-a0d8f0c59eb4',
     'photo-1569718212165-3a8278d5f624',
@@ -418,7 +432,9 @@ const IMAGE_POOLS = {
     'photo-1548943487-a2e4e43b4853',
   ],
 
-  // ── Mediterranean ──────────────────────────
+  // ══════════════════════════════════════════
+  // MEDITERRANEAN
+  // ══════════════════════════════════════════
   mediterranean: [
     'photo-1529059997568-3d847b1154f0',
     'photo-1551248429-40975aa4de74',
@@ -462,7 +478,9 @@ const IMAGE_POOLS = {
     'photo-1490474418585-ba9bad8fd0ea',
   ],
 
-  // ── Seafood ────────────────────────────────
+  // ══════════════════════════════════════════
+  // SEAFOOD
+  // ══════════════════════════════════════════
   seafood: [
     'photo-1565680018434-b513d5e5fd47',
     'photo-1559847844-5315695dadae',
@@ -480,7 +498,9 @@ const IMAGE_POOLS = {
     'photo-1504675099198-7023dd85f5a3',
   ],
 
-  // ── BBQ ────────────────────────────────────
+  // ══════════════════════════════════════════
+  // BBQ
+  // ══════════════════════════════════════════
   bbq: [
     'photo-1529193591184-b1d58069ecdd',
     'photo-1544025162-d76694265947',
@@ -490,7 +510,9 @@ const IMAGE_POOLS = {
     'photo-1527477396000-e27163b481c2',
   ],
 
-  // ── Vegetarian / Vegan ─────────────────────
+  // ══════════════════════════════════════════
+  // VEGETARIAN / VEGAN
+  // ══════════════════════════════════════════
   vegetarian: [
     'photo-1512621776951-a57141f2eefd',
     'photo-1540189549336-e6e99c3679fe',
@@ -516,7 +538,9 @@ const IMAGE_POOLS = {
     'photo-1490474418585-ba9bad8fd0ea',
   ],
 
-  // ── Bakery ─────────────────────────────────
+  // ══════════════════════════════════════════
+  // BAKERY
+  // ══════════════════════════════════════════
   bakery: [
     'photo-1509440159596-0249088772ff',
     'photo-1464195244916-405fa0a82545',
@@ -546,7 +570,9 @@ const IMAGE_POOLS = {
     'photo-1488477181946-6428a0291777',
   ],
 
-  // ── Chicken ────────────────────────────────
+  // ══════════════════════════════════════════
+  // GENERAL POOLS
+  // ══════════════════════════════════════════
   chicken: [
     'photo-1598103442097-8b74394b95c4',
     'photo-1527477396000-e27163b481c2',
@@ -556,8 +582,6 @@ const IMAGE_POOLS = {
     'photo-1544025162-d76694265947',
     'photo-1562967914-608f82629710',
   ],
-
-  // ── Rice ───────────────────────────────────
   rice: [
     'photo-1586201375761-83865001e31c',
     'photo-1563245372-f21724e3856d',
@@ -566,8 +590,6 @@ const IMAGE_POOLS = {
     'photo-1455619452474-d2be8b1e70cd',
     'photo-1512058564366-18510be2db19',
   ],
-
-  // ── Cake / Desserts ────────────────────────
   cake: [
     'photo-1578985545062-69928b1d9587',
     'photo-1464219551459-ac14ae4854bc',
@@ -582,8 +604,6 @@ const IMAGE_POOLS = {
     'photo-1570197788417-0e82375c9371',
     'photo-1497034825429-c343d7c6a68f',
   ],
-
-  // ── Drinks ─────────────────────────────────
   juice: [
     'photo-1546173159-315724a31696',
     'photo-1600271886742-f049cd451bba',
@@ -597,10 +617,12 @@ const IMAGE_POOLS = {
     'photo-1547592180-85f173990554',
     'photo-1603105037880-880cd4edfb0d',
     'photo-1570560258879-af7f8e1447ac',
+    'photo-1574484284002-952d92456975',
+    'photo-1567620905732-2d1ec7ab7445',
   ],
 
   // ══════════════════════════════════════════
-  // JAMAICAN SPECIFIC POOLS
+  // JAMAICAN SPECIFIC
   // ══════════════════════════════════════════
   jerk: [
     'photo-1544025162-d76694265947',
@@ -704,107 +726,110 @@ const IMAGE_POOLS = {
 };
 
 // ─── Keyword → pool mapping ───────────────────
+// ✅ Jamaican checked FIRST so they take priority
 const NAME_KEYWORDS = [
 
-  // ✅ Jamaican — checked FIRST
-  { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'], pool: 'jerk'      },
-  { keywords: ['oxtail', 'ox tail'],                               pool: 'oxtail'    },
-  { keywords: ['ackee', 'ackee and saltfish', 'ackee & saltfish'], pool: 'ackee'     },
-  { keywords: ['plantain', 'fried plantain', 'ripe plantain'],     pool: 'plantain'  },
-  { keywords: ['festival', 'fried dumpling', 'boiled dumpling', 'dumpling'], pool: 'dumpling' },
-  { keywords: ['patty', 'beef patty', 'chicken patty', 'coco bread'], pool: 'patty'  },
-  { keywords: ['callaloo', 'calaloo'],                             pool: 'callaloo'  },
-  { keywords: ['porridge', 'cornmeal porridge', 'peanut porridge'], pool: 'porridge' },
-  { keywords: ['bammy', 'bami'],                                   pool: 'bammy'     },
-  { keywords: ['escovitch', 'escoveitch'],                         pool: 'escovitch' },
-  { keywords: ['stew peas', 'stew chicken', 'brown stew'],         pool: 'stew_peas' },
-  { keywords: ['sorrel'],                                           pool: 'sorrel'    },
-  { keywords: ['rice and peas', 'rice & peas', 'cook up rice', 'pelau'], pool: 'rice' },
-  { keywords: ['curry goat', 'curry chicken', 'curried'],          pool: 'curry'     },
+  // ── Jamaican ───────────────────────────────
+  { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'],             pool: 'jerk'       },
+  { keywords: ['oxtail', 'ox tail'],                                            pool: 'oxtail'     },
+  { keywords: ['ackee and saltfish', 'ackee & saltfish', 'ackee'],            pool: 'ackee'      },
+  { keywords: ['fried plantain', 'ripe plantain', 'plantain'],                pool: 'plantain'   },
+  { keywords: ['fried dumpling', 'boiled dumpling', 'festival', 'dumpling'],  pool: 'dumpling'   },
+  { keywords: ['beef patty', 'chicken patty', 'coco bread', 'patty'],        pool: 'patty'      },
+  { keywords: ['callaloo', 'calaloo'],                                          pool: 'callaloo'   },
+  { keywords: ['cornmeal porridge', 'peanut porridge', 'porridge'],           pool: 'porridge'   },
+  { keywords: ['bammy', 'bami'],                                                pool: 'bammy'      },
+  { keywords: ['escovitch', 'escoveitch'],                                      pool: 'escovitch'  },
+  { keywords: ['stew peas', 'stew chicken', 'brown stew'],                    pool: 'stew_peas'  },
+  { keywords: ['sorrel'],                                                        pool: 'sorrel'     },
+  { keywords: ['rice and peas', 'rice & peas', 'cook up rice', 'pelau'],     pool: 'rice'       },
+  { keywords: ['curry goat', 'curry chicken', 'curried'],                     pool: 'curry'      },
 
-  // ✅ Japanese
-  { keywords: ['sushi', 'sashimi', 'maki', 'nigiri', 'roll'],     pool: 'sushi'     },
-  { keywords: ['ramen', 'udon', 'soba'],                           pool: 'ramen'     },
-  { keywords: ['tempura'],                                          pool: 'tempura'   },
-  { keywords: ['teriyaki'],                                         pool: 'teriyaki'  },
-  { keywords: ['miso'],                                             pool: 'miso'      },
+  // ── Japanese ───────────────────────────────
+  { keywords: ['sushi', 'sashimi', 'maki', 'nigiri'],                         pool: 'sushi'      },
+  { keywords: ['ramen', 'udon', 'soba'],                                        pool: 'ramen'      },
+  { keywords: ['tempura'],                                                       pool: 'tempura'    },
+  { keywords: ['teriyaki'],                                                      pool: 'teriyaki'   },
+  { keywords: ['miso'],                                                          pool: 'miso'       },
 
-  // ✅ Mexican
-  { keywords: ['taco', 'tacos'],                                    pool: 'taco'      },
-  { keywords: ['burrito'],                                          pool: 'burrito'   },
-  { keywords: ['nacho', 'nachos'],                                  pool: 'nachos'    },
-  { keywords: ['quesadilla'],                                       pool: 'quesadilla'},
-  { keywords: ['guacamole'],                                        pool: 'guacamole' },
+  // ── Mexican ────────────────────────────────
+  { keywords: ['taco', 'tacos'],                                                pool: 'taco'       },
+  { keywords: ['burrito'],                                                       pool: 'burrito'    },
+  { keywords: ['nacho', 'nachos'],                                               pool: 'nachos'     },
+  { keywords: ['quesadilla'],                                                    pool: 'quesadilla' },
+  { keywords: ['guacamole'],                                                     pool: 'guacamole'  },
 
-  // ✅ Thai
-  { keywords: ['pad thai', 'padthai'],                              pool: 'padthai'   },
-  { keywords: ['thai curry', 'green curry', 'red curry'],          pool: 'thaicurry' },
-  { keywords: ['spring roll', 'springroll'],                        pool: 'springroll'},
-  { keywords: ['thai'],                                             pool: 'thai'      },
+  // ── Thai ───────────────────────────────────
+  { keywords: ['pad thai', 'padthai'],                                           pool: 'padthai'    },
+  { keywords: ['thai curry', 'green curry', 'red curry'],                       pool: 'thaicurry'  },
+  { keywords: ['spring roll', 'springroll'],                                     pool: 'springroll' },
+  { keywords: ['thai'],                                                           pool: 'thai'       },
 
-  // ✅ Chinese
-  { keywords: ['dim sum', 'dimsum', 'dumplings'],                   pool: 'dimsum'    },
-  { keywords: ['wonton'],                                           pool: 'wonton'    },
-  { keywords: ['noodle', 'chow mein', 'lo mein', 'mei fun'],       pool: 'noodles'   },
-  { keywords: ['fried rice', 'egg fried rice'],                     pool: 'friedrice' },
-  { keywords: ['chinese'],                                          pool: 'chinese'   },
+  // ── Chinese ────────────────────────────────
+  { keywords: ['dim sum', 'dimsum'],                                             pool: 'dimsum'     },
+  { keywords: ['wonton'],                                                        pool: 'wonton'     },
+  { keywords: ['chow mein', 'lo mein', 'mei fun', 'noodle'],                   pool: 'noodles'    },
+  { keywords: ['fried rice', 'egg fried rice'],                                 pool: 'friedrice'  },
+  { keywords: ['chinese'],                                                        pool: 'chinese'    },
 
-  // ✅ Mediterranean
-  { keywords: ['hummus'],                                           pool: 'hummus'    },
-  { keywords: ['falafel'],                                          pool: 'falafel'   },
-  { keywords: ['shawarma'],                                         pool: 'shawarma'  },
-  { keywords: ['kebab', 'kabob', 'shish'],                          pool: 'kebab'     },
-  { keywords: ['gyro'],                                             pool: 'gyro'      },
+  // ── Mediterranean ──────────────────────────
+  { keywords: ['hummus'],                                                        pool: 'hummus'     },
+  { keywords: ['falafel'],                                                       pool: 'falafel'    },
+  { keywords: ['shawarma'],                                                      pool: 'shawarma'   },
+  { keywords: ['kebab', 'kabob', 'shish'],                                      pool: 'kebab'      },
+  { keywords: ['gyro'],                                                          pool: 'gyro'       },
 
-  // ✅ Indian
-  { keywords: ['biryani'],                                          pool: 'biryani'   },
-  { keywords: ['samosa'],                                           pool: 'samosa'    },
-  { keywords: ['tandoori'],                                         pool: 'tandoori'  },
-  { keywords: ['naan', 'roti', 'paratha'],                          pool: 'naan'      },
-  { keywords: ['curry', 'masala', 'tikka', 'korma'],               pool: 'curry'     },
+  // ── Indian ─────────────────────────────────
+  { keywords: ['biryani'],                                                       pool: 'biryani'    },
+  { keywords: ['samosa'],                                                        pool: 'samosa'     },
+  { keywords: ['tandoori'],                                                      pool: 'tandoori'   },
+  { keywords: ['naan', 'roti', 'paratha'],                                       pool: 'naan'       },
+  { keywords: ['curry', 'masala', 'tikka', 'korma'],                           pool: 'curry'      },
 
-  // ✅ Italian
-  { keywords: ['pizza', 'pepperoni', 'margherita'],                 pool: 'pizza'     },
-  { keywords: ['pasta', 'spaghetti', 'fettuccine', 'penne'],       pool: 'pasta'     },
-  { keywords: ['lasagna', 'lasagne'],                               pool: 'lasagna'   },
-  { keywords: ['risotto'],                                          pool: 'risotto'   },
-  { keywords: ['gelato'],                                           pool: 'gelato'    },
+  // ── Italian ────────────────────────────────
+  { keywords: ['pizza', 'pepperoni', 'margherita'],                             pool: 'pizza'      },
+  { keywords: ['pasta', 'spaghetti', 'fettuccine', 'penne'],                   pool: 'pasta'      },
+  { keywords: ['lasagna', 'lasagne'],                                            pool: 'lasagna'    },
+  { keywords: ['risotto'],                                                       pool: 'risotto'    },
+  { keywords: ['gelato'],                                                        pool: 'gelato'     },
 
-  // ✅ American
-  { keywords: ['burger', 'beef burger', 'chicken burger'],          pool: 'burger'    },
-  { keywords: ['hotdog', 'hot dog'],                                pool: 'hotdog'    },
-  { keywords: ['wings', 'buffalo wings'],                           pool: 'wings'     },
-  { keywords: ['sandwich', 'sub', 'wrap', 'panini'],                pool: 'sandwich'  },
-  { keywords: ['fries', 'french fries', 'chips'],                   pool: 'fries'     },
-  { keywords: ['steak', 'ribeye', 'sirloin'],                       pool: 'steak'     },
+  // ── American ───────────────────────────────
+  { keywords: ['burger', 'beef burger', 'chicken burger'],                      pool: 'burger'     },
+  { keywords: ['hot dog', 'hotdog'],                                             pool: 'hotdog'     },
+  { keywords: ['buffalo wings', 'chicken wings', 'wings'],                     pool: 'wings'      },
+  { keywords: ['sandwich', 'sub', 'wrap', 'panini'],                            pool: 'sandwich'   },
+  { keywords: ['french fries', 'fries', 'chips'],                               pool: 'fries'      },
+  { keywords: ['steak', 'ribeye', 'sirloin'],                                   pool: 'steak'      },
 
-  // ✅ BBQ
-  { keywords: ['bbq', 'barbeque', 'barbecue', 'grill', 'ribs'],    pool: 'bbq'       },
+  // ── BBQ ────────────────────────────────────
+  { keywords: ['bbq', 'barbeque', 'barbecue', 'ribs'],                         pool: 'bbq'        },
 
-  // ✅ Bakery
-  { keywords: ['bread', 'loaf'],                                    pool: 'bread'     },
-  { keywords: ['croissant'],                                        pool: 'croissant' },
-  { keywords: ['donut', 'doughnut'],                                pool: 'donut'     },
-  { keywords: ['cake', 'brownie', 'cookie', 'pastry', 'muffin'],   pool: 'cake'      },
+  // ── Bakery ─────────────────────────────────
+  { keywords: ['croissant'],                                                     pool: 'croissant'  },
+  { keywords: ['donut', 'doughnut'],                                             pool: 'donut'      },
+  { keywords: ['bread', 'loaf'],                                                 pool: 'bread'      },
+  { keywords: ['cake', 'brownie', 'cookie', 'pastry', 'muffin'],               pool: 'cake'       },
 
-  // ✅ Vegetarian / Vegan
-  { keywords: ['tofu'],                                             pool: 'tofu'      },
-  { keywords: ['vegan'],                                            pool: 'vegan'     },
-  { keywords: ['vegetarian', 'veggie'],                             pool: 'vegetarian'},
+  // ── Vegetarian / Vegan ─────────────────────
+  { keywords: ['tofu'],                                                          pool: 'tofu'       },
+  { keywords: ['vegan'],                                                         pool: 'vegan'      },
+  { keywords: ['vegetarian', 'veggie'],                                          pool: 'vegetarian' },
 
-  // ✅ General
-  { keywords: ['chicken', 'fried chicken', 'grilled chicken'],      pool: 'chicken'   },
-  { keywords: ['fish', 'snapper', 'salmon', 'tilapia', 'cod'],     pool: 'fish'      },
-  { keywords: ['shrimp', 'prawn', 'lobster', 'crab', 'seafood'],   pool: 'seafood'   },
-  { keywords: ['rice', 'fried rice'],                               pool: 'rice'      },
-  { keywords: ['soup', 'broth', 'chowder', 'bisque'],              pool: 'soup_name' },
-  { keywords: ['salad', 'caesar', 'coleslaw'],                      pool: 'salad'     },
-  { keywords: ['ice cream', 'gelato', 'sorbet', 'sundae'],          pool: 'ice_cream' },
-  { keywords: ['juice', 'smoothie', 'shake', 'lemonade'],           pool: 'juice'     },
-  { keywords: ['breakfast', 'eggs', 'pancake', 'waffle'],           pool: 'breakfast' },
+  // ── General ────────────────────────────────
+  { keywords: ['fried chicken', 'grilled chicken', 'chicken'],                 pool: 'chicken'    },
+  { keywords: ['snapper', 'salmon', 'tilapia', 'cod', 'tuna', 'fish'],        pool: 'fish'       },
+  { keywords: ['shrimp', 'prawn', 'lobster', 'crab', 'seafood'],              pool: 'seafood'    },
+  { keywords: ['fried rice', 'rice'],                                            pool: 'rice'       },
+  { keywords: ['soup', 'broth', 'chowder', 'bisque'],                          pool: 'soup_name'  },
+  { keywords: ['salad', 'caesar', 'coleslaw'],                                  pool: 'salad'      },
+  { keywords: ['ice cream', 'gelato', 'sorbet', 'sundae'],                     pool: 'ice_cream'  },
+  { keywords: ['smoothie', 'milkshake', 'lemonade', 'juice'],                  pool: 'juice'      },
+  { keywords: ['pancake', 'waffle', 'omelette', 'eggs', 'breakfast'],         pool: 'breakfast'  },
 ];
 
-// ─── Main function ────────────────────────────
+// ─── Main export ──────────────────────────────
+// ✅ KEY FIX: seed contains a counter that directly
+// offsets the pool index — guarantees new image each tap
 export function getAutoFoodImage(
   itemName = '',
   category = '',
@@ -812,7 +837,7 @@ export function getAutoFoodImage(
 ) {
   const nameLower = itemName.toLowerCase().trim();
 
-  // Step 1: Match by item name keywords
+  // ── Step 1: Match by item name keywords ──────
   let pool = null;
   for (const { keywords, pool: poolName } of NAME_KEYWORDS) {
     if (keywords.some(k => nameLower.includes(k))) {
@@ -821,17 +846,33 @@ export function getAutoFoodImage(
     }
   }
 
-  // Step 2: Fall back to category pool
+  // ── Step 2: Fall back to category pool ───────
   if (!pool) {
     pool = IMAGE_POOLS[category] || IMAGE_POOLS['default'];
   }
 
-  // Step 3: Pick image using seed
-  const seedStr = seed || itemName || 'food';
-  const hash    = seedStr
-    .split('')
-    .reduce((acc, char, idx) => acc + char.charCodeAt(0) * (idx + 1), 0);
-  const index   = hash % pool.length;
+  // ── Step 3: Extract counter from seed ────────
+  // seed format: "dish name-category-COUNT"
+  // COUNT is the regenerate counter from AddMenuItemScreen
+  // It directly offsets the index so every tap gives
+  // a guaranteed different image from the pool
+  const parts   = seed.split('-');
+  const counter = parseInt(parts[parts.length - 1]) || 0;
+
+  // ── Step 4: Base hash from item name ─────────
+  // Gives a consistent starting point per dish name
+  const baseHash = nameLower.length > 0
+    ? nameLower
+        .split('')
+        .reduce((acc, char, idx) =>
+          acc + char.charCodeAt(0) * (idx + 1), 0
+        )
+    : 0;
+
+  // ── Step 5: Counter shifts the index ─────────
+  // Each regenerate tap moves to the next image in pool
+  // Wraps around when it reaches the end
+  const index   = (baseHash + counter) % pool.length;
   const photoId = pool[index];
 
   return `https://images.unsplash.com/${photoId}?w=400&h=300&fit=crop&auto=format&q=80`;

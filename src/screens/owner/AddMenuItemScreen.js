@@ -44,18 +44,17 @@ const DIETARY = [
   { id: 'isSpicy',      label: '🌶️ Spicy'       },
 ];
 
-// ─── Component ───────────────────────────────
 export default function AddMenuItemScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const { restaurantId, item: existingItem } = route.params || {};
   const { addMenuItem, updateMenuItem }       = useMenu(restaurantId);
 
-  // ── Input refs for keyboard focus chain ──
-  const descriptionRef     = useRef(null);
-  const priceRef           = useRef(null);
-  const prepTimeRef        = useRef(null);
-  const servingSizeRef     = useRef(null);
-  const tagsRef            = useRef(null);
+  // ── Input refs ───────────────────────────
+  const descriptionRef = useRef(null);
+  const priceRef       = useRef(null);
+  const prepTimeRef    = useRef(null);
+  const servingSizeRef = useRef(null);
+  const tagsRef        = useRef(null);
 
   const [form, setForm] = useState({
     name:            existingItem?.name                        || '',
@@ -72,21 +71,28 @@ export default function AddMenuItemScreen({ route, navigation }) {
   const [customImage, setCustomImage] = useState(
     existingItem?.imageUrl || null
   );
-  const [imageSeed, setImageSeed]     = useState(
-    () => existingItem?.id || Date.now().toString()
-  );
-  const [cacheBuster, setCacheBuster] = useState(
-    () => Date.now()
-  );
-  const [loading, setLoading]         = useState(false);
 
-  // ── Auto image ───────────────────────────
-  const rawAutoImage = getAutoFoodImage(
-    form.name,
-    form.category,
-    imageSeed,
-  );
-  const autoImage    = `${rawAutoImage}&cb=${cacheBuster}`;
+  // ✅ FIX: Use a counter instead of timestamp
+  // Counter increments by 1 each regenerate
+  // This guarantees a DIFFERENT index in the pool every time
+  const [regenerateCount, setRegenerateCount] = useState(0);
+
+  const [loading, setLoading] = useState(false);
+
+  // ✅ FIX: Build auto image using name + category + counter
+  // The counter ensures we cycle through different images
+  const getAutoImage = useCallback(() => {
+    const name     = form.name     || 'food';
+    const category = form.category || 'main_course';
+
+    // ✅ Pass the counter as part of seed
+    // This shifts which index is selected in the pool
+    const seed = `${name}-${category}-${regenerateCount}`;
+
+    return getAutoFoodImage(name, category, seed);
+  }, [form.name, form.category, regenerateCount]);
+
+  const autoImage    = getAutoImage();
   const displayImage = customImage || autoImage;
 
   // ─── Handlers ────────────────────────────
@@ -108,14 +114,11 @@ export default function AddMenuItemScreen({ route, navigation }) {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(
-        'Permission needed',
-        'Please allow photo library access'
-      );
+      Alert.alert('Permission needed', 'Please allow photo library access');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
@@ -126,17 +129,22 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
+  // ✅ FIX: Regenerate just increments the counter
+  // This guarantees a new image every single tap
   const handleRegenerateImage = useCallback(() => {
+    // Clear any custom image
     setImageUri(null);
     setCustomImage(null);
-    setImageSeed(Date.now().toString());
-    setCacheBuster(Date.now());
+    // ✅ Increment counter — new seed → new index → new image
+    setRegenerateCount(prev => prev + 1);
   }, []);
 
   const handleRemoveCustomImage = () => {
     setImageUri(null);
     setCustomImage(null);
-    setCacheBuster(Date.now());
+    // ✅ Also increment so we don't show the same
+    // auto image that was showing before custom was picked
+    setRegenerateCount(prev => prev + 1);
   };
 
   const handleSave = async () => {
@@ -154,6 +162,15 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
 
     setLoading(true);
+
+    // ✅ Save the clean auto image URL (no counter in Firestore)
+    // Use count=0 version so it's stable across sessions
+    const stableAutoImage = getAutoFoodImage(
+      form.name.trim(),
+      form.category,
+      `${form.name.trim()}-${form.category}-0`
+    );
+
     const data = {
       name:            form.name.trim(),
       description:     form.description.trim(),
@@ -166,7 +183,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .split(',')
                          .map(t => t.trim())
                          .filter(Boolean),
-      autoImageUrl: customImage ? null : rawAutoImage,
+      autoImageUrl: customImage ? null : stableAutoImage,
     };
 
     let result;
@@ -189,50 +206,39 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ─── Render ───────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView outermost so keyboard
-    // never covers any input field
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={
-        Platform.OS === 'ios'
-          ? 0
-          // ✅ On Android with translucent status bar +
-          // stack header, offset = status bar + header height
-          : insets.top + 56
+        Platform.OS === 'ios' ? 0 : insets.top + 56
       }
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            // ✅ Bottom clears Android nav bar
-            paddingBottom: insets.bottom + SIZES.xl,
-          },
-        ]}
+        contentContainerStyle={{
+          paddingBottom: insets.bottom + SIZES.xl,
+        }}
       >
 
         {/* ── Image Section ───────────────── */}
         <View style={styles.imageSection}>
 
-          {/* Preview — tap to upload */}
+          {/* Preview */}
           <TouchableOpacity
             style={styles.imagePicker}
             onPress={pickImage}
             activeOpacity={0.85}
           >
             <Image
-              key={displayImage}
+              // ✅ key forces full remount when URL changes
+              key={`${displayImage}-${regenerateCount}`}
               source={{ uri: displayImage }}
               style={styles.previewImage}
               resizeMode="cover"
             />
 
-            {/* Camera overlay */}
             <View style={styles.imageOverlay}>
               <Ionicons name="camera" size={24} color="#FFFFFF" />
               <Text style={styles.imageOverlayText}>
@@ -240,7 +246,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </Text>
             </View>
 
-            {/* Auto / Custom badge */}
             {!customImage ? (
               <View style={styles.autoBadge}>
                 <Ionicons name="sparkles" size={12} color="#FFFFFF" />
@@ -271,25 +276,19 @@ export default function AddMenuItemScreen({ route, navigation }) {
                 onPress={handleRemoveCustomImage}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name="trash-outline"
-                  size={16}
-                  color={COLORS.error}
-                />
-                <Text style={[
-                  styles.imageActionText,
-                  { color: COLORS.error },
-                ]}>
+                <Ionicons name="trash-outline" size={16} color={COLORS.error} />
+                <Text style={[styles.imageActionText, { color: COLORS.error }]}>
                   Remove Custom
                 </Text>
               </TouchableOpacity>
             )}
           </View>
 
+          {/* ✅ Show which image number out of pool size */}
           <Text style={styles.imageHint}>
             {customImage
               ? '📷 Using your custom photo'
-              : '🤖 Based on name & category — tap 🔄 for a different image'}
+              : `🤖 Auto image ${(regenerateCount % 5) + 1} of 5 — tap 🔄 for next`}
           </Text>
         </View>
 
@@ -304,7 +303,12 @@ export default function AddMenuItemScreen({ route, navigation }) {
               placeholder="e.g. Jerk Chicken, Fried Fish..."
               placeholderTextColor={COLORS.textMuted}
               value={form.name}
-              onChangeText={v => updateForm('name', v)}
+              onChangeText={v => {
+                updateForm('name', v);
+                // ✅ Reset counter when name changes
+                // so image matches the new dish name
+                setRegenerateCount(0);
+              }}
               autoCapitalize="words"
               returnKeyType="next"
               onSubmitEditing={() => descriptionRef.current?.focus()}
@@ -383,8 +387,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: SIZES.sm }}
-              // ✅ Prevents category scroll stealing
-              // vertical scroll from the parent
               nestedScrollEnabled
             >
               {CATEGORIES.map(cat => (
@@ -392,16 +394,19 @@ export default function AddMenuItemScreen({ route, navigation }) {
                   key={cat.id}
                   style={[
                     styles.categoryBtn,
-                    form.category === cat.id &&
-                      styles.categoryBtnActive,
+                    form.category === cat.id && styles.categoryBtnActive,
                   ]}
-                  onPress={() => updateForm('category', cat.id)}
+                  onPress={() => {
+                    updateForm('category', cat.id);
+                    // ✅ Reset counter when category changes
+                    // so image matches the new category
+                    setRegenerateCount(0);
+                  }}
                   activeOpacity={0.7}
                 >
                   <Text style={[
                     styles.categoryBtnText,
-                    form.category === cat.id &&
-                      styles.categoryBtnTextActive,
+                    form.category === cat.id && styles.categoryBtnTextActive,
                   ]}>
                     {cat.label}
                   </Text>
@@ -485,20 +490,11 @@ export default function AddMenuItemScreen({ route, navigation }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
-
-  // ✅ Replaces the old inline style on ScrollView
-  // paddingBottom set dynamically from insets
-  scrollContent: {
-    flexGrow: 1,
-  },
-
-  // ── Image section ───────────────────────
   imageSection: {
     alignItems: 'center',
     padding: SIZES.lg,
@@ -585,8 +581,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: SIZES.md,
   },
-
-  // ── Form ────────────────────────────────
   form:      { padding: SIZES.md, gap: SIZES.md },
   field:     { gap: SIZES.xs },
   row:       { flexDirection: 'row', gap: SIZES.md },
@@ -606,8 +600,6 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
-
-  // ── Category ────────────────────────────
   categoryBtn: {
     paddingHorizontal: SIZES.md,
     paddingVertical: SIZES.sm,
@@ -622,8 +614,6 @@ const styles = StyleSheet.create({
   },
   categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text },
   categoryBtnTextActive: { color: COLORS.textWhite, fontWeight: '600' },
-
-  // ── Dietary ─────────────────────────────
   dietaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -643,8 +633,6 @@ const styles = StyleSheet.create({
   },
   dietaryText:       { fontSize: FONTS.sm, color: COLORS.text },
   dietaryTextActive: { color: COLORS.success, fontWeight: '600' },
-
-  // ── Save button ─────────────────────────
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
