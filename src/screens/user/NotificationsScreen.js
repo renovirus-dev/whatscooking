@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/screens/user/NotificationsScreen.js
 // ============================================
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -40,14 +40,12 @@ const formatTime = (timestamp) => {
     const mins  = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days  = Math.floor(diff / 86400000);
-
     if (mins  < 1)  return 'Just now';
     if (mins  < 60) return `${mins}m ago`;
     if (hours < 24) return `${hours}h ago`;
     if (days  < 7)  return `${days}d ago`;
     return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day:   'numeric',
+      month: 'short', day: 'numeric',
     });
   } catch {
     return '';
@@ -56,10 +54,7 @@ const formatTime = (timestamp) => {
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
-
-  // ✅ Get user safely
   const { user, userProfile } = useAuth();
-
   const {
     notifications,
     unreadCount,
@@ -68,19 +63,27 @@ export default function NotificationsScreen() {
     markAllAsRead,
   } = useNotifications();
 
-  // ✅ Safe defaults — fall back to false if undefined
+  // ✅ Track mounted state to prevent setState after unmount
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      // ✅ Called when navigating back — stops all async setState
+      isMounted.current = false;
+    };
+  }, []);
+
   const [prefs, setPrefs] = useState({
     pushEnabled: userProfile?.notifications?.pushEnabled ?? true,
     menuUpdates: userProfile?.notifications?.menuUpdates ?? true,
     promotions:  userProfile?.notifications?.promotions  ?? false,
   });
 
-  // ✅ Track which pref is currently saving
   const [savingKey, setSavingKey] = useState(null);
 
   // ── Toggle preference ─────────────────────
   const handleTogglePref = async (key) => {
-    // ✅ Guard — do nothing if no user
     if (!user?.uid) {
       Alert.alert(
         'Sign In Required',
@@ -89,35 +92,36 @@ export default function NotificationsScreen() {
       return;
     }
 
-    // ✅ Optimistic update — update UI immediately
     const newValue = !prefs[key];
-    const newPrefs = { ...prefs, [key]: newValue };
-    setPrefs(newPrefs);
-    setSavingKey(key);
+
+    // ✅ Update UI immediately
+    if (isMounted.current) {
+      setPrefs(prev => ({ ...prev, [key]: newValue }));
+      setSavingKey(key);
+    }
 
     try {
-      // ✅ Only save this specific key — not the whole object
-      // Prevents overwriting other notification settings
       await updateDoc(doc(db, 'users', user.uid), {
         [`notifications.${key}`]: newValue,
       });
     } catch (err) {
       console.error('Toggle pref error:', err);
-      // ✅ Revert on failure
-      setPrefs(prev => ({ ...prev, [key]: !newValue }));
-      Alert.alert(
-        'Error',
-        'Could not save preference. Please try again.'
-      );
+      // ✅ Only revert if still on this screen
+      if (isMounted.current) {
+        setPrefs(prev => ({ ...prev, [key]: !newValue }));
+        Alert.alert('Error', 'Could not save preference.');
+      }
     } finally {
-      setSavingKey(null);
+      // ✅ Only clear saving state if still on this screen
+      if (isMounted.current) {
+        setSavingKey(null);
+      }
     }
   };
 
   // ── Notification card ─────────────────────
   const renderItem = ({ item }) => {
     const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.general;
-
     return (
       <TouchableOpacity
         style={[
@@ -127,19 +131,13 @@ export default function NotificationsScreen() {
         onPress={() => markAsRead(item.id)}
         activeOpacity={0.8}
       >
-        {/* Icon */}
         <View style={[
           styles.iconBox,
           { backgroundColor: config.color + '20' },
         ]}>
-          <Ionicons
-            name={config.icon}
-            size={22}
-            color={config.color}
-          />
+          <Ionicons name={config.icon} size={22} color={config.color} />
         </View>
 
-        {/* Content */}
         <View style={styles.notifContent}>
           <View style={styles.notifHeader}>
             <Text style={styles.notifTitle} numberOfLines={1}>
@@ -152,8 +150,6 @@ export default function NotificationsScreen() {
           <Text style={styles.notifBody} numberOfLines={2}>
             {item.body}
           </Text>
-
-          {/* Type badge */}
           {item.type && item.type !== 'general' && (
             <View style={[
               styles.typeBadge,
@@ -170,7 +166,6 @@ export default function NotificationsScreen() {
           )}
         </View>
 
-        {/* Unread dot */}
         {!item.isRead && <View style={styles.unreadDot} />}
       </TouchableOpacity>
     );
@@ -194,7 +189,6 @@ export default function NotificationsScreen() {
     );
   }
 
-  // ── Main render ───────────────────────────
   return (
     <View style={styles.container}>
       <FlatList
@@ -205,11 +199,9 @@ export default function NotificationsScreen() {
         contentContainerStyle={{
           paddingBottom: insets.bottom + SIZES.xl,
         }}
-
         ListHeaderComponent={
           <View>
-
-            {/* ── Settings card ─────────────── */}
+            {/* Settings card */}
             <View style={styles.settingsCard}>
               <View style={styles.settingsHeader}>
                 <Ionicons
@@ -222,7 +214,6 @@ export default function NotificationsScreen() {
                 </Text>
               </View>
 
-              {/* Push notifications */}
               <PrefRow
                 icon="phone-portrait-outline"
                 iconColor={COLORS.primary}
@@ -235,7 +226,6 @@ export default function NotificationsScreen() {
 
               <View style={styles.prefDivider} />
 
-              {/* Menu updates */}
               <PrefRow
                 icon="restaurant-outline"
                 iconColor={COLORS.success}
@@ -248,7 +238,6 @@ export default function NotificationsScreen() {
 
               <View style={styles.prefDivider} />
 
-              {/* Promotions */}
               <PrefRow
                 icon="pricetag-outline"
                 iconColor={COLORS.warning || '#F39C12'}
@@ -260,7 +249,7 @@ export default function NotificationsScreen() {
               />
             </View>
 
-            {/* ── Unread bar ────────────────── */}
+            {/* Unread bar */}
             {unreadCount > 0 && (
               <View style={styles.unreadBar}>
                 <View style={styles.unreadBadge}>
@@ -280,7 +269,6 @@ export default function NotificationsScreen() {
               </View>
             )}
 
-            {/* Section label */}
             {notifications.length > 0 && (
               <Text style={styles.sectionLabel}>
                 RECENT NOTIFICATIONS
@@ -318,29 +306,22 @@ export default function NotificationsScreen() {
   );
 }
 
-// ─── Preference Row Component ─────────────────
-// ✅ Extracted to its own component to prevent
-// re-render crashes when toggling
+// ─── Preference Row ───────────────────────────
 function PrefRow({
-  icon,
-  iconColor,
-  label,
-  desc,
-  value,
-  saving,
-  onToggle,
+  icon, iconColor, label,
+  desc, value, saving, onToggle,
 }) {
   return (
     <View style={styles.prefRow}>
       <View style={styles.prefInfo}>
         <View style={[
           styles.prefIconBox,
-          { backgroundColor: iconColor + '15' },
+          { backgroundColor: (iconColor || COLORS.primary) + '15' },
         ]}>
           <Ionicons
             name={icon}
             size={18}
-            color={iconColor}
+            color={iconColor || COLORS.primary}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -349,7 +330,6 @@ function PrefRow({
         </View>
       </View>
 
-      {/* ✅ Show spinner while saving, switch when done */}
       {saving ? (
         <ActivityIndicator
           size="small"
@@ -365,7 +345,6 @@ function PrefRow({
             true:  COLORS.primary + '80',
           }}
           thumbColor={value ? COLORS.primary : '#f4f3f4'}
-          // ✅ ios_backgroundColor prevents grey bg on iOS
           ios_backgroundColor={COLORS.border}
         />
       )}
@@ -378,8 +357,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-
-  // ── Loading ──────────────────────────────
   centered: {
     flex: 1,
     justifyContent: 'center',
@@ -392,7 +369,7 @@ const styles = StyleSheet.create({
     marginTop: SIZES.xs,
   },
 
-  // ── Settings card ────────────────────────
+  // Settings card
   settingsCard: {
     backgroundColor: COLORS.surface,
     margin: SIZES.md,
@@ -416,7 +393,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
-  // ── Preference rows ──────────────────────
+  // Pref rows
   prefRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -454,7 +431,7 @@ const styles = StyleSheet.create({
     marginVertical: SIZES.xs,
   },
 
-  // ── Unread bar ───────────────────────────
+  // Unread bar
   unreadBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -484,7 +461,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ── Section label ────────────────────────
+  // Section label
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
@@ -494,7 +471,7 @@ const styles = StyleSheet.create({
     paddingVertical: SIZES.sm,
   },
 
-  // ── Notification card ────────────────────
+  // Notification card
   notifCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -561,12 +538,10 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
-  // ── Separator ────────────────────────────
-  separator: {
-    height: SIZES.sm,
-  },
+  // Separator
+  separator: { height: SIZES.sm },
 
-  // ── Empty state ──────────────────────────
+  // Empty state
   empty: {
     alignItems: 'center',
     paddingVertical: SIZES.xl,

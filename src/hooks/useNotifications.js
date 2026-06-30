@@ -3,14 +3,21 @@
 // ============================================
 import { useState, useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import * as Device        from 'expo-device';
+import Constants          from 'expo-constants';
+import { Platform }       from 'react-native';
 import {
-  doc, updateDoc, collection,
-  addDoc, serverTimestamp,
-  query, where, onSnapshot,
-  orderBy, limit,
+  doc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  where,
+  onSnapshot,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { db }      from '../firebase/config';
 import { useAuth } from './useAuth';
@@ -24,12 +31,11 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// ✅ Read project ID from app.json automatically
-// No more hardcoding — pulls from extra.eas.projectId
+// ✅ Read project ID from app.json
 const EXPO_PROJECT_ID =
   Constants.expoConfig?.extra?.eas?.projectId ||
   Constants.manifest?.extra?.eas?.projectId  ||
-  '15062ebe-c1c0-4d13-9bf4-bcce99cc9e62'; // fallback
+  '15062ebe-c1c0-4d13-9bf4-bcce99cc9e62';
 
 export const useNotifications = () => {
   const { user } = useAuth();
@@ -43,17 +49,21 @@ export const useNotifications = () => {
   const notificationListener = useRef();
   const responseListener     = useRef();
 
-  // ─── Register for push notifications ─────
+  // ✅ Track if component is still mounted
+  // Prevents setState calls after unmount (the crash)
+  const isMounted = useRef(true);
+
+  // ─── Push notification setup ──────────────
   useEffect(() => {
+    isMounted.current = true;
+
     registerForPushNotifications();
 
-    // ✅ Listen for notifications while app is open
     notificationListener.current =
       Notifications.addNotificationReceivedListener(notification => {
         console.log('🔔 Notification received:', notification);
       });
 
-    // ✅ Listen for when user taps a notification
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener(response => {
         console.log('👆 Notification tapped:', response);
@@ -63,6 +73,9 @@ export const useNotifications = () => {
       });
 
     return () => {
+      // ✅ Mark as unmounted so no setState fires after this
+      isMounted.current = false;
+
       if (notificationListener.current) {
         Notifications.removeNotificationSubscription(
           notificationListener.current
@@ -76,91 +89,138 @@ export const useNotifications = () => {
     };
   }, []);
 
-  // ─── Listen to user notifications in Firestore ──
+  // ─── Firestore listener ───────────────────
   useEffect(() => {
+    // ✅ Reset mounted ref on each effect run
+    isMounted.current = true;
+
     if (!user?.uid) {
-      setLoading(false);
+      if (isMounted.current) {
+        setNotifications([]);
+        setUnreadCount(0);
+        setLoading(false);
+      }
       return;
     }
 
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(50),
-    );
+    // ✅ Hold reference to unsubscribe function
+    let unsubscribe = null;
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snap) => {
-        const data = snap.docs.map(d => ({
-          id: d.id,
-          ...d.data(),
-        }));
-        setNotifications(data);
-        setUnreadCount(data.filter(n => !n.isRead).length);
-        setLoading(false);
-      },
-      (err) => {
-        console.error('Notifications listener error:', err);
-        setLoading(false);
+    const setupListener = () => {
+      try {
+        const q = query(
+          collection(db, 'notifications'),
+          where('userId', '==', user.uid),
+          orderBy('createdAt', 'desc'),
+          limit(50),
+        );
+
+        unsubscribe = onSnapshot(
+          q,
+          (snap) => {
+            // ✅ Only update state if still mounted
+            if (!isMounted.current) return;
+
+            const data = snap.docs.map(d => ({
+              id: d.id,
+              ...d.data(),
+            }));
+            setNotifications(data);
+            setUnreadCount(data.filter(n => !n.isRead).length);
+            setLoading(false);
+          },
+          (err) => {
+            // ✅ Only update state if still mounted
+            if (!isMounted.current) return;
+
+            if (err.code === 'failed-precondition') {
+              console.warn(
+                '⚠️ Firestore index needed.\n' +
+                'Add composite index in Firebase Console:\n' +
+                'Collection: notifications\n' +
+                'Fields: userId ASC, createdAt DESC'
+              );
+            } else {
+              console.error('Notifications listener error:', err);
+            }
+
+            setNotifications([]);
+            setUnreadCount(0);
+            setLoading(false);
+          }
+        );
+      } catch (err) {
+        console.error('Notifications setup error:', err);
+        if (isMounted.current) {
+          setLoading(false);
+        }
       }
-    );
+    };
 
-    return unsubscribe;
+    setupListener();
+
+    // ✅ Cleanup — called when:
+    // 1. Component unmounts (navigating back)
+    // 2. user.uid changes
+    return () => {
+      isMounted.current = false;
+      if (unsubscribe) {
+        unsubscribe();
+        unsubscribe = null;
+      }
+    };
   }, [user?.uid]);
 
-  // ─── Register device for push notifications ──
+  // ─── Register push token ──────────────────
   const registerForPushNotifications = async () => {
-    // ✅ Skip on simulator/emulator — push needs real device
     if (!Device.isDevice) {
-      console.log(
-        'ℹ️ Push notifications require a physical device'
-      );
+      console.log('ℹ️ Push needs a physical device');
       return null;
     }
 
     try {
-      // ✅ Check existing permission first
       const { status: existingStatus } =
         await Notifications.getPermissionsAsync();
 
       let finalStatus = existingStatus;
-      setPermissionStatus(existingStatus);
 
-      // Only request if not already granted
+      if (isMounted.current) {
+        setPermissionStatus(existingStatus);
+      }
+
       if (existingStatus !== 'granted') {
         const { status } =
           await Notifications.requestPermissionsAsync();
         finalStatus = status;
-        setPermissionStatus(status);
+        if (isMounted.current) {
+          setPermissionStatus(status);
+        }
       }
 
       if (finalStatus !== 'granted') {
-        console.log('⚠️ Push notification permission denied');
+        console.log('⚠️ Push permission denied');
         return null;
       }
 
-      // ✅ Get Expo push token using project ID from app.json
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: EXPO_PROJECT_ID,
       });
 
       const token = tokenData.data;
-      setExpoPushToken(token);
-      console.log('✅ Push token:', token);
 
-      // ✅ Save token to Firestore user profile
+      if (isMounted.current) {
+        setExpoPushToken(token);
+      }
+
       if (user?.uid && token) {
         await updateDoc(doc(db, 'users', user.uid), {
-          expoPushToken: token,
-          pushEnabled:   true,
-          deviceOS:      Platform.OS,
+          expoPushToken:  token,
+          pushEnabled:    true,
+          deviceOS:       Platform.OS,
           tokenUpdatedAt: serverTimestamp(),
         });
       }
 
-      // ✅ Android notification channel
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
           name:             'default',
@@ -170,7 +230,6 @@ export const useNotifications = () => {
           sound:            'default',
         });
 
-        // ✅ Extra channel for menu updates
         await Notifications.setNotificationChannelAsync(
           'menu-updates',
           {
@@ -181,7 +240,6 @@ export const useNotifications = () => {
           }
         );
 
-        // ✅ Extra channel for promotions
         await Notifications.setNotificationChannelAsync(
           'promotions',
           {
@@ -194,12 +252,12 @@ export const useNotifications = () => {
 
       return token;
     } catch (err) {
-      console.error('registerForPushNotifications error:', err);
+      console.error('Push registration error:', err);
       return null;
     }
   };
 
-  // ─── Mark single notification as read ────
+  // ─── Mark single as read ──────────────────
   const markAsRead = async (notificationId) => {
     try {
       await updateDoc(
@@ -211,12 +269,11 @@ export const useNotifications = () => {
     }
   };
 
-  // ─── Mark ALL notifications as read ──────
+  // ─── Mark all as read ─────────────────────
   const markAllAsRead = async () => {
     try {
       const unread = notifications.filter(n => !n.isRead);
       if (unread.length === 0) return;
-
       await Promise.all(
         unread.map(n =>
           updateDoc(
@@ -230,8 +287,16 @@ export const useNotifications = () => {
     }
   };
 
-  // ─── Send notification to a user ─────────
-  // Called from admin or restaurant owner
+  // ─── Delete notification ──────────────────
+  const deleteNotification = async (notificationId) => {
+    try {
+      await deleteDoc(doc(db, 'notifications', notificationId));
+    } catch (err) {
+      console.error('deleteNotification error:', err);
+    }
+  };
+
+  // ─── Send to user ─────────────────────────
   const sendNotificationToUser = async ({
     userId,
     title,
@@ -240,7 +305,6 @@ export const useNotifications = () => {
     type  = 'general',
   }) => {
     try {
-      // ✅ Save to Firestore — user sees it in app
       await addDoc(collection(db, 'notifications'), {
         userId,
         title,
@@ -250,8 +314,6 @@ export const useNotifications = () => {
         isRead:    false,
         createdAt: serverTimestamp(),
       });
-
-      console.log('✅ Notification saved to Firestore');
       return { success: true };
     } catch (err) {
       console.error('sendNotificationToUser error:', err);
@@ -259,9 +321,12 @@ export const useNotifications = () => {
     }
   };
 
-  // ─── Send local notification (on-device) ─
-  // Useful for testing or instant feedback
-  const sendLocalNotification = async (title, body, data = {}) => {
+  // ─── Send local notification ──────────────
+  const sendLocalNotification = async (
+    title,
+    body,
+    data = {}
+  ) => {
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -270,33 +335,17 @@ export const useNotifications = () => {
           data,
           sound: 'default',
         },
-        trigger: null, // show immediately
+        trigger: null,
       });
     } catch (err) {
       console.error('sendLocalNotification error:', err);
     }
   };
 
-  // ─── Handle notification tap navigation ───
+  // ─── Handle tap navigation ────────────────
   const handleNotificationTap = (data) => {
-    // ✅ You can add navigation logic here
-    // e.g. navigate to RestaurantDetail if data.restaurantId exists
     if (data?.screen) {
-      console.log(
-        '📱 Should navigate to:',
-        data.screen,
-        data.params
-      );
-    }
-  };
-
-  // ─── Delete a notification ────────────────
-  const deleteNotification = async (notificationId) => {
-    try {
-      const { deleteDoc } = await import('firebase/firestore');
-      await deleteDoc(doc(db, 'notifications', notificationId));
-    } catch (err) {
-      console.error('deleteNotification error:', err);
+      console.log('📱 Navigate to:', data.screen, data.params);
     }
   };
 
@@ -308,9 +357,9 @@ export const useNotifications = () => {
     permissionStatus,
     markAsRead,
     markAllAsRead,
+    deleteNotification,
     sendNotificationToUser,
     sendLocalNotification,
-    deleteNotification,
     registerForPushNotifications,
   };
 };
