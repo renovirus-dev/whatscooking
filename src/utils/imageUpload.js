@@ -725,9 +725,9 @@ const IMAGE_POOLS = {
 };
 
 // ─── Keyword → pool mapping ───────────────────
+// ✅ Jamaican checked FIRST
 const NAME_KEYWORDS = [
-
-  // ── Jamaican — checked FIRST ───────────────
+  // ── Jamaican ───────────────────────────────
   { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'],             pool: 'jerk'       },
   { keywords: ['oxtail', 'ox tail'],                                            pool: 'oxtail'     },
   { keywords: ['ackee and saltfish', 'ackee & saltfish', 'ackee'],            pool: 'ackee'      },
@@ -826,29 +826,61 @@ const NAME_KEYWORDS = [
 ];
 
 // ─── getAutoFoodImage ─────────────────────────
+// ✅ FIXED: djb2 hash, verified pool lookup,
+// category lowercase matching
 export function getAutoFoodImage(
   itemName = '',
   category = '',
   seed     = ''
 ) {
   const nameLower = itemName.toLowerCase().trim();
+  const catLower  = (category || '').toLowerCase().trim();
 
-  // Step 1: Match by item name keywords
-  let pool = null;
-  for (const { keywords, pool: poolName } of NAME_KEYWORDS) {
-    if (keywords.some(k => nameLower.includes(k))) {
-      pool = IMAGE_POOLS[poolName];
+  // ── Step 1: Match by dish name keywords ──────
+  let pool     = null;
+  let poolName = null;
+
+  for (const entry of NAME_KEYWORDS) {
+    const matched = entry.keywords.some(keyword =>
+      nameLower.includes(keyword)
+    );
+
+    if (matched) {
+      // ✅ Verify pool exists and is a valid array
+      const targetPool = IMAGE_POOLS[entry.pool];
+      if (
+        targetPool &&
+        Array.isArray(targetPool) &&
+        targetPool.length > 0
+      ) {
+        pool     = targetPool;
+        poolName = entry.pool;
+      }
       break;
     }
   }
 
-  // Step 2: Fall back to category pool
+  // ── Step 2: Fall back to category pool ───────
   if (!pool) {
-    pool = IMAGE_POOLS[category] || IMAGE_POOLS['default'];
+    if (IMAGE_POOLS[catLower]) {
+      pool     = IMAGE_POOLS[catLower];
+      poolName = catLower;
+    } else if (IMAGE_POOLS[category]) {
+      pool     = IMAGE_POOLS[category];
+      poolName = category;
+    } else {
+      pool     = IMAGE_POOLS['default'];
+      poolName = 'default';
+    }
   }
 
-  // ✅ FIX: Extract counter from end of seed using regex
-  // Handles dish names that contain hyphens e.g. "Stir-Fry"
+  // ── Step 3: Safety — ensure pool is valid ────
+  if (!pool || !Array.isArray(pool) || pool.length === 0) {
+    pool     = IMAGE_POOLS['default'];
+    poolName = 'default';
+  }
+
+  // ── Step 4: Extract counter from seed ────────
   let counter = 0;
   try {
     const match = seed.match(/-(\d+)$/);
@@ -859,19 +891,18 @@ export function getAutoFoodImage(
     counter = 0;
   }
 
-  // Step 4: Base hash from item name
-  // Different dish names start at different positions in pool
-  const baseHash = nameLower.length > 0
-    ? nameLower
-        .split('')
-        .reduce((acc, char, idx) =>
-          acc + char.charCodeAt(0) * (idx + 1), 0
-        )
-    : 0;
+  // ── Step 5: djb2 hash ────────────────────────
+  // ✅ Much better distribution than old charCode * index
+  // Different dish names reliably pick different starting photos
+  let nameHash = 5381;
+  for (let i = 0; i < nameLower.length; i++) {
+    nameHash = ((nameHash << 5) + nameHash + nameLower.charCodeAt(i)) & 0x7fffffff;
+  }
 
-  // Step 5: Counter shifts the index
-  // Each tap moves one step forward in the pool
-  const index   = (baseHash + counter) % pool.length;
+  // ── Step 6: Pick image ───────────────────────
+  // nameHash = consistent start position per dish name
+  // counter  = shifts forward each regenerate tap
+  const index   = (nameHash + counter) % pool.length;
   const photoId = pool[index];
 
   return `https://images.unsplash.com/${photoId}?w=400&h=300&fit=crop&auto=format&q=80`;
@@ -888,7 +919,9 @@ export async function uploadImage(uri, path) {
     const response = await fetch(uri);
 
     if (!response.ok) {
-      throw new Error(`Failed to read image: HTTP ${response.status}`);
+      throw new Error(
+        `Failed to read image: HTTP ${response.status}`
+      );
     }
 
     const blob = await response.blob();
@@ -914,9 +947,11 @@ export async function uploadImage(uri, path) {
     let friendlyError = 'Failed to upload image';
     if (error.message.includes('network')) {
       friendlyError = 'No internet connection. Please try again.';
-    } else if (error.message.includes('permission') ||
-               error.message.includes('unauthorized')) {
-      friendlyError = 'Storage permission denied. Please check Firebase rules.';
+    } else if (
+      error.message.includes('permission') ||
+      error.message.includes('unauthorized')
+    ) {
+      friendlyError = 'Storage permission denied.';
     } else if (error.message.includes('empty')) {
       friendlyError = 'Image file is empty. Please choose another photo.';
     }
