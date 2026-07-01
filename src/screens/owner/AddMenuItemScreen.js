@@ -15,11 +15,11 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
-import { useMenu }          from '../../hooks/useMenu';
-import { getAutoFoodImage } from '../../utils/imageUpload';
+import * as ImagePicker      from 'expo-image-picker';
+import { useMenu }           from '../../hooks/useMenu';
+import { getAutoFoodImage }  from '../../utils/imageUpload';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ─── Constants ───────────────────────────────
@@ -44,6 +44,7 @@ const DIETARY = [
   { id: 'isSpicy',      label: '🌶️ Spicy'       },
 ];
 
+// ─── Component ───────────────────────────────
 export default function AddMenuItemScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const { restaurantId, item: existingItem } = route.params || {};
@@ -67,35 +68,26 @@ export default function AddMenuItemScreen({ route, navigation }) {
     tags:            existingItem?.tags?.join(', ')            || '',
   });
 
-  const [imageUri, setImageUri]       = useState(null);
-  const [customImage, setCustomImage] = useState(
+  const [imageUri, setImageUri]           = useState(null);
+  const [customImage, setCustomImage]     = useState(
     existingItem?.imageUrl || null
   );
-
-  // ✅ FIX: Use a counter instead of timestamp
-  // Counter increments by 1 each regenerate
-  // This guarantees a DIFFERENT index in the pool every time
   const [regenerateCount, setRegenerateCount] = useState(0);
+  const [imageLoading, setImageLoading]   = useState(false);
+  const [loading, setLoading]             = useState(false);
 
-  const [loading, setLoading] = useState(false);
-
-  // ✅ FIX: Build auto image using name + category + counter
-  // The counter ensures we cycle through different images
+  // ── Auto image ────────────────────────────
   const getAutoImage = useCallback(() => {
     const name     = form.name     || 'food';
     const category = form.category || 'main_course';
-
-    // ✅ Pass the counter as part of seed
-    // This shifts which index is selected in the pool
-    const seed = `${name}-${category}-${regenerateCount}`;
-
+    const seed     = `${name}-${category}-${regenerateCount}`;
     return getAutoFoodImage(name, category, seed);
   }, [form.name, form.category, regenerateCount]);
 
   const autoImage    = getAutoImage();
   const displayImage = customImage || autoImage;
 
-  // ─── Handlers ────────────────────────────
+  // ─── Form handlers ────────────────────────
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -110,18 +102,22 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }));
   };
 
+  // ─── Image handlers ───────────────────────
   const pickImage = async () => {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access');
+      Alert.alert(
+        'Permission needed',
+        'Please allow photo library access'
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes:    ['images'],
       allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
+      aspect:        [4, 3],
+      quality:       0.8,
     });
     if (!result.canceled) {
       setImageUri(result.assets[0].uri);
@@ -129,24 +125,21 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ✅ FIX: Regenerate just increments the counter
-  // This guarantees a new image every single tap
   const handleRegenerateImage = useCallback(() => {
-    // Clear any custom image
     setImageUri(null);
     setCustomImage(null);
-    // ✅ Increment counter — new seed → new index → new image
+    setImageLoading(true);
     setRegenerateCount(prev => prev + 1);
   }, []);
 
   const handleRemoveCustomImage = () => {
     setImageUri(null);
     setCustomImage(null);
-    // ✅ Also increment so we don't show the same
-    // auto image that was showing before custom was picked
+    setImageLoading(true);
     setRegenerateCount(prev => prev + 1);
   };
 
+  // ─── Save handler ─────────────────────────
   const handleSave = async () => {
     if (!form.name.trim()) {
       Alert.alert('Error', 'Item name is required');
@@ -163,8 +156,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
     setLoading(true);
 
-    // ✅ Save the clean auto image URL (no counter in Firestore)
-    // Use count=0 version so it's stable across sessions
+    // ✅ Save stable URL (counter = 0) — consistent across sessions
     const stableAutoImage = getAutoFoodImage(
       form.name.trim(),
       form.category,
@@ -187,25 +179,30 @@ export default function AddMenuItemScreen({ route, navigation }) {
     };
 
     let result;
-    if (existingItem) {
-      result = await updateMenuItem(existingItem.id, data, imageUri);
-    } else {
-      result = await addMenuItem(data, imageUri);
+    try {
+      if (existingItem) {
+        result = await updateMenuItem(existingItem.id, data, imageUri);
+      } else {
+        result = await addMenuItem(data, imageUri);
+      }
+    } catch (err) {
+      result = { success: false, error: err.message };
     }
 
     setLoading(false);
 
-    if (result.success) {
+    if (result?.success) {
       Alert.alert(
         '✅ Success',
         existingItem ? 'Menu item updated!' : 'Menu item added!',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert('Error', result?.error || 'Something went wrong');
     }
   };
 
+  // ─── Render ───────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -231,12 +228,24 @@ export default function AddMenuItemScreen({ route, navigation }) {
             onPress={pickImage}
             activeOpacity={0.85}
           >
+            {/* ✅ Loading placeholder while image loads */}
+            {imageLoading && !customImage && (
+              <View style={styles.imageLoadingOverlay}>
+                <ActivityIndicator
+                  size="large"
+                  color={COLORS.primary}
+                />
+              </View>
+            )}
+
             <Image
-              // ✅ key forces full remount when URL changes
               key={`${displayImage}-${regenerateCount}`}
               source={{ uri: displayImage }}
               style={styles.previewImage}
               resizeMode="cover"
+              // ✅ Clear loading state when image finishes loading
+              onLoad={() => setImageLoading(false)}
+              onError={() => setImageLoading(false)}
             />
 
             <View style={styles.imageOverlay}>
@@ -262,33 +271,60 @@ export default function AddMenuItemScreen({ route, navigation }) {
           {/* Image action buttons */}
           <View style={styles.imageActions}>
             <TouchableOpacity
-              style={styles.imageActionBtn}
+              style={[
+                styles.imageActionBtn,
+                imageLoading && styles.imageActionBtnDisabled,
+              ]}
               onPress={handleRegenerateImage}
+              disabled={imageLoading}
               activeOpacity={0.7}
             >
-              <Ionicons name="refresh" size={16} color={COLORS.primary} />
-              <Text style={styles.imageActionText}>New Auto Image</Text>
+              {imageLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={COLORS.primary}
+                />
+              ) : (
+                <Ionicons
+                  name="refresh"
+                  size={16}
+                  color={COLORS.primary}
+                />
+              )}
+              <Text style={styles.imageActionText}>
+                {imageLoading ? 'Loading...' : 'New Auto Image'}
+              </Text>
             </TouchableOpacity>
 
             {customImage && (
               <TouchableOpacity
-                style={[styles.imageActionBtn, styles.imageActionBtnDanger]}
+                style={[
+                  styles.imageActionBtn,
+                  styles.imageActionBtnDanger,
+                ]}
                 onPress={handleRemoveCustomImage}
                 activeOpacity={0.7}
               >
-                <Ionicons name="trash-outline" size={16} color={COLORS.error} />
-                <Text style={[styles.imageActionText, { color: COLORS.error }]}>
+                <Ionicons
+                  name="trash-outline"
+                  size={16}
+                  color={COLORS.error}
+                />
+                <Text style={[
+                  styles.imageActionText,
+                  { color: COLORS.error },
+                ]}>
                   Remove Custom
                 </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* ✅ Show which image number out of pool size */}
+          {/* ✅ Fixed hint — no hardcoded pool size */}
           <Text style={styles.imageHint}>
             {customImage
               ? '📷 Using your custom photo'
-              : `🤖 Auto image ${(regenerateCount % 5) + 1} of 5 — tap 🔄 for next`}
+              : `🤖 Auto image #${regenerateCount + 1} — tap 🔄 for a different one`}
           </Text>
         </View>
 
@@ -305,9 +341,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
               value={form.name}
               onChangeText={v => {
                 updateForm('name', v);
-                // ✅ Reset counter when name changes
-                // so image matches the new dish name
+                // ✅ Reset so image matches new dish name
                 setRegenerateCount(0);
+                setImageLoading(true);
               }}
               autoCapitalize="words"
               returnKeyType="next"
@@ -394,19 +430,21 @@ export default function AddMenuItemScreen({ route, navigation }) {
                   key={cat.id}
                   style={[
                     styles.categoryBtn,
-                    form.category === cat.id && styles.categoryBtnActive,
+                    form.category === cat.id &&
+                      styles.categoryBtnActive,
                   ]}
                   onPress={() => {
                     updateForm('category', cat.id);
-                    // ✅ Reset counter when category changes
-                    // so image matches the new category
+                    // ✅ Reset so image matches new category
                     setRegenerateCount(0);
+                    setImageLoading(true);
                   }}
                   activeOpacity={0.7}
                 >
                   <Text style={[
                     styles.categoryBtnText,
-                    form.category === cat.id && styles.categoryBtnTextActive,
+                    form.category === cat.id &&
+                      styles.categoryBtnTextActive,
                   ]}>
                     {cat.label}
                   </Text>
@@ -495,6 +533,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
+  // ── Image section ───────────────────────
   imageSection: {
     alignItems: 'center',
     padding: SIZES.lg,
@@ -513,6 +553,15 @@ const styles = StyleSheet.create({
   previewImage: {
     width: '100%',
     height: '100%',
+  },
+  // ✅ Loading overlay while auto image fetches
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: COLORS.border + '80',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
   },
   imageOverlay: {
     position: 'absolute',
@@ -568,6 +617,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.error + '10',
     borderColor: COLORS.error,
   },
+  // ✅ Dimmed while image is loading
+  imageActionBtnDisabled: {
+    opacity: 0.6,
+  },
   imageActionText: {
     color: COLORS.primary,
     fontWeight: '600',
@@ -581,6 +634,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: SIZES.md,
   },
+
+  // ── Form ─────────────────────────────────
   form:      { padding: SIZES.md, gap: SIZES.md },
   field:     { gap: SIZES.xs },
   row:       { flexDirection: 'row', gap: SIZES.md },
@@ -600,6 +655,8 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
+
+  // ── Category ─────────────────────────────
   categoryBtn: {
     paddingHorizontal: SIZES.md,
     paddingVertical: SIZES.sm,
@@ -614,6 +671,8 @@ const styles = StyleSheet.create({
   },
   categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text },
   categoryBtnTextActive: { color: COLORS.textWhite, fontWeight: '600' },
+
+  // ── Dietary ──────────────────────────────
   dietaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -633,6 +692,8 @@ const styles = StyleSheet.create({
   },
   dietaryText:       { fontSize: FONTS.sm, color: COLORS.text },
   dietaryTextActive: { color: COLORS.success, fontWeight: '600' },
+
+  // ── Save button ──────────────────────────
   saveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
