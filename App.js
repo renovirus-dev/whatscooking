@@ -4,88 +4,69 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
-  Animated,
-  StatusBar,
   View,
 } from 'react-native';
 import { SafeAreaProvider }     from 'react-native-safe-area-context';
 import * as SplashScreen        from 'expo-splash-screen';
-import * as Font                from 'expo-font';
 import { AuthProvider }         from './src/hooks/useAuth';
 import { NotificationProvider } from './src/context/NotificationContext';
 import AppNavigator             from './src/navigation/AppNavigator';
 
-// ✅ Keep splash screen visible until we say hide
+// ✅ Keep splash screen visible until we explicitly hide it
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
   const [appReady, setAppReady] = useState(false);
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const prepare = async () => {
       try {
-        // ✅ Load any assets here
-        // Add font loading, image pre-loading etc
-        // Minimum delay so splash is actually visible
-        await Promise.all([
-          // ✅ Small delay so splash screen shows
-          new Promise(resolve => setTimeout(resolve, 1500)),
-          // ✅ Add any font loading here if needed
-          // Font.loadAsync({ ... }),
-        ]);
+        // ✅ Any asset loading goes here
+        // Give time for Firebase auth to initialise
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (err) {
         console.warn('App prepare error:', err);
       } finally {
-        // ✅ Mark app as ready
         setAppReady(true);
       }
     };
-
     prepare();
   }, []);
 
-  // ✅ Called when root view layout is complete
-  // This is the correct way to hide splash with expo-splash-screen
+  // ✅ Called when the root view finishes layout
+  // This is the CORRECT moment to hide the splash
+  // The app content is already rendered and ready
   const onLayoutRootView = useCallback(async () => {
     if (appReady) {
-      // ✅ Hide splash — triggers fade in
+      // ✅ Hide splash — content is already visible underneath
+      // No fade needed — content shows instantly when splash hides
       await SplashScreen.hideAsync();
-
-      // ✅ Fade in the app
-      Animated.timing(fadeAnim, {
-        toValue:         1,
-        duration:        300,
-        useNativeDriver: true,
-      }).start();
     }
-  }, [appReady, fadeAnim]);
+  }, [appReady]);
 
-  // ✅ Keep splash visible while preparing
+  // ✅ While not ready — return null
+  // The native splash screen stays visible during this time
+  // No blank white screen because splash is still showing
   if (!appReady) {
     return null;
   }
 
   return (
     <SafeAreaProvider>
-      <StatusBar
-        translucent={true}
-        backgroundColor="transparent"
-        barStyle="dark-content"
-      />
       <AuthProvider>
         <NotificationProvider>
           {/*
-            ✅ onLayout on the root view
-            This is what triggers SplashScreen.hideAsync()
-            at exactly the right moment
+            ✅ Root view with onLayout callback
+            When this renders and layout completes,
+            splash hides and this view is immediately visible
+            NO opacity animation needed — content is ready first
           */}
-          <Animated.View
-            style={[styles.container, { opacity: fadeAnim }]}
+          <View
+            style={styles.container}
             onLayout={onLayoutRootView}
           >
             <AppNavigator />
-          </Animated.View>
+          </View>
         </NotificationProvider>
       </AuthProvider>
     </SafeAreaProvider>
@@ -95,10 +76,8 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FF6B35', // ✅ Match splash background color
-  },
-  splashFallback: {
-    flex: 1,
+    // ✅ Match your splash background color
+    // This prevents any flash when splash hides
     backgroundColor: '#FF6B35',
   },
 });
