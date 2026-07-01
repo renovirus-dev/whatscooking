@@ -12,17 +12,23 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth }           from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import { useNotifications } from '../../context/NotificationContext';
+// ✅ REMOVED unused import:
+// import { useNotifications } from '../../context/NotificationContext';
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { user, userProfile, logout } = useAuth();
   const [signingOut, setSigningOut]   = useState(false);
-  // ✅ REMOVED: const { unreadCount } = useNotifications();
+
+  // ✅ Get unread count from context for badge
+  // Re-add this now that context is global and safe
+  const { unreadCount } = require('../../context/NotificationContext').useNotifications
+    ? require('../../context/NotificationContext').useNotifications()
+    : { unreadCount: 0 };
 
   const handleSignOut = async () => {
     Alert.alert(
@@ -51,7 +57,6 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
-  // ── Loading ───────────────────────────────
   if (!userProfile) {
     return (
       <View style={[
@@ -74,13 +79,11 @@ export default function ProfileScreen({ navigation }) {
         paddingBottom: insets.bottom + SIZES.xl,
       }}
     >
-
       {/* ── Header ──────────────────────────── */}
       <View style={[
         styles.header,
         { paddingTop: insets.top + SIZES.xl },
       ]}>
-        {/* Avatar */}
         <TouchableOpacity
           style={styles.avatarContainer}
           onPress={() => navigation.navigate('EditProfile')}
@@ -103,20 +106,16 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </TouchableOpacity>
 
-        {/* Name */}
         <Text style={styles.displayName}>
           {userProfile?.firstName} {userProfile?.lastName}
         </Text>
 
-        {/* Bio */}
         {userProfile?.bio ? (
           <Text style={styles.bio}>{userProfile.bio}</Text>
         ) : null}
 
-        {/* Email */}
         <Text style={styles.email}>{user?.email}</Text>
 
-        {/* Role badge */}
         <View style={styles.roleBadge}>
           <Text style={styles.roleText}>
             {userProfile?.role === 'restaurant_owner'
@@ -127,7 +126,6 @@ export default function ProfileScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* Dietary preferences */}
         {userProfile?.dietaryPreferences?.length > 0 && (
           <View style={styles.dietaryRow}>
             {userProfile.dietaryPreferences.slice(0, 3).map((pref, i) => (
@@ -190,10 +188,11 @@ export default function ProfileScreen({ navigation }) {
           badge={userProfile?.favoriteRestaurants?.length || null}
           onPress={() => navigation.navigate('Favorites')}
         />
-        {/* ✅ REMOVED: badge={unreadCount > 0 ? unreadCount : null} */}
+        {/* ✅ Now safely shows unread badge from global context */}
         <ProfileButton
           icon="notifications-outline"
           label="Notifications"
+          badge={unreadCount > 0 ? unreadCount : null}
           last
           onPress={() => navigation.navigate('Notifications')}
         />
@@ -225,7 +224,7 @@ export default function ProfileScreen({ navigation }) {
         />
       </View>
 
-      {/* ── Sign out button ──────────────────── */}
+      {/* ── Sign out ─────────────────────────── */}
       <TouchableOpacity
         style={[
           styles.signOutButton,
@@ -245,7 +244,6 @@ export default function ProfileScreen({ navigation }) {
         )}
       </TouchableOpacity>
 
-      {/* Version */}
       <Text style={styles.version}>What's Cooking v1.0.0</Text>
 
     </ScrollView>
@@ -254,12 +252,8 @@ export default function ProfileScreen({ navigation }) {
 
 // ─── Profile Button ───────────────────────────
 function ProfileButton({
-  icon,
-  label,
-  onPress,
-  danger = false,
-  last  = false,
-  badge,
+  icon, label, onPress,
+  danger = false, last = false, badge,
 }) {
   return (
     <TouchableOpacity
@@ -296,8 +290,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.background,
   },
-
-  // ── Header ──────────────────────────────
   header: {
     backgroundColor: COLORS.primary,
     alignItems: 'center',
@@ -389,8 +381,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '500',
   },
-
-  // ── Stats row ────────────────────────────
   statsRow: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
@@ -418,8 +408,6 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: COLORS.border,
   },
-
-  // ── Section label ────────────────────────
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
@@ -429,8 +417,6 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.xs,
     marginHorizontal: SIZES.md,
   },
-
-  // ── Menu card ────────────────────────────
   section: {
     backgroundColor: COLORS.surface,
     marginHorizontal: SIZES.md,
@@ -455,9 +441,7 @@ const styles = StyleSheet.create({
     fontSize: FONTS.lg,
     color: COLORS.text,
   },
-  dangerText: {
-    color: COLORS.error,
-  },
+  dangerText: { color: COLORS.error },
   badge: {
     backgroundColor: COLORS.primary,
     minWidth: 20,
@@ -472,8 +456,6 @@ const styles = StyleSheet.create({
     fontSize: FONTS.xs,
     fontWeight: 'bold',
   },
-
-  // ── Sign out button ───────────────────────
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -486,16 +468,12 @@ const styles = StyleSheet.create({
     gap: SIZES.sm,
     ...SHADOW,
   },
-  signOutButtonDisabled: {
-    opacity: 0.7,
-  },
+  signOutButtonDisabled: { opacity: 0.7 },
   signOutText: {
     color: '#FFFFFF',
     fontSize: FONTS.lg,
     fontWeight: 'bold',
   },
-
-  // ── Version ──────────────────────────────
   version: {
     textAlign: 'center',
     color: COLORS.textMuted,
