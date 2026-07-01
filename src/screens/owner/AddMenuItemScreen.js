@@ -67,34 +67,48 @@ export default function AddMenuItemScreen({ route, navigation }) {
     tags:            existingItem?.tags?.join(', ')            || '',
   });
 
-  const [imageUri, setImageUri]           = useState(null);
-  const [customImage, setCustomImage]     = useState(
-    existingItem?.imageUrl || null
+  // ✅ IMAGE STATE — 3 separate concerns:
+
+  // 1. New photo picked from gallery (local URI)
+  const [newImageUri, setNewImageUri]       = useState(null);
+
+  // 2. The existing saved image URL (from Firestore)
+  //    Only set when editing — shown as "current" photo
+  const [existingImageUrl]                  = useState(
+    existingItem?.imageUrl || existingItem?.autoImageUrl || null
   );
 
-  // ✅ KEY FIX: Counter NEVER resets
-  // It only ever increments — this guarantees
-  // a different image every single tap regardless
-  // of what name or category is selected
+  // 3. Whether user is using auto image or custom/existing
+  //    - false = show auto image (generated)
+  //    - true  = show custom (newImageUri or existingImageUrl)
+  const [useCustomImage, setUseCustomImage] = useState(
+    // ✅ Start with custom if item has a saved image
+    !!(existingItem?.imageUrl || existingItem?.autoImageUrl)
+  );
+
+  // 4. Counter for cycling auto images — never resets
   const [regenerateCount, setRegenerateCount] = useState(0);
   const [imageLoading, setImageLoading]       = useState(false);
   const [loading, setLoading]                 = useState(false);
 
-  // ── Auto image ────────────────────────────
+  // ── Compute display image ─────────────────
   const getAutoImage = useCallback(() => {
     const name     = form.name     || 'food';
     const category = form.category || 'main_course';
-
-    // ✅ Seed format: "name-category-COUNT"
-    // The regex in getAutoFoodImage extracts COUNT
-    // from the end using /-(\d+)$/ pattern
-    const seed = `${name}-${category}-${regenerateCount}`;
-
+    const seed     = `${name}-${category}-${regenerateCount}`;
     return getAutoFoodImage(name, category, seed);
   }, [form.name, form.category, regenerateCount]);
 
-  const autoImage    = getAutoImage();
-  const displayImage = customImage || autoImage;
+  // ✅ What image to show in preview:
+  // Priority: new picked photo > existing saved URL > auto generated
+  const displayImage = useCustomImage
+    ? (newImageUri || existingImageUrl || getAutoImage())
+    : getAutoImage();
+
+  // ✅ What badge to show
+  const isShowingNewPhoto     = useCustomImage && !!newImageUri;
+  const isShowingExistingPhoto = useCustomImage && !newImageUri && !!existingImageUrl;
+  const isShowingAutoPhoto    = !useCustomImage;
 
   // ─── Form handlers ────────────────────────
   const updateForm = (field, value) => {
@@ -112,6 +126,8 @@ export default function AddMenuItemScreen({ route, navigation }) {
   };
 
   // ─── Image handlers ───────────────────────
+
+  // ✅ Pick new photo from gallery
   const pickImage = async () => {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -129,24 +145,28 @@ export default function AddMenuItemScreen({ route, navigation }) {
       quality:       0.8,
     });
     if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-      setCustomImage(result.assets[0].uri);
+      // ✅ New photo selected — use it as custom
+      setNewImageUri(result.assets[0].uri);
+      setUseCustomImage(true);
     }
   };
 
-  // ✅ Regenerate ONLY increments counter
-  // NEVER resets — keeps cycling through pool
+  // ✅ Cycle to next auto image
   const handleRegenerateImage = useCallback(() => {
-    setImageUri(null);
-    setCustomImage(null);
+    // ✅ Switch to auto mode
+    setUseCustomImage(false);
+    setNewImageUri(null);
     setImageLoading(true);
+    // ✅ Increment counter — never reset
     setRegenerateCount(prev => prev + 1);
   }, []);
 
+  // ✅ Remove custom/existing — go back to auto
   const handleRemoveCustomImage = () => {
-    setImageUri(null);
-    setCustomImage(null);
+    setUseCustomImage(false);
+    setNewImageUri(null);
     setImageLoading(true);
+    // ✅ Increment so new auto image shows
     setRegenerateCount(prev => prev + 1);
   };
 
@@ -167,8 +187,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
     setLoading(true);
 
-    // ✅ Save stable URL using counter=0
-    // Consistent image shown in menus across sessions
+    // ✅ Stable auto image URL for Firestore
     const stableAutoImage = getAutoFoodImage(
       form.name.trim(),
       form.category,
@@ -187,15 +206,32 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .split(',')
                          .map(t => t.trim())
                          .filter(Boolean),
-      autoImageUrl: customImage ? null : stableAutoImage,
+      // ✅ Smart image URL logic:
+      // - If user picked NEW photo → upload it (passed as imageUri)
+      // - If user chose auto → save auto URL, clear imageUrl
+      // - If user kept existing photo → keep existing imageUrl
+      autoImageUrl: useCustomImage ? null : stableAutoImage,
+      // ✅ Keep existing imageUrl if no new photo picked
+      imageUrl: isShowingExistingPhoto
+        ? existingImageUrl
+        : null,
     };
 
     let result;
     try {
       if (existingItem) {
-        result = await updateMenuItem(existingItem.id, data, imageUri);
+        // ✅ Pass newImageUri (null if no new photo picked)
+        result = await updateMenuItem(
+          existingItem.id,
+          data,
+          // ✅ Only upload if user picked a NEW photo
+          isShowingNewPhoto ? newImageUri : null
+        );
       } else {
-        result = await addMenuItem(data, imageUri);
+        result = await addMenuItem(
+          data,
+          newImageUri
+        );
       }
     } catch (err) {
       result = { success: false, error: err.message };
@@ -214,6 +250,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
+  // ─── Render ───────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -240,7 +277,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
             activeOpacity={0.85}
           >
             {/* Loading overlay */}
-            {imageLoading && !customImage && (
+            {imageLoading && isShowingAutoPhoto && (
               <View style={styles.imageLoadingOverlay}>
                 <ActivityIndicator
                   size="large"
@@ -261,25 +298,35 @@ export default function AddMenuItemScreen({ route, navigation }) {
             <View style={styles.imageOverlay}>
               <Ionicons name="camera" size={24} color="#FFFFFF" />
               <Text style={styles.imageOverlayText}>
-                {customImage ? 'Change Photo' : 'Upload Custom'}
+                Tap to change photo
               </Text>
             </View>
 
-            {!customImage ? (
-              <View style={styles.autoBadge}>
-                <Ionicons name="sparkles" size={12} color="#FFFFFF" />
-                <Text style={styles.autoBadgeText}>Auto</Text>
+            {/* ✅ 3 different badge states */}
+            {isShowingNewPhoto && (
+              <View style={[styles.badge, styles.badgeNew]}>
+                <Ionicons name="camera" size={12} color="#FFFFFF" />
+                <Text style={styles.badgeText}>New Photo</Text>
               </View>
-            ) : (
-              <View style={[styles.autoBadge, styles.customBadge]}>
-                <Ionicons name="person" size={12} color="#FFFFFF" />
-                <Text style={styles.autoBadgeText}>Custom</Text>
+            )}
+            {isShowingExistingPhoto && (
+              <View style={[styles.badge, styles.badgeExisting]}>
+                <Ionicons name="image" size={12} color="#FFFFFF" />
+                <Text style={styles.badgeText}>Current Photo</Text>
+              </View>
+            )}
+            {isShowingAutoPhoto && (
+              <View style={[styles.badge, styles.badgeAuto]}>
+                <Ionicons name="sparkles" size={12} color="#FFFFFF" />
+                <Text style={styles.badgeText}>Auto</Text>
               </View>
             )}
           </TouchableOpacity>
 
-          {/* Action buttons */}
+          {/* Image action buttons */}
           <View style={styles.imageActions}>
+
+            {/* ✅ Always show regenerate button */}
             <TouchableOpacity
               style={[
                 styles.imageActionBtn,
@@ -290,34 +337,57 @@ export default function AddMenuItemScreen({ route, navigation }) {
               activeOpacity={0.7}
             >
               {imageLoading ? (
-                <ActivityIndicator size="small" color={COLORS.primary} />
+                <ActivityIndicator
+                  size="small"
+                  color={COLORS.primary}
+                />
               ) : (
-                <Ionicons name="refresh" size={16} color={COLORS.primary} />
+                <Ionicons
+                  name="refresh"
+                  size={16}
+                  color={COLORS.primary}
+                />
               )}
               <Text style={styles.imageActionText}>
-                {imageLoading ? 'Loading...' : 'New Auto Image'}
+                {imageLoading ? 'Loading...' : 'Auto Image'}
               </Text>
             </TouchableOpacity>
 
-            {customImage && (
+            {/* ✅ Show remove button if showing custom or existing */}
+            {(isShowingNewPhoto || isShowingExistingPhoto) && (
               <TouchableOpacity
-                style={[styles.imageActionBtn, styles.imageActionBtnDanger]}
+                style={[
+                  styles.imageActionBtn,
+                  styles.imageActionBtnDanger,
+                ]}
                 onPress={handleRemoveCustomImage}
                 activeOpacity={0.7}
               >
-                <Ionicons name="trash-outline" size={16} color={COLORS.error} />
-                <Text style={[styles.imageActionText, { color: COLORS.error }]}>
-                  Remove Custom
+                <Ionicons
+                  name="trash-outline"
+                  size={16}
+                  color={COLORS.error}
+                />
+                <Text style={[
+                  styles.imageActionText,
+                  { color: COLORS.error },
+                ]}>
+                  {isShowingNewPhoto
+                    ? 'Remove New'
+                    : 'Remove Photo'}
                 </Text>
               </TouchableOpacity>
             )}
+
           </View>
 
-          {/* Hint */}
+          {/* ✅ Descriptive hint for each state */}
           <Text style={styles.imageHint}>
-            {customImage
-              ? '📷 Using your custom photo'
-              : `🤖 Auto image #${regenerateCount + 1} — tap 🔄 for a different one`}
+            {isShowingNewPhoto
+              ? '📷 New photo selected — tap Save to apply'
+              : isShowingExistingPhoto
+              ? '🖼️ Current saved photo — tap 🔄 to use auto or tap image to change'
+              : `🤖 Auto image #${regenerateCount + 1} — tap 🔄 for next`}
           </Text>
         </View>
 
@@ -334,9 +404,8 @@ export default function AddMenuItemScreen({ route, navigation }) {
               value={form.name}
               onChangeText={v => {
                 updateForm('name', v);
-                // ✅ Trigger image reload for new name
-                // but do NOT reset regenerateCount
-                setImageLoading(true);
+                // ✅ Only trigger image reload if in auto mode
+                if (isShowingAutoPhoto) setImageLoading(true);
               }}
               autoCapitalize="words"
               returnKeyType="next"
@@ -428,9 +497,8 @@ export default function AddMenuItemScreen({ route, navigation }) {
                   ]}
                   onPress={() => {
                     updateForm('category', cat.id);
-                    // ✅ Trigger image reload for new category
-                    // but do NOT reset regenerateCount
-                    setImageLoading(true);
+                    // ✅ Only reload image if in auto mode
+                    if (isShowingAutoPhoto) setImageLoading(true);
                   }}
                   activeOpacity={0.7}
                 >
@@ -568,10 +636,12 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
     fontWeight: '600',
   },
-  autoBadge: {
+
+  // ✅ Badge styles for 3 states
+  badge: {
     position: 'absolute',
-    top: SIZES.sm, left: SIZES.sm,
-    backgroundColor: COLORS.primary,
+    top: SIZES.sm,
+    left: SIZES.sm,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SIZES.sm,
@@ -579,18 +649,27 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.round,
     gap: 4,
   },
-  customBadge: {
+  badgeAuto: {
+    backgroundColor: COLORS.primary,
+  },
+  badgeExisting: {
+    backgroundColor: COLORS.info || '#3498DB',
+  },
+  badgeNew: {
     backgroundColor: COLORS.success,
   },
-  autoBadgeText: {
+  badgeText: {
     color: '#FFFFFF',
     fontSize: FONTS.xs,
     fontWeight: '700',
   },
+
   imageActions: {
     flexDirection: 'row',
     gap: SIZES.sm,
     marginTop: SIZES.md,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   imageActionBtn: {
     flexDirection: 'row',
@@ -623,6 +702,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: SIZES.md,
   },
+
   form:      { padding: SIZES.md, gap: SIZES.md },
   field:     { gap: SIZES.xs },
   row:       { flexDirection: 'row', gap: SIZES.md },
