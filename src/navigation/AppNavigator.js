@@ -79,7 +79,6 @@ try { EditProfileScreen      = require('../screens/user/EditProfileScreen').defa
 catch(e) { EditProfileScreen      = makePlaceholder('Edit Profile');      }
 try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').default;   }
 catch(e) { FavoriteDishesScreen   = makePlaceholder('Favourite Dishes');  }
-// ✅ NEW — NotificationsScreen added
 try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
 catch(e) { NotificationsScreen    = makePlaceholder('Notifications');     }
 
@@ -162,8 +161,11 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
       >
         <Text style={{ fontSize: 80, marginBottom: 16 }}>🍳</Text>
         <Text style={{
-          fontSize: 32, fontWeight: 'bold',
-          color: '#FFFFFF', textAlign: 'center', marginBottom: 8,
+          fontSize: 32,
+          fontWeight: 'bold',
+          color: '#FFFFFF',
+          textAlign: 'center',
+          marginBottom: 8,
         }}>
           What's Cooking
         </Text>
@@ -177,6 +179,7 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           Discover daily menus from restaurants near you
         </Text>
 
+        {/* Sign In */}
         <TouchableOpacity
           style={{
             backgroundColor: '#FFFFFF',
@@ -189,11 +192,16 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           onPress={onLogin}
           activeOpacity={0.8}
         >
-          <Text style={{ color: '#FF6B35', fontSize: 18, fontWeight: 'bold' }}>
+          <Text style={{
+            color: '#FF6B35',
+            fontSize: 18,
+            fontWeight: 'bold',
+          }}>
             Sign In
           </Text>
         </TouchableOpacity>
 
+        {/* Create Account */}
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255,255,255,0.2)',
@@ -208,11 +216,16 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           onPress={onRegister}
           activeOpacity={0.8}
         >
-          <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
+          <Text style={{
+            color: '#FFFFFF',
+            fontSize: 18,
+            fontWeight: 'bold',
+          }}>
             Create Account
           </Text>
         </TouchableOpacity>
 
+        {/* Browse as Guest */}
         <TouchableOpacity
           style={{ paddingVertical: 14, marginTop: 8 }}
           onPress={onGuest}
@@ -251,14 +264,18 @@ function GuestFavoritesScreen({ onLogin }) {
       }}>
         <Text style={{ fontSize: 70, marginBottom: 16 }}>❤️</Text>
         <Text style={{
-          fontSize: 22, fontWeight: 'bold',
-          color: '#2C3E50', marginBottom: 8,
+          fontSize: 22,
+          fontWeight: 'bold',
+          color: '#2C3E50',
+          marginBottom: 8,
         }}>
           Save Your Favorites
         </Text>
         <Text style={{
-          fontSize: 14, color: '#7F8C8D',
-          textAlign: 'center', marginBottom: 24,
+          fontSize: 14,
+          color: '#7F8C8D',
+          textAlign: 'center',
+          marginBottom: 24,
         }}>
           Sign in to save restaurants and track your favorite meals
         </Text>
@@ -272,7 +289,11 @@ function GuestFavoritesScreen({ onLogin }) {
           onPress={onLogin}
           activeOpacity={0.8}
         >
-          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>
+          <Text style={{
+            color: '#FFFFFF',
+            fontSize: 16,
+            fontWeight: 'bold',
+          }}>
             Sign In
           </Text>
         </TouchableOpacity>
@@ -301,43 +322,66 @@ function GuestProfileScreen({ onLogin, onRegister }) {
     >
       <Text style={{ fontSize: 70, marginBottom: 16 }}>👤</Text>
       <Text style={{
-        fontSize: 24, fontWeight: 'bold',
-        color: '#2C3E50', marginBottom: 8,
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#2C3E50',
+        marginBottom: 8,
       }}>
         Guest Mode
       </Text>
       <Text style={{
-        fontSize: 14, color: '#7F8C8D',
-        textAlign: 'center', marginBottom: 32, lineHeight: 22,
+        fontSize: 14,
+        color: '#7F8C8D',
+        textAlign: 'center',
+        marginBottom: 32,
+        lineHeight: 22,
       }}>
         Sign in to save favorites, leave reviews and access all features
       </Text>
+
+      {/* Sign In */}
       <TouchableOpacity
         style={{
           backgroundColor: '#FF6B35',
-          paddingHorizontal: 48, paddingVertical: 14,
-          borderRadius: 12, width: '100%',
-          alignItems: 'center', marginBottom: 12,
+          paddingHorizontal: 48,
+          paddingVertical: 14,
+          borderRadius: 12,
+          width: '100%',
+          alignItems: 'center',
+          marginBottom: 12,
         }}
         onPress={onLogin}
         activeOpacity={0.8}
       >
-        <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
+        <Text style={{
+          color: '#FFFFFF',
+          fontSize: 18,
+          fontWeight: 'bold',
+        }}>
           Sign In
         </Text>
       </TouchableOpacity>
+
+      {/* Create Account */}
       <TouchableOpacity
         style={{
           backgroundColor: '#FFFFFF',
-          paddingHorizontal: 48, paddingVertical: 14,
-          borderRadius: 12, width: '100%',
+          paddingHorizontal: 48,
+          paddingVertical: 14,
+          borderRadius: 12,
+          width: '100%',
           alignItems: 'center',
-          borderWidth: 2, borderColor: '#FF6B35',
+          borderWidth: 2,
+          borderColor: '#FF6B35',
         }}
         onPress={onRegister}
         activeOpacity={0.8}
       >
-        <Text style={{ color: '#FF6B35', fontSize: 18, fontWeight: 'bold' }}>
+        <Text style={{
+          color: '#FF6B35',
+          fontSize: 18,
+          fontWeight: 'bold',
+        }}>
           Create Account
         </Text>
       </TouchableOpacity>
@@ -365,10 +409,10 @@ function getTabIcon(routeName, focused) {
 // TAB BAR OPTIONS
 // =============================================
 const tabBarScreenOptions = ({ route }) => ({
-  headerShown: false,
+  headerShown:           false,
   tabBarActiveTintColor:   '#FF6B35',
   tabBarInactiveTintColor: '#95A5A6',
-  tabBarHideOnKeyboard: true,
+  tabBarHideOnKeyboard:  true,
   tabBarStyle: {
     backgroundColor: '#FFFFFF',
     borderTopColor:  '#E0E0E0',
@@ -465,16 +509,18 @@ function AuthStack({ initialRoute = 'Login' }) {
 
 // =============================================
 // USER NAVIGATOR
-// ✅ NotificationsScreen added
 // =============================================
 function UserNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
+      {/* ── Tab root ───────────────────────── */}
       <Stack.Screen
         name="UserTabs"
         component={UserTabs}
         options={{ headerShown: false }}
       />
+
+      {/* ── Detail screens ─────────────────── */}
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
@@ -492,11 +538,21 @@ function UserNavigator() {
         component={FavoriteDishesScreen}
         options={{ title: 'Favourite Dishes' }}
       />
-      {/* ✅ ADDED */}
       <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{ title: 'Notifications' }}
+      />
+
+      {/*
+        ✅ FIX: Favorites screen also registered in stack
+        so navigating to RestaurantDetail from
+        FavoritesScreen works correctly
+      */}
+      <Stack.Screen
+        name="FavoritesStack"
+        component={FavoritesScreen}
+        options={{ title: 'My Favorites' }}
       />
     </Stack.Navigator>
   );
@@ -504,16 +560,18 @@ function UserNavigator() {
 
 // =============================================
 // OWNER NAVIGATOR
-// ✅ NotificationsScreen added
 // =============================================
 function OwnerNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
+      {/* ── Tab root ───────────────────────── */}
       <Stack.Screen
         name="OwnerTabs"
         component={OwnerTabs}
         options={{ headerShown: false }}
       />
+
+      {/* ── Detail screens ─────────────────── */}
       <Stack.Screen
         name="RestaurantSetup"
         component={RestaurantSetupScreen}
@@ -548,7 +606,6 @@ function OwnerNavigator() {
         component={AnalyticsScreen}
         options={{ title: 'Analytics' }}
       />
-      {/* ✅ ADDED */}
       <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
@@ -560,7 +617,7 @@ function OwnerNavigator() {
 
 // =============================================
 // ADMIN NAVIGATOR
-// ✅ headerShown false — custom header in screen
+// ✅ No default header — AdminDashboard has custom header
 // =============================================
 function AdminNavigator() {
   return (
@@ -591,7 +648,10 @@ function AdminNavigator() {
 function GuestNavigator({ onLogin, onRegister }) {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
-      <Stack.Screen name="GuestTabs" options={{ headerShown: false }}>
+      <Stack.Screen
+        name="GuestTabs"
+        options={{ headerShown: false }}
+      >
         {() => (
           <GuestTabs
             onLogin={onLogin}
@@ -630,6 +690,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       {(() => {
+        // ── Logged in ──────────────────────
         if (user) {
           if (!userProfile) return <LoadingScreen />;
           if (userProfile.role === 'admin')
@@ -639,6 +700,7 @@ export default function AppNavigator() {
           return <UserNavigator />;
         }
 
+        // ── Auth screens ───────────────────
         if (authScreen) {
           return (
             <AuthStack
@@ -649,6 +711,7 @@ export default function AppNavigator() {
           );
         }
 
+        // ── Guest mode ─────────────────────
         if (isGuest) {
           return (
             <GuestNavigator
@@ -664,6 +727,7 @@ export default function AppNavigator() {
           );
         }
 
+        // ── Welcome screen ─────────────────
         return (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Welcome">
