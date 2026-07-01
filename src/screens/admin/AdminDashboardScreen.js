@@ -25,6 +25,10 @@ import {
 import { db }      from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+// ✅ Use the batch push utility we built
+import {
+  sendPushNotificationBatch,
+} from '../../utils/sendPushNotification';
 
 // ─── Tab config ───────────────────────────────
 const TABS = [
@@ -171,10 +175,7 @@ export default function AdminDashboardScreen({ navigation }) {
         updatedAt:  serverTimestamp(),
       });
       await loadRestaurants();
-      Alert.alert(
-        '✅ Approved',
-        `${restaurant.name} is now live!`
-      );
+      Alert.alert('✅ Approved', `${restaurant.name} is now live!`);
     } catch (err) {
       Alert.alert('Error', err.message);
     }
@@ -212,10 +213,7 @@ export default function AdminDashboardScreen({ navigation }) {
         updatedAt: serverTimestamp(),
       });
       await loadUsers();
-      Alert.alert(
-        '✅ Done',
-        `${userData.firstName} is now ${newRole}`
-      );
+      Alert.alert('✅ Done', `${userData.firstName} is now ${newRole}`);
     } catch (err) {
       Alert.alert('Error', err.message);
     }
@@ -289,69 +287,73 @@ export default function AdminDashboardScreen({ navigation }) {
         );
       }
 
+      const title = notifTitle.trim();
+      const body  = notifBody.trim();
+
       // ── Step 1: Save to Firestore ───────────
-      // ✅ Each user gets a notification document
-      // This makes it appear in their Notifications screen
-      await Promise.all(
+      // Each user gets a notification in their inbox
+      // This appears in the Notifications screen
+      const firestoreResults = await Promise.allSettled(
         targetUsers.map(u =>
           addDoc(collection(db, 'notifications'), {
             userId:    u.id,
-            title:     notifTitle.trim(),
-            body:      notifBody.trim(),
+            title,
+            body,
             type:      'general',
             isRead:    false,
             createdAt: serverTimestamp(),
             data:      { type: 'broadcast' },
-          }).catch(err =>
-            console.error(
-              'Failed to save notification for user:',
-              u.id,
-              err
-            )
-          )
+          })
         )
       );
 
-      // ── Step 2: Send push to devices ────────
-      // ✅ Only sends to users who have registered
-      // their device push token
-      const usersWithTokens = targetUsers.filter(
-        u => u.expoPushToken
-      );
+      const firestoreFailed = firestoreResults.filter(
+        r => r.status === 'rejected'
+      ).length;
 
-      if (usersWithTokens.length > 0) {
-        await Promise.all(
-          usersWithTokens.map(u =>
-            fetch('https://exp.host/--/api/v2/push/send', {
-              method:  'POST',
-              headers: {
-                Accept:         'application/json',
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                to:    u.expoPushToken,
-                title: notifTitle.trim(),
-                body:  notifBody.trim(),
-                sound: 'default',
-                data:  { type: 'broadcast' },
-              }),
-            }).catch(() => null)
-          )
+      if (firestoreFailed > 0) {
+        console.warn(
+          `${firestoreFailed} Firestore notifications failed`
         );
+      }
+
+      // ── Step 2: Send push notifications ─────
+      // ✅ Use batch utility — much more efficient
+      // Validates tokens, chunks into 100 per request
+      const tokens = targetUsers
+        .map(u => u.expoPushToken)
+        .filter(Boolean);
+
+      let pushResult = { sent: 0, errors: 0 };
+
+      if (tokens.length > 0) {
+        pushResult = await sendPushNotificationBatch({
+          tokens,
+          title,
+          body,
+          data: { type: 'broadcast' },
+        });
       }
 
       // ── Clear form ──────────────────────────
       setNotifTitle('');
       setNotifBody('');
 
+      // ── Show result ─────────────────────────
       Alert.alert(
-        '✅ Sent!',
-        `Notification delivered to ${targetUsers.length} users\n` +
-        `Push sent to ${usersWithTokens.length} devices`
+        '✅ Notification Sent!',
+        [
+          `📬 In-app: ${targetUsers.length} users notified`,
+          `📱 Push: ${pushResult.sent} devices reached`,
+          tokens.length === 0
+            ? '⚠️ No push tokens — in-app only'
+            : null,
+        ].filter(Boolean).join('\n')
       );
 
     } catch (err) {
-      Alert.alert('Error', err.message);
+      console.error('handleSendNotification error:', err);
+      Alert.alert('Error', err.message || 'Failed to send notification');
     }
 
     setSending(false);
@@ -436,7 +438,9 @@ export default function AdminDashboardScreen({ navigation }) {
                   style={styles.approveBtn}
                   onPress={() => approveRestaurant(r)}
                 >
-                  <Text style={styles.approveBtnText}>Approve</Text>
+                  <Text style={styles.approveBtnText}>
+                    Approve
+                  </Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -462,7 +466,6 @@ export default function AdminDashboardScreen({ navigation }) {
             </Text>
           </View>
         ))}
-
         {reviews.length === 0 && (
           <View style={styles.emptyState}>
             <Text style={styles.emptyText}>No reviews yet</Text>
@@ -553,7 +556,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 <Text style={styles.actionBtnText}>Approve</Text>
               </TouchableOpacity>
             )}
-
             <TouchableOpacity
               style={[
                 styles.actionBtn,
@@ -572,7 +574,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 {item.isActive ? 'Disable' : 'Enable'}
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteRestaurant(item)}
@@ -658,7 +659,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
             )}
-
             {!item.isBanned && item.role !== 'admin' && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnDanger]}
@@ -821,10 +821,7 @@ export default function AdminDashboardScreen({ navigation }) {
                 <Text style={styles.previewTitle}>
                   {notifTitle || 'Title'}
                 </Text>
-                <Text
-                  style={styles.previewBody}
-                  numberOfLines={2}
-                >
+                <Text style={styles.previewBody} numberOfLines={2}>
                   {notifBody || 'Message'}
                 </Text>
               </View>
@@ -913,7 +910,7 @@ export default function AdminDashboardScreen({ navigation }) {
   return (
     <View style={styles.container}>
 
-      {/* ── Admin header ──────────────────── */}
+      {/* Admin header */}
       <View style={[
         styles.adminHeader,
         { paddingTop: insets.top + SIZES.sm },
@@ -949,7 +946,7 @@ export default function AdminDashboardScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Horizontal tab bar ────────────── */}
+      {/* Horizontal tab bar */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -985,7 +982,7 @@ export default function AdminDashboardScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      {/* ── Tab content ───────────────────── */}
+      {/* Tab content */}
       <View style={styles.tabContent}>
         {activeTab === 'overview'    && renderOverview()}
         {activeTab === 'restaurants' && renderRestaurants()}
@@ -1008,8 +1005,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // ── Admin header ─────────────────────────
   adminHeader: {
     backgroundColor: '#2C3E50',
     flexDirection: 'row',
@@ -1042,8 +1037,6 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
     fontWeight: '700',
   },
-
-  // ── Tab bar ──────────────────────────────
   tabBar: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
@@ -1065,9 +1058,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  tabActive: {
-    borderBottomColor: COLORS.primary,
-  },
+  tabActive: { borderBottomColor: COLORS.primary },
   tabText: {
     fontSize: FONTS.sm,
     color: COLORS.textMuted,
@@ -1082,8 +1073,6 @@ const styles = StyleSheet.create({
     padding: SIZES.md,
     gap: SIZES.md,
   },
-
-  // ── Stats grid ───────────────────────────
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1116,8 +1105,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     textAlign: 'center',
   },
-
-  // ── Section ──────────────────────────────
   section: {
     padding: SIZES.md,
     gap: SIZES.sm,
@@ -1128,8 +1115,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: SIZES.xs,
   },
-
-  // ── Pending cards ────────────────────────
   pendingCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1159,8 +1144,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: FONTS.sm,
   },
-
-  // ── List cards ───────────────────────────
   listCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -1194,8 +1177,6 @@ const styles = StyleSheet.create({
     gap: SIZES.sm,
     flexWrap: 'wrap',
   },
-
-  // ── Badges ───────────────────────────────
   badge: {
     paddingHorizontal: SIZES.sm,
     paddingVertical: 3,
@@ -1210,8 +1191,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
   },
-
-  // ── Action buttons ───────────────────────
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1229,8 +1208,6 @@ const styles = StyleSheet.create({
     fontSize:   FONTS.xs,
     fontWeight: '700',
   },
-
-  // ── Banned banner ────────────────────────
   bannedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1244,8 +1221,6 @@ const styles = StyleSheet.create({
     color: COLORS.error,
     fontWeight: '600',
   },
-
-  // ── Review card ──────────────────────────
   reviewCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
@@ -1277,8 +1252,6 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     lineHeight: 20,
   },
-
-  // ── Notification form ────────────────────
   fieldLabel: {
     fontSize: FONTS.md,
     fontWeight: '600',
@@ -1309,9 +1282,7 @@ const styles = StyleSheet.create({
     color:      COLORS.text,
     fontWeight: '600',
   },
-  targetBtnTextActive: {
-    color: COLORS.textWhite,
-  },
+  targetBtnTextActive: { color: COLORS.textWhite },
   notifInput: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
@@ -1327,8 +1298,6 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
-
-  // ── Preview card ─────────────────────────
   previewCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -1359,8 +1328,6 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     marginTop: 2,
   },
-
-  // ── Send button ──────────────────────────
   sendBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1378,8 +1345,6 @@ const styles = StyleSheet.create({
     fontSize:   FONTS.lg,
     fontWeight: '700',
   },
-
-  // ── Notif stats ──────────────────────────
   notifStats: {
     flexDirection: 'row',
     gap: SIZES.sm,
@@ -1404,8 +1369,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
   },
-
-  // ── Sign out (overview tab) ───────────────
   signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1425,8 +1388,6 @@ const styles = StyleSheet.create({
     fontSize:   FONTS.lg,
     fontWeight: 'bold',
   },
-
-  // ── Empty state ──────────────────────────
   emptyState: {
     alignItems: 'center',
     paddingVertical: SIZES.xl,
