@@ -2,7 +2,6 @@
 // FILE: src/utils/imageUpload.js
 // ============================================
 import {
-  getStorage,
   ref,
   uploadBytes,
   getDownloadURL,
@@ -726,10 +725,9 @@ const IMAGE_POOLS = {
 };
 
 // ─── Keyword → pool mapping ───────────────────
-// ✅ Jamaican checked FIRST so they take priority
 const NAME_KEYWORDS = [
 
-  // ── Jamaican ───────────────────────────────
+  // ── Jamaican — checked FIRST ───────────────
   { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'],             pool: 'jerk'       },
   { keywords: ['oxtail', 'ox tail'],                                            pool: 'oxtail'     },
   { keywords: ['ackee and saltfish', 'ackee & saltfish', 'ackee'],            pool: 'ackee'      },
@@ -827,9 +825,7 @@ const NAME_KEYWORDS = [
   { keywords: ['pancake', 'waffle', 'omelette', 'eggs', 'breakfast'],         pool: 'breakfast'  },
 ];
 
-// ─── Main export ──────────────────────────────
-// ✅ KEY FIX: seed contains a counter that directly
-// offsets the pool index — guarantees new image each tap
+// ─── getAutoFoodImage ─────────────────────────
 export function getAutoFoodImage(
   itemName = '',
   category = '',
@@ -837,7 +833,7 @@ export function getAutoFoodImage(
 ) {
   const nameLower = itemName.toLowerCase().trim();
 
-  // ── Step 1: Match by item name keywords ──────
+  // Step 1: Match by item name keywords
   let pool = null;
   for (const { keywords, pool: poolName } of NAME_KEYWORDS) {
     if (keywords.some(k => nameLower.includes(k))) {
@@ -846,21 +842,16 @@ export function getAutoFoodImage(
     }
   }
 
-  // ── Step 2: Fall back to category pool ───────
+  // Step 2: Fall back to category pool
   if (!pool) {
     pool = IMAGE_POOLS[category] || IMAGE_POOLS['default'];
   }
 
-  // ── Step 3: Extract counter from seed ────────
-  // seed format: "dish name-category-COUNT"
-  // COUNT is the regenerate counter from AddMenuItemScreen
-  // It directly offsets the index so every tap gives
-  // a guaranteed different image from the pool
+  // Step 3: Extract counter from seed
   const parts   = seed.split('-');
   const counter = parseInt(parts[parts.length - 1]) || 0;
 
-  // ── Step 4: Base hash from item name ─────────
-  // Gives a consistent starting point per dish name
+  // Step 4: Base hash from item name
   const baseHash = nameLower.length > 0
     ? nameLower
         .split('')
@@ -869,28 +860,68 @@ export function getAutoFoodImage(
         )
     : 0;
 
-  // ── Step 5: Counter shifts the index ─────────
-  // Each regenerate tap moves to the next image in pool
-  // Wraps around when it reaches the end
+  // Step 5: Counter shifts the index
   const index   = (baseHash + counter) % pool.length;
   const photoId = pool[index];
 
   return `https://images.unsplash.com/${photoId}?w=400&h=300&fit=crop&auto=format&q=80`;
 }
 
-// ─── Upload image to Firebase Storage ────────
+// ─── uploadImage ─────────────────────────────
+// ✅ Improved error handling and progress feedback
 export async function uploadImage(uri, path) {
-  try {
-    const response   = await fetch(uri);
-    const blob       = await response.blob();
-    const storageRef = ref(storage, path);
+  // ✅ Guard — validate inputs
+  if (!uri || !path) {
+    console.error('uploadImage: missing uri or path');
+    return { success: false, error: 'Missing image URI or path' };
+  }
 
+  try {
+    // ✅ Fetch the local file as a blob
+    const response = await fetch(uri);
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to read image: HTTP ${response.status}`
+      );
+    }
+
+    const blob = await response.blob();
+
+    // ✅ Validate blob is not empty
+    if (!blob || blob.size === 0) {
+      throw new Error('Image file is empty or could not be read');
+    }
+
+    // ✅ Upload to Firebase Storage
+    const storageRef = ref(storage, path);
     await uploadBytes(storageRef, blob);
+
+    // ✅ Get the public download URL
     const url = await getDownloadURL(storageRef);
 
+    if (!url) {
+      throw new Error('Could not get download URL after upload');
+    }
+
+    console.log('✅ Image uploaded:', path);
     return { success: true, url };
+
   } catch (error) {
-    console.error('uploadImage error:', error);
-    return { success: false, error: error.message };
+    console.error('uploadImage error:', error.message);
+
+    // ✅ Friendly error messages
+    let friendlyError = 'Failed to upload image';
+    if (error.message.includes('network')) {
+      friendlyError = 'No internet connection. Please try again.';
+    } else if (error.message.includes('permission')) {
+      friendlyError = 'Storage permission denied. Please check Firebase rules.';
+    } else if (error.message.includes('storage/unauthorized')) {
+      friendlyError = 'Not authorised to upload. Please sign in.';
+    } else if (error.message.includes('empty')) {
+      friendlyError = 'Image file is empty. Please choose another photo.';
+    }
+
+    return { success: false, error: friendlyError };
   }
 }
