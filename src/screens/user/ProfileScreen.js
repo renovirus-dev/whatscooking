@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-// ✅ REMOVED: useNotifications import
+import { useNotifications } from '../../context/NotificationContext';
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();

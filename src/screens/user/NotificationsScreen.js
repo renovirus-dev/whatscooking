@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { doc, updateDoc }    from 'firebase/firestore';
 import { db }                from '../../firebase/config';
 import { useAuth }           from '../../hooks/useAuth';
-import { useNotifications }  from '../../hooks/useNotifications';
+import { useNotifications } from '../../context/NotificationContext';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ─── Notification type config ─────────────────
