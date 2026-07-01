@@ -6,7 +6,6 @@ import {
   collection,
   query,
   where,
-  orderBy,
   limit,
   doc,
   setDoc,
@@ -17,23 +16,21 @@ import {
   serverTimestamp,
   arrayUnion,
   arrayRemove,
-  increment
+  increment,
 } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db }              from '../firebase/config';
 import {
   uploadImage,
-  getAutoFoodImage
+  getAutoFoodImage,
 } from '../utils/imageUpload';
 
 export { getAutoFoodImage };
 
 export const useRestaurants = () => {
   const [restaurants, setRestaurants] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
-    // ✅ Removed orderBy to avoid needing composite index
-    // Add index in Firebase console if you want sorting back
     const q = query(
       collection(db, 'restaurants'),
       where('isActive', '==', true),
@@ -43,18 +40,14 @@ export const useRestaurants = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({
         id: d.id,
-        ...d.data()
+        ...d.data(),
       }));
-
-      // ✅ Sort in memory instead - no index needed
       data.sort((a, b) =>
         (b.averageRating || 0) - (a.averageRating || 0)
       );
-
       setRestaurants(data);
       setLoading(false);
     }, (error) => {
-      // ✅ Handle query errors gracefully
       console.error('Restaurant query error:', error);
       setLoading(false);
     });
@@ -62,86 +55,86 @@ export const useRestaurants = () => {
     return unsubscribe;
   }, []);
 
-  // ─────────────────────────────────────────
-  // CREATE RESTAURANT
-  // ✅ Fixed: checks for existing restaurant
-  //          before creating to prevent duplicates
-  // ─────────────────────────────────────────
+  // ─── CREATE RESTAURANT ───────────────────
   const createRestaurant = async (data, logoUri, coverUri) => {
     try {
-      // ✅ Step 1 - Check if owner already has a restaurant
+      // Check if owner already has a restaurant
       const existingQuery = query(
         collection(db, 'restaurants'),
         where('ownerId', '==', data.ownerId)
       );
       const existingSnap = await getDocs(existingQuery);
 
-      // ✅ Step 2 - If restaurant exists, UPDATE instead of CREATE
       if (!existingSnap.empty) {
-        console.log('Restaurant already exists, updating instead...');
+        console.log('Restaurant exists — updating instead');
         const existingId = existingSnap.docs[0].id;
         return updateRestaurant(
-          existingId,
-          data,
-          logoUri,
-          coverUri
+          existingId, data, logoUri, coverUri
         );
       }
 
-      // ✅ Step 3 - Upload images
-      let logoUrl = '';
-      let coverUrl = '';
-      let logoPath = '';
+      // ✅ Generate ID first so path uses restaurantId
+      const newRef       = doc(collection(db, 'restaurants'));
+      const restaurantId = newRef.id;
+
+      let logoUrl   = '';
+      let coverUrl  = '';
+      let logoPath  = '';
       let coverPath = '';
 
       if (logoUri) {
-        logoPath =
-          `restaurants/logos/${data.ownerId}_${Date.now()}`;
+        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
+        logoPath  = `restaurants/${restaurantId}/logo_${Date.now()}`;
         const result = await uploadImage(logoUri, logoPath);
-        if (result.success) logoUrl = result.url;
+        if (result.success) {
+          logoUrl = result.url;
+          console.log('✅ Logo uploaded:', logoUrl);
+        } else {
+          console.error('❌ Logo upload failed:', result.error);
+        }
       }
 
       if (coverUri) {
-        coverPath =
-          `restaurants/covers/${data.ownerId}_${Date.now()}`;
+        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
+        coverPath = `restaurants/${restaurantId}/cover_${Date.now()}`;
         const result = await uploadImage(coverUri, coverPath);
-        if (result.success) coverUrl = result.url;
+        if (result.success) {
+          coverUrl = result.url;
+          console.log('✅ Cover uploaded:', coverUrl);
+        } else {
+          console.error('❌ Cover upload failed:', result.error);
+        }
       }
-
-      // ✅ Step 4 - Generate ID manually with doc()
-      // so we can store it inside the document itself
-      const newRef = doc(collection(db, 'restaurants'));
 
       const restaurantData = {
         ...data,
-        id: newRef.id,          // ✅ Store id inside document
+        id:              restaurantId,
         logoUrl,
         coverUrl,
         logoPath,
         coverPath,
-        averageRating: 0,
-        totalReviews: 0,
-        totalFavorites: 0,
-        isActive: true,
+        averageRating:   0,
+        totalReviews:    0,
+        totalFavorites:  0,
+        isActive:        true,
         isCurrentlyOpen: false,
-        isVerified: false,
+        isVerified:      false,
+        isApproved:      false,
         subscription: {
-          plan: 'free_trial',
-          status: 'active',
+          plan:        'free_trial',
+          status:      'active',
           trialEndsAt: new Date(
             Date.now() + 14 * 24 * 60 * 60 * 1000
-          )
+          ),
         },
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       };
 
-      // ✅ Step 5 - Use setDoc instead of addDoc
-      // setDoc with a specific ref = predictable, no duplicates
       await setDoc(newRef, restaurantData);
 
-      console.log('✅ Restaurant created:', newRef.id);
-      return { success: true, id: newRef.id };
+      console.log('✅ Restaurant created:', restaurantId);
+      return { success: true, id: restaurantId };
 
     } catch (error) {
       console.error('❌ createRestaurant error:', error);
@@ -149,9 +142,7 @@ export const useRestaurants = () => {
     }
   };
 
-  // ─────────────────────────────────────────
-  // UPDATE RESTAURANT
-  // ─────────────────────────────────────────
+  // ─── UPDATE RESTAURANT ───────────────────
   const updateRestaurant = async (
     restaurantId,
     data,
@@ -161,29 +152,34 @@ export const useRestaurants = () => {
     try {
       const updates = {
         ...data,
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
       };
 
       if (newLogoUri) {
+        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
         const logoPath =
-          `restaurants/logos/${restaurantId}_${Date.now()}`;
+          `restaurants/${restaurantId}/logo_${Date.now()}`;
         const result = await uploadImage(newLogoUri, logoPath);
         if (result.success) {
-          updates.logoUrl = result.url;
+          updates.logoUrl  = result.url;
           updates.logoPath = logoPath;
+          console.log('✅ Logo updated');
+        } else {
+          console.error('❌ Logo update failed:', result.error);
         }
       }
 
       if (newCoverUri) {
+        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
         const coverPath =
-          `restaurants/covers/${restaurantId}_${Date.now()}`;
-        const result = await uploadImage(
-          newCoverUri,
-          coverPath
-        );
+          `restaurants/${restaurantId}/cover_${Date.now()}`;
+        const result = await uploadImage(newCoverUri, coverPath);
         if (result.success) {
-          updates.coverUrl = result.url;
+          updates.coverUrl  = result.url;
           updates.coverPath = coverPath;
+          console.log('✅ Cover updated');
+        } else {
+          console.error('❌ Cover update failed:', result.error);
         }
       }
 
@@ -201,14 +197,12 @@ export const useRestaurants = () => {
     }
   };
 
-  // ─────────────────────────────────────────
-  // TOGGLE OPEN STATUS
-  // ─────────────────────────────────────────
+  // ─── TOGGLE OPEN STATUS ──────────────────
   const toggleOpenStatus = async (restaurantId, isOpen) => {
     try {
       await updateDoc(doc(db, 'restaurants', restaurantId), {
         isCurrentlyOpen: isOpen,
-        updatedAt: serverTimestamp()
+        updatedAt:       serverTimestamp(),
       });
       return { success: true };
     } catch (error) {
@@ -216,42 +210,36 @@ export const useRestaurants = () => {
     }
   };
 
-  // ─────────────────────────────────────────
-  // TOGGLE FAVORITE
-  // ✅ Fixed: guard against null userId (guest mode)
-  // ─────────────────────────────────────────
+  // ─── TOGGLE FAVORITE ─────────────────────
   const toggleFavorite = async (
     userId,
     restaurantId,
     isFavorited
   ) => {
-    // ✅ Guard - guests can't favorite
     if (!userId) {
       return {
         success: false,
-        error: 'Must be logged in to favorite'
+        error: 'Must be logged in to favorite',
       };
     }
 
     try {
-      const userRef = doc(db, 'users', userId);
-      const restaurantRef = doc(
-        db, 'restaurants', restaurantId
-      );
+      const userRef       = doc(db, 'users', userId);
+      const restaurantRef = doc(db, 'restaurants', restaurantId);
 
       if (isFavorited) {
         await updateDoc(userRef, {
-          favoriteRestaurants: arrayRemove(restaurantId)
+          favoriteRestaurants: arrayRemove(restaurantId),
         });
         await updateDoc(restaurantRef, {
-          totalFavorites: increment(-1)
+          totalFavorites: increment(-1),
         });
       } else {
         await updateDoc(userRef, {
-          favoriteRestaurants: arrayUnion(restaurantId)
+          favoriteRestaurants: arrayUnion(restaurantId),
         });
         await updateDoc(restaurantRef, {
-          totalFavorites: increment(1)
+          totalFavorites: increment(1),
         });
       }
       return { success: true };
@@ -260,21 +248,17 @@ export const useRestaurants = () => {
     }
   };
 
-  // ─────────────────────────────────────────
-  // ADD REVIEW
-  // ✅ Fixed: guard against null userId
-  // ─────────────────────────────────────────
+  // ─── ADD REVIEW ──────────────────────────
   const addReview = async (
     restaurantId,
     userId,
     rating,
     comment
   ) => {
-    // ✅ Guard - guests can't review
     if (!userId) {
       return {
         success: false,
-        error: 'Must be logged in to review'
+        error: 'Must be logged in to review',
       };
     }
 
@@ -284,12 +268,11 @@ export const useRestaurants = () => {
         userId,
         rating,
         comment,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
       });
       await updateDoc(
-        doc(db, 'restaurants', restaurantId), {
-          totalReviews: increment(1)
-        }
+        doc(db, 'restaurants', restaurantId),
+        { totalReviews: increment(1) }
       );
       return { success: true };
     } catch (error) {
@@ -304,6 +287,6 @@ export const useRestaurants = () => {
     updateRestaurant,
     toggleOpenStatus,
     toggleFavorite,
-    addReview
+    addReview,
   };
 };

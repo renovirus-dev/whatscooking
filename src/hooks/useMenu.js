@@ -16,7 +16,7 @@ import {
   serverTimestamp,
   Timestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db }              from '../firebase/config';
 import {
   uploadImage,
   getAutoFoodImage,
@@ -33,8 +33,6 @@ export const useMenu = (restaurantId) => {
       return;
     }
 
-    // ✅ Removed orderBy - no composite index needed
-    // Sort in memory instead
     const q = query(
       collection(db, 'menuItems'),
       where('restaurantId', '==', restaurantId)
@@ -47,15 +45,12 @@ export const useMenu = (restaurantId) => {
           id: d.id,
           ...d.data(),
         }));
-
-        // ✅ Sort in memory by category then name
         items.sort((a, b) => {
           const catCompare =
             (a.category || '').localeCompare(b.category || '');
           if (catCompare !== 0) return catCompare;
           return (a.name || '').localeCompare(b.name || '');
         });
-
         setMenuItems(items);
         setLoading(false);
       },
@@ -71,48 +66,55 @@ export const useMenu = (restaurantId) => {
   // ─── Add Menu Item ────────────────────────
   const addMenuItem = async (data, imageUri) => {
     try {
+      // ✅ Generate the doc ref FIRST
+      // so we can use itemId in the Storage path
+      const newRef = doc(collection(db, 'menuItems'));
+      const itemId = newRef.id;
+
       let imageUrl    = '';
       let isAutoImage = false;
 
       if (imageUri) {
-        // ✅ User picked a custom photo - upload it
-        const path   = `menuItems/${restaurantId}_${Date.now()}`;
+        // ✅ FIXED: path now matches Storage rule
+        // menuItems/{itemId}/... is allowed
+        const path   = `menuItems/${itemId}/image_${Date.now()}`;
         const result = await uploadImage(imageUri, path);
 
         if (result.success) {
           imageUrl    = result.url;
           isAutoImage = false;
+          console.log('✅ Menu item image uploaded:', imageUrl);
         } else {
-          // Upload failed - fall back to auto image
-          console.warn('Image upload failed, using auto image');
+          console.warn('Image upload failed:', result.error);
+          // Fall back to auto image
           imageUrl    = data.autoImageUrl ||
-                        getAutoFoodImage(data.name, data.category, '');
+                        getAutoFoodImage(
+                          data.name,
+                          data.category,
+                          `${data.name}-${data.category}-0`
+                        );
           isAutoImage = true;
         }
       } else if (data.autoImageUrl) {
-        // ✅ Use the pre-generated auto image URL from AddMenuItemScreen
-        // This preserves the exact image the owner saw in preview
+        // ✅ Use pre-generated auto image URL
         imageUrl    = data.autoImageUrl;
         isAutoImage = true;
       } else {
-        // ✅ Fallback - generate auto image here
+        // ✅ Generate auto image as fallback
         imageUrl    = getAutoFoodImage(
           data.name,
           data.category,
-          Date.now().toString()
+          `${data.name}-${data.category}-0`
         );
         isAutoImage = true;
       }
 
-      // ✅ Remove autoImageUrl from data before saving to Firestore
+      // Remove autoImageUrl from Firestore data
       const { autoImageUrl, ...cleanData } = data;
-
-      // ✅ Use setDoc with pre-generated ref so ID is stored in document
-      const newRef = doc(collection(db, 'menuItems'));
 
       await setDoc(newRef, {
         ...cleanData,
-        id:                newRef.id,
+        id:                itemId,
         restaurantId,
         imageUrl,
         isAutoImage,
@@ -125,9 +127,11 @@ export const useMenu = (restaurantId) => {
         updatedAt:         serverTimestamp(),
       });
 
-      return { success: true, id: newRef.id };
+      console.log('✅ Menu item created:', itemId);
+      return { success: true, id: itemId };
+
     } catch (error) {
-      console.error('addMenuItem error:', error);
+      console.error('❌ addMenuItem error:', error);
       return { success: false, error: error.message };
     }
   };
@@ -135,7 +139,6 @@ export const useMenu = (restaurantId) => {
   // ─── Update Menu Item ─────────────────────
   const updateMenuItem = async (itemId, data, newImageUri) => {
     try {
-      // ✅ Remove autoImageUrl from updates
       const { autoImageUrl, ...cleanData } = data;
 
       const updates = {
@@ -144,24 +147,30 @@ export const useMenu = (restaurantId) => {
       };
 
       if (newImageUri) {
-        // ✅ New custom photo uploaded
-        const path   = `menuItems/${itemId}_${Date.now()}`;
+        // ✅ FIXED: path now matches Storage rule
+        // menuItems/{itemId}/... is allowed
+        const path   = `menuItems/${itemId}/image_${Date.now()}`;
         const result = await uploadImage(newImageUri, path);
 
         if (result.success) {
           updates.imageUrl    = result.url;
           updates.isAutoImage = false;
+          console.log('✅ Menu item image updated:', result.url);
+        } else {
+          console.warn('Image update failed:', result.error);
         }
       } else if (autoImageUrl) {
-        // ✅ Owner clicked regenerate - save new auto image
+        // Owner chose a new auto image
         updates.imageUrl    = autoImageUrl;
         updates.isAutoImage = true;
       }
 
       await updateDoc(doc(db, 'menuItems', itemId), updates);
+      console.log('✅ Menu item updated:', itemId);
       return { success: true };
+
     } catch (error) {
-      console.error('updateMenuItem error:', error);
+      console.error('❌ updateMenuItem error:', error);
       return { success: false, error: error.message };
     }
   };
@@ -203,7 +212,6 @@ export const useMenu = (restaurantId) => {
   };
 
   // ─── Get Grouped Menu ─────────────────────
-  // ✅ Groups items by category for display
   const getGroupedMenu = () => {
     return menuItems.reduce((groups, item) => {
       const category = item.category || 'other';
@@ -234,7 +242,6 @@ export const useMenu = (restaurantId) => {
         publishedAt:      serverTimestamp(),
       };
 
-      // ✅ Check if today's menu already exists
       const q = query(
         collection(db, 'dailyMenus'),
         where('restaurantId', '==', restaurantId),
@@ -243,10 +250,8 @@ export const useMenu = (restaurantId) => {
       const snapshot = await getDocs(q);
 
       if (snapshot.empty) {
-        // Create new daily menu
         await addDoc(collection(db, 'dailyMenus'), menuData);
       } else {
-        // Update existing
         await updateDoc(snapshot.docs[0].ref, menuData);
       }
 
@@ -266,8 +271,8 @@ export const useMenu = (restaurantId) => {
       const q = query(
         collection(db, 'dailyMenus'),
         where('restaurantId', '==', restaurantId),
-        where('date',         '==', Timestamp.fromDate(today)),
-        where('isPublished',  '==', true)
+        where('date',        '==', Timestamp.fromDate(today)),
+        where('isPublished', '==', true)
       );
 
       const snapshot = await getDocs(q);
@@ -283,14 +288,34 @@ export const useMenu = (restaurantId) => {
     }
   };
 
-  // ─── Regenerate auto image for existing item ─
-  // ✅ Call this when owner wants a new auto image
-  const regenerateAutoImage = async (itemId, itemName, category) => {
+  // ─── Get User's Review ────────────────────
+  const getUserReview = async (userId) => {
+    try {
+      const q = query(
+        collection(db, 'reviews'),
+        where('restaurantId', '==', restaurantId),
+        where('userId',       '==', userId)
+      );
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return null;
+      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    } catch (error) {
+      console.error('getUserReview error:', error);
+      return null;
+    }
+  };
+
+  // ─── Regenerate Auto Image ────────────────
+  const regenerateAutoImage = async (
+    itemId,
+    itemName,
+    category
+  ) => {
     try {
       const newImageUrl = getAutoFoodImage(
         itemName,
         category,
-        Date.now().toString() // new seed = new image
+        `${itemName}-${category}-${Date.now()}`
       );
 
       await updateDoc(doc(db, 'menuItems', itemId), {
@@ -316,6 +341,7 @@ export const useMenu = (restaurantId) => {
     getGroupedMenu,
     setDailyMenu,
     getTodaysMenu,
-    regenerateAutoImage, // ✅ NEW
+    getUserReview,
+    regenerateAutoImage,
   };
 };
