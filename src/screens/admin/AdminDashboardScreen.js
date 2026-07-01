@@ -10,9 +10,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  collection, query, where,
-  getDocs, updateDoc, deleteDoc,
-  doc, orderBy, limit,
+  collection,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  addDoc,
+  doc,
+  orderBy,
+  limit,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db }      from '../../firebase/config';
@@ -29,9 +36,8 @@ const TABS = [
 ];
 
 export default function AdminDashboardScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
-  // ✅ Get logout from useAuth
-  const { logout } = useAuth();
+  const insets      = useSafeAreaInsets();
+  const { logout }  = useAuth();
 
   const [activeTab, setActiveTab]     = useState('overview');
   const [restaurants, setRestaurants] = useState([]);
@@ -44,8 +50,8 @@ export default function AdminDashboardScreen({ navigation }) {
     totalReviews:      0,
     pendingApprovals:  0,
   });
-  const [loading, setLoading]         = useState(true);
-  const [signingOut, setSigningOut]   = useState(false);
+  const [loading, setLoading]       = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
 
   // Notification form
   const [notifTitle, setNotifTitle]   = useState('');
@@ -53,6 +59,7 @@ export default function AdminDashboardScreen({ navigation }) {
   const [notifTarget, setNotifTarget] = useState('all');
   const [sending, setSending]         = useState(false);
 
+  // ─── Load data ────────────────────────────
   useEffect(() => {
     loadDashboardData();
   }, []);
@@ -103,7 +110,7 @@ export default function AdminDashboardScreen({ navigation }) {
     setStats(prev => ({ ...prev, totalReviews: data.length }));
   };
 
-  // ✅ Sign out handler
+  // ─── Sign out ─────────────────────────────
   const handleSignOut = async () => {
     Alert.alert(
       'Sign Out',
@@ -118,10 +125,16 @@ export default function AdminDashboardScreen({ navigation }) {
               setSigningOut(true);
               const result = await logout();
               if (!result.success) {
-                Alert.alert('Error', result.error || 'Failed to sign out');
+                Alert.alert(
+                  'Error',
+                  result.error || 'Failed to sign out'
+                );
               }
             } catch (err) {
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
+              Alert.alert(
+                'Error',
+                'Failed to sign out. Please try again.'
+              );
             } finally {
               setSigningOut(false);
             }
@@ -141,7 +154,9 @@ export default function AdminDashboardScreen({ navigation }) {
       await loadRestaurants();
       Alert.alert(
         '✅ Done',
-        `${restaurant.name} is now ${!restaurant.isActive ? 'active' : 'inactive'}`
+        `${restaurant.name} is now ${
+          !restaurant.isActive ? 'active' : 'inactive'
+        }`
       );
     } catch (err) {
       Alert.alert('Error', err.message);
@@ -156,7 +171,10 @@ export default function AdminDashboardScreen({ navigation }) {
         updatedAt:  serverTimestamp(),
       });
       await loadRestaurants();
-      Alert.alert('✅ Approved', `${restaurant.name} is now live!`);
+      Alert.alert(
+        '✅ Approved',
+        `${restaurant.name} is now live!`
+      );
     } catch (err) {
       Alert.alert('Error', err.message);
     }
@@ -173,7 +191,9 @@ export default function AdminDashboardScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteDoc(doc(db, 'restaurants', restaurant.id));
+              await deleteDoc(
+                doc(db, 'restaurants', restaurant.id)
+              );
               await loadRestaurants();
             } catch (err) {
               Alert.alert('Error', err.message);
@@ -185,23 +205,26 @@ export default function AdminDashboardScreen({ navigation }) {
   };
 
   // ─── User actions ─────────────────────────
-  const toggleUserRole = async (user, newRole) => {
+  const toggleUserRole = async (userData, newRole) => {
     try {
-      await updateDoc(doc(db, 'users', user.id), {
+      await updateDoc(doc(db, 'users', userData.id), {
         role:      newRole,
         updatedAt: serverTimestamp(),
       });
       await loadUsers();
-      Alert.alert('✅ Done', `${user.firstName} is now ${newRole}`);
+      Alert.alert(
+        '✅ Done',
+        `${userData.firstName} is now ${newRole}`
+      );
     } catch (err) {
       Alert.alert('Error', err.message);
     }
   };
 
-  const banUser = async (user) => {
+  const banUser = async (userData) => {
     Alert.alert(
       '⚠️ Ban User',
-      `Ban ${user.firstName} ${user.lastName}?`,
+      `Ban ${userData.firstName} ${userData.lastName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -209,7 +232,7 @@ export default function AdminDashboardScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await updateDoc(doc(db, 'users', user.id), {
+              await updateDoc(doc(db, 'users', userData.id), {
                 isBanned:  true,
                 updatedAt: serverTimestamp(),
               });
@@ -252,60 +275,140 @@ export default function AdminDashboardScreen({ navigation }) {
       Alert.alert('Error', 'Title and message are required');
       return;
     }
+
     setSending(true);
+
     try {
+      // ── Determine target users ──────────────
       let targetUsers = users;
       if (notifTarget === 'customers') {
         targetUsers = users.filter(u => u.role === 'customer');
       } else if (notifTarget === 'owners') {
-        targetUsers = users.filter(u => u.role === 'restaurant_owner');
+        targetUsers = users.filter(
+          u => u.role === 'restaurant_owner'
+        );
       }
+
+      // ── Step 1: Save to Firestore ───────────
+      // ✅ Each user gets a notification document
+      // This makes it appear in their Notifications screen
       await Promise.all(
         targetUsers.map(u =>
-          fetch('https://exp.host/--/api/v2/push/send', {
-            method:  'POST',
-            headers: {
-              Accept:         'application/json',
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              to:    u.expoPushToken,
-              title: notifTitle.trim(),
-              body:  notifBody.trim(),
-              sound: 'default',
-              data:  { type: 'broadcast' },
-            }),
-          }).catch(() => null)
+          addDoc(collection(db, 'notifications'), {
+            userId:    u.id,
+            title:     notifTitle.trim(),
+            body:      notifBody.trim(),
+            type:      'general',
+            isRead:    false,
+            createdAt: serverTimestamp(),
+            data:      { type: 'broadcast' },
+          }).catch(err =>
+            console.error(
+              'Failed to save notification for user:',
+              u.id,
+              err
+            )
+          )
         )
       );
+
+      // ── Step 2: Send push to devices ────────
+      // ✅ Only sends to users who have registered
+      // their device push token
+      const usersWithTokens = targetUsers.filter(
+        u => u.expoPushToken
+      );
+
+      if (usersWithTokens.length > 0) {
+        await Promise.all(
+          usersWithTokens.map(u =>
+            fetch('https://exp.host/--/api/v2/push/send', {
+              method:  'POST',
+              headers: {
+                Accept:         'application/json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                to:    u.expoPushToken,
+                title: notifTitle.trim(),
+                body:  notifBody.trim(),
+                sound: 'default',
+                data:  { type: 'broadcast' },
+              }),
+            }).catch(() => null)
+          )
+        );
+      }
+
+      // ── Clear form ──────────────────────────
       setNotifTitle('');
       setNotifBody('');
-      Alert.alert('✅ Sent!', `Notification sent to ${targetUsers.length} users`);
+
+      Alert.alert(
+        '✅ Sent!',
+        `Notification delivered to ${targetUsers.length} users\n` +
+        `Push sent to ${usersWithTokens.length} devices`
+      );
+
     } catch (err) {
       Alert.alert('Error', err.message);
     }
+
     setSending(false);
   };
 
-  // ─── Tab renders ─────────────────────────
-
+  // ─── Tab: Overview ────────────────────────
   const renderOverview = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.md }}
+      contentContainerStyle={{
+        paddingBottom: insets.bottom + SIZES.md,
+      }}
     >
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
         {[
-          { label: 'Total Restaurants', value: stats.totalRestaurants, icon: 'restaurant', color: COLORS.primary  },
-          { label: 'Active',            value: stats.activeRestaurants, icon: 'checkmark-circle', color: COLORS.success  },
-          { label: 'Total Users',       value: stats.totalUsers,        icon: 'people',     color: COLORS.secondary},
-          { label: 'Reviews',           value: stats.totalReviews,      icon: 'star',       color: '#FFD700'       },
-          { label: 'Pending',           value: stats.pendingApprovals,  icon: 'time',       color: COLORS.error    },
+          {
+            label: 'Total Restaurants',
+            value: stats.totalRestaurants,
+            icon:  'restaurant',
+            color: COLORS.primary,
+          },
+          {
+            label: 'Active',
+            value: stats.activeRestaurants,
+            icon:  'checkmark-circle',
+            color: COLORS.success,
+          },
+          {
+            label: 'Total Users',
+            value: stats.totalUsers,
+            icon:  'people',
+            color: COLORS.secondary,
+          },
+          {
+            label: 'Reviews',
+            value: stats.totalReviews,
+            icon:  'star',
+            color: '#FFD700',
+          },
+          {
+            label: 'Pending',
+            value: stats.pendingApprovals,
+            icon:  'time',
+            color: COLORS.error,
+          },
         ].map((stat, i) => (
           <View key={i} style={styles.statCard}>
-            <View style={[styles.statIcon, { backgroundColor: stat.color + '20' }]}>
-              <Ionicons name={stat.icon} size={24} color={stat.color} />
+            <View style={[
+              styles.statIcon,
+              { backgroundColor: stat.color + '20' },
+            ]}>
+              <Ionicons
+                name={stat.icon}
+                size={24}
+                color={stat.color}
+              />
             </View>
             <Text style={styles.statValue}>{stat.value}</Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -316,21 +419,27 @@ export default function AdminDashboardScreen({ navigation }) {
       {/* Pending Approvals */}
       {stats.pendingApprovals > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⏳ Pending Approvals</Text>
-          {restaurants.filter(r => !r.isApproved).map(r => (
-            <View key={r.id} style={styles.pendingCard}>
-              <View style={styles.pendingInfo}>
-                <Text style={styles.pendingName}>{r.name}</Text>
-                <Text style={styles.pendingCity}>{r.location?.city}</Text>
+          <Text style={styles.sectionTitle}>
+            ⏳ Pending Approvals
+          </Text>
+          {restaurants
+            .filter(r => !r.isApproved)
+            .map(r => (
+              <View key={r.id} style={styles.pendingCard}>
+                <View style={styles.pendingInfo}>
+                  <Text style={styles.pendingName}>{r.name}</Text>
+                  <Text style={styles.pendingCity}>
+                    {r.location?.city}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.approveBtn}
+                  onPress={() => approveRestaurant(r)}
+                >
+                  <Text style={styles.approveBtnText}>Approve</Text>
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={styles.approveBtn}
-                onPress={() => approveRestaurant(r)}
-              >
-                <Text style={styles.approveBtnText}>Approve</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+            ))}
         </View>
       )}
 
@@ -343,7 +452,9 @@ export default function AdminDashboardScreen({ navigation }) {
               <Text style={styles.reviewUser}>{r.userName}</Text>
               <View style={styles.reviewRating}>
                 <Ionicons name="star" size={12} color="#FFD700" />
-                <Text style={styles.reviewRatingText}>{r.rating}</Text>
+                <Text style={styles.reviewRatingText}>
+                  {r.rating}
+                </Text>
               </View>
             </View>
             <Text style={styles.reviewText} numberOfLines={2}>
@@ -351,9 +462,15 @@ export default function AdminDashboardScreen({ navigation }) {
             </Text>
           </View>
         ))}
+
+        {reviews.length === 0 && (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No reviews yet</Text>
+          </View>
+        )}
       </View>
 
-      {/* ✅ Sign Out Button at bottom of overview */}
+      {/* Sign Out */}
       <TouchableOpacity
         style={[
           styles.signOutBtn,
@@ -367,7 +484,11 @@ export default function AdminDashboardScreen({ navigation }) {
           <ActivityIndicator color="#FFFFFF" size="small" />
         ) : (
           <>
-            <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+            <Ionicons
+              name="log-out-outline"
+              size={20}
+              color="#FFFFFF"
+            />
             <Text style={styles.signOutBtnText}>Sign Out</Text>
           </>
         )}
@@ -375,6 +496,7 @@ export default function AdminDashboardScreen({ navigation }) {
     </ScrollView>
   );
 
+  // ─── Tab: Restaurants ─────────────────────
   const renderRestaurants = () => (
     <FlatList
       data={restaurants}
@@ -384,6 +506,11 @@ export default function AdminDashboardScreen({ navigation }) {
         { paddingBottom: insets.bottom + SIZES.md },
       ]}
       showsVerticalScrollIndicator={false}
+      ListEmptyComponent={
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No restaurants found</Text>
+        </View>
+      }
       renderItem={({ item }) => (
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
@@ -396,7 +523,9 @@ export default function AdminDashboardScreen({ navigation }) {
             <View style={styles.listCardBadges}>
               <View style={[
                 styles.badge,
-                item.isActive ? styles.badgeSuccess : styles.badgeError,
+                item.isActive
+                  ? styles.badgeSuccess
+                  : styles.badgeError,
               ]}>
                 <Text style={styles.badgeText}>
                   {item.isActive ? 'Active' : 'Inactive'}
@@ -409,20 +538,28 @@ export default function AdminDashboardScreen({ navigation }) {
               )}
             </View>
           </View>
+
           <View style={styles.listCardActions}>
             {!item.isApproved && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnSuccess]}
                 onPress={() => approveRestaurant(item)}
               >
-                <Ionicons name="checkmark" size={14} color={COLORS.textWhite} />
+                <Ionicons
+                  name="checkmark"
+                  size={14}
+                  color={COLORS.textWhite}
+                />
                 <Text style={styles.actionBtnText}>Approve</Text>
               </TouchableOpacity>
             )}
+
             <TouchableOpacity
               style={[
                 styles.actionBtn,
-                item.isActive ? styles.actionBtnWarning : styles.actionBtnSuccess,
+                item.isActive
+                  ? styles.actionBtnWarning
+                  : styles.actionBtnSuccess,
               ]}
               onPress={() => toggleRestaurantActive(item)}
             >
@@ -435,11 +572,16 @@ export default function AdminDashboardScreen({ navigation }) {
                 {item.isActive ? 'Disable' : 'Enable'}
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteRestaurant(item)}
             >
-              <Ionicons name="trash" size={14} color={COLORS.textWhite} />
+              <Ionicons
+                name="trash"
+                size={14}
+                color={COLORS.textWhite}
+              />
               <Text style={styles.actionBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -448,6 +590,7 @@ export default function AdminDashboardScreen({ navigation }) {
     />
   );
 
+  // ─── Tab: Users ───────────────────────────
   const renderUsers = () => (
     <FlatList
       data={users}
@@ -457,6 +600,11 @@ export default function AdminDashboardScreen({ navigation }) {
         { paddingBottom: insets.bottom + SIZES.md },
       ]}
       showsVerticalScrollIndicator={false}
+      ListEmptyComponent={
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No users found</Text>
+        </View>
+      }
       renderItem={({ item }) => (
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
@@ -477,12 +625,14 @@ export default function AdminDashboardScreen({ navigation }) {
               <Text style={styles.badgeText}>{item.role}</Text>
             </View>
           </View>
+
           {item.isBanned && (
             <View style={styles.bannedBanner}>
               <Ionicons name="ban" size={14} color={COLORS.error} />
               <Text style={styles.bannedText}>User is banned</Text>
             </View>
           )}
+
           <View style={styles.listCardActions}>
             {item.role !== 'admin' && (
               <TouchableOpacity
@@ -496,7 +646,11 @@ export default function AdminDashboardScreen({ navigation }) {
                   )
                 }
               >
-                <Ionicons name="swap-horizontal" size={14} color={COLORS.textWhite} />
+                <Ionicons
+                  name="swap-horizontal"
+                  size={14}
+                  color={COLORS.textWhite}
+                />
                 <Text style={styles.actionBtnText}>
                   {item.role === 'restaurant_owner'
                     ? 'Make Customer'
@@ -504,12 +658,17 @@ export default function AdminDashboardScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
             )}
+
             {!item.isBanned && item.role !== 'admin' && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnDanger]}
                 onPress={() => banUser(item)}
               >
-                <Ionicons name="ban" size={14} color={COLORS.textWhite} />
+                <Ionicons
+                  name="ban"
+                  size={14}
+                  color={COLORS.textWhite}
+                />
                 <Text style={styles.actionBtnText}>Ban</Text>
               </TouchableOpacity>
             )}
@@ -519,6 +678,7 @@ export default function AdminDashboardScreen({ navigation }) {
     />
   );
 
+  // ─── Tab: Reviews ─────────────────────────
   const renderReviews = () => (
     <FlatList
       data={reviews}
@@ -528,18 +688,29 @@ export default function AdminDashboardScreen({ navigation }) {
         { paddingBottom: insets.bottom + SIZES.md },
       ]}
       showsVerticalScrollIndicator={false}
+      ListEmptyComponent={
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No reviews found</Text>
+        </View>
+      }
       renderItem={({ item }) => (
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
             <View style={styles.listCardInfo}>
-              <Text style={styles.listCardName}>{item.userName}</Text>
+              <Text style={styles.listCardName}>
+                {item.userName}
+              </Text>
               <View style={styles.reviewRating}>
                 {[1, 2, 3, 4, 5].map(star => (
                   <Ionicons
                     key={star}
                     name="star"
                     size={12}
-                    color={star <= item.rating ? '#FFD700' : COLORS.border}
+                    color={
+                      star <= item.rating
+                        ? '#FFD700'
+                        : COLORS.border
+                    }
                   />
                 ))}
               </View>
@@ -548,7 +719,11 @@ export default function AdminDashboardScreen({ navigation }) {
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteReview(item)}
             >
-              <Ionicons name="trash" size={14} color={COLORS.textWhite} />
+              <Ionicons
+                name="trash"
+                size={14}
+                color={COLORS.textWhite}
+              />
               <Text style={styles.actionBtnText}>Remove</Text>
             </TouchableOpacity>
           </View>
@@ -560,11 +735,14 @@ export default function AdminDashboardScreen({ navigation }) {
     />
   );
 
+  // ─── Tab: Notify ──────────────────────────
   const renderNotify = () => (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
+      keyboardVerticalOffset={
+        Platform.OS === 'ios' ? 0 : insets.top
+      }
     >
       <ScrollView
         contentContainerStyle={[
@@ -578,6 +756,7 @@ export default function AdminDashboardScreen({ navigation }) {
           📢 Send Broadcast Notification
         </Text>
 
+        {/* Target selector */}
         <Text style={styles.fieldLabel}>Send To</Text>
         <View style={styles.targetRow}>
           {[
@@ -603,6 +782,7 @@ export default function AdminDashboardScreen({ navigation }) {
           ))}
         </View>
 
+        {/* Title */}
         <Text style={styles.fieldLabel}>Notification Title</Text>
         <TextInput
           style={styles.notifInput}
@@ -613,6 +793,7 @@ export default function AdminDashboardScreen({ navigation }) {
           returnKeyType="next"
         />
 
+        {/* Message */}
         <Text style={styles.fieldLabel}>Message</Text>
         <TextInput
           style={[styles.notifInput, styles.notifTextarea]}
@@ -626,8 +807,37 @@ export default function AdminDashboardScreen({ navigation }) {
           returnKeyType="done"
         />
 
+        {/* Preview */}
+        {(notifTitle.trim() || notifBody.trim()) && (
+          <View style={styles.previewCard}>
+            <Text style={styles.previewLabel}>PREVIEW</Text>
+            <View style={styles.previewRow}>
+              <Ionicons
+                name="notifications"
+                size={20}
+                color={COLORS.primary}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.previewTitle}>
+                  {notifTitle || 'Title'}
+                </Text>
+                <Text
+                  style={styles.previewBody}
+                  numberOfLines={2}
+                >
+                  {notifBody || 'Message'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Send button */}
         <TouchableOpacity
-          style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
+          style={[
+            styles.sendBtn,
+            sending && styles.sendBtnDisabled,
+          ]}
           onPress={handleSendNotification}
           disabled={sending}
         >
@@ -635,51 +845,83 @@ export default function AdminDashboardScreen({ navigation }) {
             <ActivityIndicator color={COLORS.textWhite} />
           ) : (
             <>
-              <Ionicons name="send" size={20} color={COLORS.textWhite} />
-              <Text style={styles.sendBtnText}>Send Notification</Text>
+              <Ionicons
+                name="send"
+                size={20}
+                color={COLORS.textWhite}
+              />
+              <Text style={styles.sendBtnText}>
+                Send Notification
+              </Text>
             </>
           )}
         </TouchableOpacity>
 
+        {/* Stats */}
         <View style={styles.notifStats}>
           <View style={styles.notifStatItem}>
             <Text style={styles.notifStatValue}>
               {users.filter(u => u.expoPushToken).length}
             </Text>
             <Text style={styles.notifStatLabel}>
-              Users with push enabled
+              Push enabled
             </Text>
           </View>
           <View style={styles.notifStatItem}>
-            <Text style={styles.notifStatValue}>{users.length}</Text>
-            <Text style={styles.notifStatLabel}>Total users</Text>
+            <Text style={styles.notifStatValue}>
+              {users.length}
+            </Text>
+            <Text style={styles.notifStatLabel}>
+              Total users
+            </Text>
+          </View>
+          <View style={styles.notifStatItem}>
+            <Text style={styles.notifStatValue}>
+              {notifTarget === 'all'
+                ? users.length
+                : notifTarget === 'customers'
+                ? users.filter(u => u.role === 'customer').length
+                : users.filter(
+                    u => u.role === 'restaurant_owner'
+                  ).length}
+            </Text>
+            <Text style={styles.notifStatLabel}>
+              Will receive
+            </Text>
           </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 
+  // ─── Loading ──────────────────────────────
   if (loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{ color: COLORS.textMuted, marginTop: SIZES.md }}>
+        <Text style={{
+          color: COLORS.textMuted,
+          marginTop: SIZES.md,
+        }}>
           Loading dashboard...
         </Text>
       </View>
     );
   }
 
+  // ─── Main render ──────────────────────────
   return (
     <View style={styles.container}>
 
-      {/* ✅ Admin Header with Sign Out button */}
+      {/* ── Admin header ──────────────────── */}
       <View style={[
         styles.adminHeader,
         { paddingTop: insets.top + SIZES.sm },
       ]}>
         <View>
-          <Text style={styles.adminHeaderTitle}>⚡ Admin Panel</Text>
+          <Text style={styles.adminHeaderTitle}>
+            ⚡ Admin Panel
+          </Text>
           <Text style={styles.adminHeaderSubtitle}>
             What's Cooking
           </Text>
@@ -694,14 +936,20 @@ export default function AdminDashboardScreen({ navigation }) {
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <>
-              <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.headerSignOutText}>Sign Out</Text>
+              <Ionicons
+                name="log-out-outline"
+                size={18}
+                color="#FFFFFF"
+              />
+              <Text style={styles.headerSignOutText}>
+                Sign Out
+              </Text>
             </>
           )}
         </TouchableOpacity>
       </View>
 
-      {/* Horizontal Tab Bar */}
+      {/* ── Horizontal tab bar ────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -737,7 +985,7 @@ export default function AdminDashboardScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      {/* Tab Content */}
+      {/* ── Tab content ───────────────────── */}
       <View style={styles.tabContent}>
         {activeTab === 'overview'    && renderOverview()}
         {activeTab === 'restaurants' && renderRestaurants()}
@@ -761,7 +1009,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // ✅ Admin header
+  // ── Admin header ─────────────────────────
   adminHeader: {
     backgroundColor: '#2C3E50',
     flexDirection: 'row',
@@ -795,7 +1043,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Tab bar
+  // ── Tab bar ──────────────────────────────
   tabBar: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1,
@@ -835,7 +1083,7 @@ const styles = StyleSheet.create({
     gap: SIZES.md,
   },
 
-  // Stats grid
+  // ── Stats grid ───────────────────────────
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -869,7 +1117,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Section
+  // ── Section ──────────────────────────────
   section: {
     padding: SIZES.md,
     gap: SIZES.sm,
@@ -881,7 +1129,7 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.xs,
   },
 
-  // Pending cards
+  // ── Pending cards ────────────────────────
   pendingCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -912,7 +1160,7 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
   },
 
-  // List cards
+  // ── List cards ───────────────────────────
   listCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
@@ -947,7 +1195,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
 
-  // Badges
+  // ── Badges ───────────────────────────────
   badge: {
     paddingHorizontal: SIZES.sm,
     paddingVertical: 3,
@@ -963,7 +1211,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
 
-  // Action buttons
+  // ── Action buttons ───────────────────────
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -982,7 +1230,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Banned banner
+  // ── Banned banner ────────────────────────
   bannedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -997,7 +1245,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Review card
+  // ── Review card ──────────────────────────
   reviewCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
@@ -1030,7 +1278,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Notification form
+  // ── Notification form ────────────────────
   fieldLabel: {
     fontSize: FONTS.md,
     fontWeight: '600',
@@ -1079,6 +1327,40 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
+
+  // ── Preview card ─────────────────────────
+  previewCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SIZES.md,
+    marginBottom: SIZES.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  previewLabel: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: SIZES.sm,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SIZES.sm,
+  },
+  previewTitle: {
+    fontSize: FONTS.md,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  previewBody: {
+    fontSize: FONTS.sm,
+    color: COLORS.textLight,
+    marginTop: 2,
+  },
+
+  // ── Send button ──────────────────────────
   sendBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1096,9 +1378,11 @@ const styles = StyleSheet.create({
     fontSize:   FONTS.lg,
     fontWeight: '700',
   },
+
+  // ── Notif stats ──────────────────────────
   notifStats: {
     flexDirection: 'row',
-    gap: SIZES.md,
+    gap: SIZES.sm,
     marginTop: SIZES.lg,
   },
   notifStatItem: {
@@ -1121,7 +1405,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // ✅ Sign out button (in overview tab)
+  // ── Sign out (overview tab) ───────────────
   signOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1140,5 +1424,15 @@ const styles = StyleSheet.create({
     color:      '#FFFFFF',
     fontSize:   FONTS.lg,
     fontWeight: 'bold',
+  },
+
+  // ── Empty state ──────────────────────────
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: SIZES.xl,
+  },
+  emptyText: {
+    fontSize: FONTS.md,
+    color: COLORS.textMuted,
   },
 });
