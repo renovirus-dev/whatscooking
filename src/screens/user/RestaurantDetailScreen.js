@@ -17,7 +17,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   doc, collection, query, where,
@@ -27,11 +27,24 @@ import { db }             from '../../firebase/config';
 import { useAuth }        from '../../hooks/useAuth';
 import { useRestaurants } from '../../hooks/useRestaurants';
 import { useReviews }     from '../../hooks/useReviews';
-import { useAnalytics }   from '../../hooks/useAnalytics';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 import MenuItemCard from '../../components/MenuItemCard';
 import StarRating   from '../../components/StarRating';
 import ReviewCard   from '../../components/ReviewCard';
+
+// ✅ Safe import of useAnalytics
+// If the hook doesn't exist it won't crash
+let useAnalytics;
+try {
+  useAnalytics = require('../../hooks/useAnalytics').useAnalytics;
+} catch (e) {
+  // ✅ Fallback — no-op analytics
+  useAnalytics = () => ({
+    trackRestaurantView: () => {},
+    trackAction:         () => {},
+    usePageTimer:        () => {},
+  });
+}
 
 // ─── Constants ───────────────────────────────
 const CATEGORY_ICONS = {
@@ -64,8 +77,8 @@ export default function RestaurantDetailScreen({ route }) {
   const insets       = useSafeAreaInsets();
   const restaurantId = route.params?.restaurantId;
 
-  const { user, userProfile }   = useAuth();
-  const { toggleFavorite }      = useRestaurants();
+  const { user, userProfile } = useAuth();
+  const { toggleFavorite }    = useRestaurants();
   const {
     reviews,
     loading: reviewsLoading,
@@ -75,13 +88,21 @@ export default function RestaurantDetailScreen({ route }) {
     getUserReview,
   } = useReviews(restaurantId);
 
+  // ✅ Safe analytics — won't crash if hook missing
   const {
     trackRestaurantView,
     trackAction,
     usePageTimer,
   } = useAnalytics();
 
-  usePageTimer(restaurantId);
+  // ✅ Safe page timer — only call if it's a function
+  if (typeof usePageTimer === 'function') {
+    usePageTimer(restaurantId);
+  }
+
+  // ✅ isMounted ref — prevents setState after unmount
+  const isMounted    = useRef(true);
+  const viewTracked  = useRef(false);
 
   // ── State ─────────────────────────────────
   const [restaurant, setRestaurant]           = useState(null);
@@ -101,25 +122,44 @@ export default function RestaurantDetailScreen({ route }) {
   const [reviewLoading, setReviewLoading]     = useState(false);
   const [editingReview, setEditingReview]     = useState(false);
 
-  const viewTracked = useRef(false);
+  // ── Mounted lifecycle ─────────────────────
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   // ── Firestore listeners ───────────────────
   useEffect(() => {
     if (!restaurantId) {
-      setError('Restaurant not found');
-      setLoading(false);
+      if (isMounted.current) {
+        setError('Restaurant not found');
+        setLoading(false);
+      }
       return;
     }
 
-    const unsubRestaurant = onSnapshot(
+    let unsubRestaurant = null;
+    let unsubMenu       = null;
+
+    // Restaurant listener
+    unsubRestaurant = onSnapshot(
       doc(db, 'restaurants', restaurantId),
       (snap) => {
+        // ✅ Guard all setState calls
+        if (!isMounted.current) return;
+
         if (snap.exists()) {
           const data = { id: snap.id, ...snap.data() };
           setRestaurant(data);
           if (!viewTracked.current) {
             viewTracked.current = true;
-            trackRestaurantView(restaurantId, data.name);
+            try {
+              trackRestaurantView(restaurantId, data.name);
+            } catch (e) {
+              // Analytics failure should never crash screen
+            }
           }
         } else {
           setError('Restaurant not found');
@@ -127,72 +167,119 @@ export default function RestaurantDetailScreen({ route }) {
         setLoading(false);
       },
       (err) => {
+        if (!isMounted.current) return;
         console.error('Restaurant listener error:', err);
         setError(err.message);
         setLoading(false);
       }
     );
 
+    // Menu items listener
     const menuQuery = query(
       collection(db, 'menuItems'),
       where('restaurantId', '==', restaurantId),
       where('isAvailable', '==', true),
     );
 
-    const unsubMenu = onSnapshot(
+    unsubMenu = onSnapshot(
       menuQuery,
       (snap) => {
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (!isMounted.current) return;
+        const items = snap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        }));
         items.sort((a, b) =>
           (a.category || '').localeCompare(b.category || '')
         );
         setMenuItems(items);
       },
-      (err) => { console.error('Menu listener error:', err); }
+      (err) => {
+        console.error('Menu listener error:', err);
+      }
     );
 
-    setIsFavorited(
-      userProfile?.favoriteRestaurants?.includes(restaurantId) || false
-    );
+    // Check favorite status
+    if (isMounted.current) {
+      setIsFavorited(
+        userProfile?.favoriteRestaurants?.includes(
+          restaurantId
+        ) || false
+      );
+    }
 
     return () => {
-      unsubRestaurant();
-      unsubMenu();
+      // ✅ Always unsubscribe on unmount
+      if (unsubRestaurant) unsubRestaurant();
+      if (unsubMenu)       unsubMenu();
     };
-  }, [restaurantId, userProfile]);
+  }, [restaurantId]);
 
+  // ── Update favorite when userProfile changes ──
   useEffect(() => {
-    if (!user || !restaurantId) return;
+    if (!isMounted.current) return;
+    setIsFavorited(
+      userProfile?.favoriteRestaurants?.includes(
+        restaurantId
+      ) || false
+    );
+  }, [userProfile, restaurantId]);
+
+  // ── Load user's existing review ───────────
+  useEffect(() => {
+    if (!user?.uid || !restaurantId) return;
+
+    let cancelled = false;
+
     getUserReview(user.uid).then(review => {
+      // ✅ Don't update state if unmounted or cancelled
+      if (cancelled || !isMounted.current) return;
       if (review) {
         setMyReview(review);
         setReviewRating(review.rating);
         setReviewComment(review.comment || '');
+      } else {
+        setMyReview(null);
       }
+    }).catch(err => {
+      console.error('getUserReview error:', err);
     });
-  }, [user, restaurantId, reviews]);
+
+    return () => { cancelled = true; };
+  }, [user?.uid, restaurantId, reviews.length]);
 
   // ── Handlers ─────────────────────────────
   const handleFavorite = async () => {
     if (!user) {
-      Alert.alert('Sign In Required', 'Please sign in to save favorites');
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in to save favorites'
+      );
       return;
     }
     try {
       setFavoriteLoading(true);
       await toggleFavorite(user.uid, restaurantId, isFavorited);
-      setIsFavorited(prev => !prev);
+      if (isMounted.current) {
+        setIsFavorited(prev => !prev);
+      }
     } catch (err) {
       Alert.alert('Error', 'Could not update favorites');
     } finally {
-      setFavoriteLoading(false);
+      if (isMounted.current) {
+        setFavoriteLoading(false);
+      }
     }
   };
 
   const handleCall = () => {
     const phone = restaurant?.contact?.phone;
-    if (!phone) { Alert.alert('No phone', 'No phone number available'); return; }
-    trackAction(restaurantId, restaurant.name, 'call');
+    if (!phone) {
+      Alert.alert('No phone', 'No phone number available');
+      return;
+    }
+    try { trackAction(restaurantId, restaurant.name, 'call'); }
+    catch (e) {}
     Linking.openURL(`tel:${phone}`).catch(() =>
       Alert.alert('Error', 'Could not open phone app')
     );
@@ -201,10 +288,16 @@ export default function RestaurantDetailScreen({ route }) {
   const handleDirections = () => {
     const address = restaurant?.location?.address;
     const city    = restaurant?.location?.city;
-    if (!address) { Alert.alert('No address', 'No address available'); return; }
-    trackAction(restaurantId, restaurant.name, 'directions');
+    if (!address) {
+      Alert.alert('No address', 'No address available');
+      return;
+    }
+    try { trackAction(restaurantId, restaurant.name, 'directions'); }
+    catch (e) {}
     const encoded = encodeURIComponent(`${address}, ${city}`);
-    Linking.openURL(`https://maps.google.com/?q=${encoded}`).catch(() =>
+    Linking.openURL(
+      `https://maps.google.com/?q=${encoded}`
+    ).catch(() =>
       Alert.alert('Error', 'Could not open maps')
     );
   };
@@ -212,7 +305,8 @@ export default function RestaurantDetailScreen({ route }) {
   const handleWhatsApp = () => {
     const number = restaurant?.contact?.whatsapp;
     if (!number) return;
-    trackAction(restaurantId, restaurant.name, 'whatsapp');
+    try { trackAction(restaurantId, restaurant.name, 'whatsapp'); }
+    catch (e) {}
     const clean = number.replace(/\D/g, '');
     Linking.openURL(`https://wa.me/${clean}`).catch(() =>
       Alert.alert('Error', 'Could not open WhatsApp')
@@ -222,7 +316,8 @@ export default function RestaurantDetailScreen({ route }) {
   const handleWebsite = () => {
     const url = restaurant?.contact?.website;
     if (!url) return;
-    trackAction(restaurantId, restaurant.name, 'website');
+    try { trackAction(restaurantId, restaurant.name, 'website'); }
+    catch (e) {}
     const fullUrl = url.startsWith('http') ? url : `https://${url}`;
     Linking.openURL(fullUrl).catch(() =>
       Alert.alert('Error', 'Could not open website')
@@ -231,7 +326,10 @@ export default function RestaurantDetailScreen({ route }) {
 
   const handleOpenReview = () => {
     if (!user) {
-      Alert.alert('Sign In Required', 'Please sign in to write a review');
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in to write a review'
+      );
       return;
     }
     setEditingReview(!!myReview);
@@ -243,25 +341,40 @@ export default function RestaurantDetailScreen({ route }) {
       Alert.alert('Rating required', 'Please select a star rating');
       return;
     }
+    if (!isMounted.current) return;
     setReviewLoading(true);
+
     let result;
-    if (myReview && editingReview) {
-      result = await updateReview(myReview.id, reviewRating, reviewComment);
-    } else {
-      result = await addReview({
-        userId:       user.uid,
-        userName:     `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'Anonymous',
-        restaurantId,
-        rating:       reviewRating,
-        comment:      reviewComment,
-      });
+    try {
+      if (myReview && editingReview) {
+        result = await updateReview(
+          myReview.id,
+          reviewRating,
+          reviewComment
+        );
+      } else {
+        result = await addReview({
+          userId:  user.uid,
+          userName: `${userProfile?.firstName || ''} ${
+            userProfile?.lastName || ''
+          }`.trim() || 'Anonymous',
+          restaurantId,
+          rating:  reviewRating,
+          comment: reviewComment,
+        });
+      }
+    } catch (err) {
+      result = { success: false, error: err.message };
     }
+
+    if (!isMounted.current) return;
     setReviewLoading(false);
-    if (result.success) {
+
+    if (result?.success) {
       setShowReviewModal(false);
       Alert.alert('✅ Thank you!', 'Your review has been submitted');
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert('Error', result?.error || 'Something went wrong');
     }
   };
 
@@ -275,10 +388,16 @@ export default function RestaurantDetailScreen({ route }) {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await deleteReview(myReview.id);
-            setMyReview(null);
-            setReviewRating(5);
-            setReviewComment('');
+            try {
+              await deleteReview(myReview.id);
+              if (isMounted.current) {
+                setMyReview(null);
+                setReviewRating(5);
+                setReviewComment('');
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Could not delete review');
+            }
           },
         },
       ]
@@ -318,7 +437,9 @@ export default function RestaurantDetailScreen({ route }) {
         },
       ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading restaurant...</Text>
+        <Text style={styles.loadingText}>
+          Loading restaurant...
+        </Text>
       </View>
     );
   }
@@ -349,12 +470,10 @@ export default function RestaurantDetailScreen({ route }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          // ✅ Bottom padding clears Android nav bar
           paddingBottom: insets.bottom + SIZES.xl,
         }}
       >
-
-        {/* ── Cover image ─────────────────────── */}
+        {/* ── Cover image ─────────────────── */}
         <View style={styles.coverContainer}>
           <Image
             source={{
@@ -370,7 +489,6 @@ export default function RestaurantDetailScreen({ route }) {
           <TouchableOpacity
             style={[
               styles.favoriteBtn,
-              // ✅ Push down from the top system bar
               { top: insets.top + SIZES.md },
             ]}
             onPress={handleFavorite}
@@ -400,18 +518,23 @@ export default function RestaurantDetailScreen({ route }) {
           </View>
         </View>
 
-        {/* ── Info card ───────────────────────── */}
+        {/* ── Info card ───────────────────── */}
         <View style={styles.infoCard}>
           <View style={styles.nameRow}>
             {restaurant.logoUrl ? (
-              <Image source={{ uri: restaurant.logoUrl }} style={styles.logo} />
+              <Image
+                source={{ uri: restaurant.logoUrl }}
+                style={styles.logo}
+              />
             ) : (
               <View style={styles.logoFallback}>
                 <Text style={{ fontSize: 24 }}>🍽️</Text>
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.restaurantName}>{restaurant.name}</Text>
+              <Text style={styles.restaurantName}>
+                {restaurant.name}
+              </Text>
               <View style={styles.metaRow}>
                 <Ionicons name="star" size={14} color="#F39C12" />
                 <Text style={styles.rating}>
@@ -431,7 +554,9 @@ export default function RestaurantDetailScreen({ route }) {
           </View>
 
           {restaurant.description ? (
-            <Text style={styles.description}>{restaurant.description}</Text>
+            <Text style={styles.description}>
+              {restaurant.description}
+            </Text>
           ) : null}
 
           {restaurant.cuisineTypes?.length > 0 && (
@@ -480,9 +605,12 @@ export default function RestaurantDetailScreen({ route }) {
 
           {/* Services */}
           <View style={styles.servicesRow}>
-            {restaurant.hasDineIn   && <ServiceBadge label="🪑 Dine In"  />}
-            {restaurant.hasTakeout  && <ServiceBadge label="🥡 Takeout"  />}
-            {restaurant.hasDelivery && <ServiceBadge label="🛵 Delivery" />}
+            {restaurant.hasDineIn   &&
+              <ServiceBadge label="🪑 Dine In"  />}
+            {restaurant.hasTakeout  &&
+              <ServiceBadge label="🥡 Takeout"  />}
+            {restaurant.hasDelivery &&
+              <ServiceBadge label="🛵 Delivery" />}
           </View>
 
           {/* Announcement */}
@@ -496,12 +624,15 @@ export default function RestaurantDetailScreen({ route }) {
           )}
         </View>
 
-        {/* ── Tab bar ─────────────────────────── */}
+        {/* ── Tab bar ─────────────────────── */}
         <View style={styles.tabBar}>
           {TABS.map(tab => (
             <TouchableOpacity
               key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
+              style={[
+                styles.tab,
+                activeTab === tab && styles.tabActive,
+              ]}
               onPress={() => setActiveTab(tab)}
               activeOpacity={0.7}
             >
@@ -518,7 +649,7 @@ export default function RestaurantDetailScreen({ route }) {
           ))}
         </View>
 
-        {/* ── Tab: Menu ───────────────────────── */}
+        {/* ── Tab: Menu ───────────────────── */}
         {activeTab === 'Menu' && (
           <View>
             {menuItems.length > 0 && (
@@ -526,7 +657,9 @@ export default function RestaurantDetailScreen({ route }) {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={styles.categoryTabs}
-                contentContainerStyle={{ paddingHorizontal: SIZES.md }}
+                contentContainerStyle={{
+                  paddingHorizontal: SIZES.md,
+                }}
                 nestedScrollEnabled
               >
                 {categories.map(cat => (
@@ -534,18 +667,22 @@ export default function RestaurantDetailScreen({ route }) {
                     key={cat}
                     style={[
                       styles.categoryTab,
-                      activeCategory === cat && styles.categoryTabActive,
+                      activeCategory === cat &&
+                        styles.categoryTabActive,
                     ]}
                     onPress={() => setActiveCategory(cat)}
                     activeOpacity={0.7}
                   >
                     <Text style={[
                       styles.categoryTabText,
-                      activeCategory === cat && styles.categoryTabTextActive,
+                      activeCategory === cat &&
+                        styles.categoryTabTextActive,
                     ]}>
                       {cat === 'all'
                         ? '🍽️ All'
-                        : `${CATEGORY_ICONS[cat] || '🍴'} ${formatCategory(cat)}`}
+                        : `${CATEGORY_ICONS[cat] || '🍴'} ${
+                            formatCategory(cat)
+                          }`}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -556,63 +693,79 @@ export default function RestaurantDetailScreen({ route }) {
               {menuItems.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Text style={{ fontSize: 48 }}>🍽️</Text>
-                  <Text style={styles.emptyTitle}>Menu coming soon</Text>
+                  <Text style={styles.emptyTitle}>
+                    Menu coming soon
+                  </Text>
                   <Text style={styles.emptySubtext}>
                     This restaurant hasn't added their menu yet
                   </Text>
                 </View>
               ) : (
-                Object.entries(groupedItems).map(([category, items]) => (
-                  <View key={category}>
-                    <Text style={styles.categoryTitle}>
-                      {CATEGORY_ICONS[category] || '🍴'}{' '}
-                      {formatCategory(category)}
-                    </Text>
-                    {items.map(item => (
-                      <MenuItemCard
-                        key={item.id}
-                        item={item}
-                        onLoginRequired={() =>
-                          Alert.alert(
-                            'Sign In Required',
-                            'Please sign in to save favourite dishes'
-                          )
-                        }
-                      />
-                    ))}
-                  </View>
-                ))
+                Object.entries(groupedItems).map(
+                  ([category, items]) => (
+                    <View key={category}>
+                      <Text style={styles.categoryTitle}>
+                        {CATEGORY_ICONS[category] || '🍴'}{' '}
+                        {formatCategory(category)}
+                      </Text>
+                      {items.map(item => (
+                        <MenuItemCard
+                          key={item.id}
+                          item={item}
+                          onLoginRequired={() =>
+                            Alert.alert(
+                              'Sign In Required',
+                              'Please sign in to save favourite dishes'
+                            )
+                          }
+                        />
+                      ))}
+                    </View>
+                  )
+                )
               )}
             </View>
           </View>
         )}
 
-        {/* ── Tab: Reviews ────────────────────── */}
+        {/* ── Tab: Reviews ────────────────── */}
         {activeTab === 'Reviews' && (
           <View style={styles.reviewsTab}>
             {reviews.length > 0 && (
               <View style={styles.ratingsSummary}>
-                <Text style={styles.avgRatingNumber}>{avgRating}</Text>
-                <StarRating rating={Math.round(Number(avgRating))} size={24} />
+                <Text style={styles.avgRatingNumber}>
+                  {avgRating}
+                </Text>
+                <StarRating
+                  rating={Math.round(Number(avgRating))}
+                  size={24}
+                />
                 <Text style={styles.totalReviewsText}>
                   {reviews.length} review
                   {reviews.length !== 1 ? 's' : ''}
                 </Text>
                 <View style={styles.ratingBreakdown}>
                   {[5, 4, 3, 2, 1].map(star => {
-                    const count = reviews.filter(r => r.rating === star).length;
-                    const pct   = reviews.length > 0
-                      ? (count / reviews.length) * 100 : 0;
+                    const count = reviews.filter(
+                      r => r.rating === star
+                    ).length;
+                    const pct = reviews.length > 0
+                      ? (count / reviews.length) * 100
+                      : 0;
                     return (
                       <View key={star} style={styles.breakdownRow}>
-                        <Text style={styles.breakdownStar}>{star}⭐</Text>
+                        <Text style={styles.breakdownStar}>
+                          {star}⭐
+                        </Text>
                         <View style={styles.breakdownBarBg}>
                           <View style={[
                             styles.breakdownBar,
                             { width: `${pct}%` },
                           ]} />
                         </View>
-                        <Text style={styles.breakdownCount}>{count}</Text>
+                        <Text style={styles.breakdownCount}>
+                          {count}
+                        </Text>
                       </View>
                     );
                   })}
@@ -622,7 +775,9 @@ export default function RestaurantDetailScreen({ route }) {
 
             {myReview && (
               <View style={styles.myReviewSection}>
-                <Text style={styles.myReviewLabel}>YOUR REVIEW</Text>
+                <Text style={styles.myReviewLabel}>
+                  YOUR REVIEW
+                </Text>
                 <ReviewCard
                   review={myReview}
                   isOwn
@@ -643,14 +798,24 @@ export default function RestaurantDetailScreen({ route }) {
                 onPress={handleOpenReview}
                 activeOpacity={0.8}
               >
-                <Ionicons name="star-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.writeReviewText}>Write a Review</Text>
+                <Ionicons
+                  name="star-outline"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.writeReviewText}>
+                  Write a Review
+                </Text>
               </TouchableOpacity>
             )}
 
             {!user && (
               <View style={styles.loginPrompt}>
-                <Ionicons name="person-outline" size={20} color={COLORS.primary} />
+                <Ionicons
+                  name="person-outline"
+                  size={20}
+                  color={COLORS.primary}
+                />
                 <Text style={styles.loginPromptText}>
                   Sign in to write a review
                 </Text>
@@ -665,7 +830,9 @@ export default function RestaurantDetailScreen({ route }) {
             ) : reviews.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={{ fontSize: 48 }}>⭐</Text>
-                <Text style={styles.emptyTitle}>No reviews yet</Text>
+                <Text style={styles.emptyTitle}>
+                  No reviews yet
+                </Text>
                 <Text style={styles.emptySubtext}>
                   Be the first to review this restaurant!
                 </Text>
@@ -680,18 +847,24 @@ export default function RestaurantDetailScreen({ route }) {
           </View>
         )}
 
-        {/* ── Tab: Info ───────────────────────── */}
+        {/* ── Tab: Info ───────────────────── */}
         {activeTab === 'Info' && (
           <View style={styles.infoTab}>
 
             <View style={styles.infoSection}>
-              <Text style={styles.infoSectionTitle}>📍 Location</Text>
+              <Text style={styles.infoSectionTitle}>
+                📍 Location
+              </Text>
               <TouchableOpacity
                 style={styles.infoRow}
                 onPress={handleDirections}
                 activeOpacity={0.7}
               >
-                <Ionicons name="location-outline" size={16} color={COLORS.primary} />
+                <Ionicons
+                  name="location-outline"
+                  size={16}
+                  color={COLORS.primary}
+                />
                 <Text style={styles.infoLink}>
                   {[
                     restaurant.location?.address,
@@ -704,7 +877,9 @@ export default function RestaurantDetailScreen({ route }) {
             </View>
 
             <View style={styles.infoSection}>
-              <Text style={styles.infoSectionTitle}>📞 Contact</Text>
+              <Text style={styles.infoSectionTitle}>
+                📞 Contact
+              </Text>
 
               {restaurant.contact?.phone && (
                 <TouchableOpacity
@@ -712,10 +887,18 @@ export default function RestaurantDetailScreen({ route }) {
                   onPress={handleCall}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="call-outline" size={16} color={COLORS.primary} />
-                  <Text style={styles.infoLink}>{restaurant.contact.phone}</Text>
+                  <Ionicons
+                    name="call-outline"
+                    size={16}
+                    color={COLORS.primary}
+                  />
+                  <Text style={styles.infoLink}>
+                    {restaurant.contact.phone}
+                  </Text>
                   <View style={styles.infoCTA}>
-                    <Text style={styles.infoCTAText}>Tap to call</Text>
+                    <Text style={styles.infoCTAText}>
+                      Tap to call
+                    </Text>
                   </View>
                 </TouchableOpacity>
               )}
@@ -726,13 +909,22 @@ export default function RestaurantDetailScreen({ route }) {
                   onPress={handleWhatsApp}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="logo-whatsapp" size={16} color={COLORS.success} />
-                  <Text style={styles.infoLink}>{restaurant.contact.whatsapp}</Text>
+                  <Ionicons
+                    name="logo-whatsapp"
+                    size={16}
+                    color={COLORS.success}
+                  />
+                  <Text style={styles.infoLink}>
+                    {restaurant.contact.whatsapp}
+                  </Text>
                   <View style={[
                     styles.infoCTA,
                     { backgroundColor: COLORS.success + '20' },
                   ]}>
-                    <Text style={[styles.infoCTAText, { color: COLORS.success }]}>
+                    <Text style={[
+                      styles.infoCTAText,
+                      { color: COLORS.success },
+                    ]}>
                       WhatsApp
                     </Text>
                   </View>
@@ -741,8 +933,14 @@ export default function RestaurantDetailScreen({ route }) {
 
               {restaurant.contact?.email && (
                 <View style={styles.infoRow}>
-                  <Ionicons name="mail-outline" size={16} color={COLORS.primary} />
-                  <Text style={styles.infoText}>{restaurant.contact.email}</Text>
+                  <Ionicons
+                    name="mail-outline"
+                    size={16}
+                    color={COLORS.primary}
+                  />
+                  <Text style={styles.infoText}>
+                    {restaurant.contact.email}
+                  </Text>
                 </View>
               )}
 
@@ -752,8 +950,15 @@ export default function RestaurantDetailScreen({ route }) {
                   onPress={handleWebsite}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name="globe-outline" size={16} color={COLORS.info} />
-                  <Text style={[styles.infoLink, { color: COLORS.info }]}>
+                  <Ionicons
+                    name="globe-outline"
+                    size={16}
+                    color={COLORS.info}
+                  />
+                  <Text style={[
+                    styles.infoLink,
+                    { color: COLORS.info },
+                  ]}>
                     {restaurant.contact.website}
                   </Text>
                 </TouchableOpacity>
@@ -761,32 +966,43 @@ export default function RestaurantDetailScreen({ route }) {
             </View>
 
             <View style={styles.infoSection}>
-              <Text style={styles.infoSectionTitle}>🛎️ Services</Text>
+              <Text style={styles.infoSectionTitle}>
+                🛎️ Services
+              </Text>
               {restaurant.hasDineIn && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>🪑 Dine In available</Text>
+                  <Text style={styles.infoText}>
+                    🪑 Dine In available
+                  </Text>
                 </View>
               )}
               {restaurant.hasTakeout && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>🥡 Takeout available</Text>
+                  <Text style={styles.infoText}>
+                    🥡 Takeout available
+                  </Text>
                 </View>
               )}
               {restaurant.hasDelivery && (
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>🛵 Delivery available</Text>
+                  <Text style={styles.infoText}>
+                    🛵 Delivery available
+                  </Text>
                 </View>
               )}
             </View>
 
             {restaurant.cuisineTypes?.length > 0 && (
               <View style={styles.infoSection}>
-                <Text style={styles.infoSectionTitle}>🍴 Cuisine</Text>
+                <Text style={styles.infoSectionTitle}>
+                  🍴 Cuisine
+                </Text>
                 <View style={styles.tagsRow}>
                   {restaurant.cuisineTypes.map((type, i) => (
                     <View key={i} style={styles.tag}>
                       <Text style={styles.tagText}>
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
+                        {type.charAt(0).toUpperCase() +
+                          type.slice(1)}
                       </Text>
                     </View>
                   ))}
@@ -795,7 +1011,9 @@ export default function RestaurantDetailScreen({ route }) {
             )}
 
             <View style={styles.infoSection}>
-              <Text style={styles.infoSectionTitle}>💰 Price Range</Text>
+              <Text style={styles.infoSectionTitle}>
+                💰 Price Range
+              </Text>
               <Text style={styles.infoText}>
                 {restaurant.priceRange || '$$'} —{' '}
                 {{
@@ -809,25 +1027,33 @@ export default function RestaurantDetailScreen({ route }) {
 
             {restaurant.analytics?.totalViews > 0 && (
               <View style={styles.infoSection}>
-                <Text style={styles.infoSectionTitle}>📊 Popularity</Text>
+                <Text style={styles.infoSectionTitle}>
+                  📊 Popularity
+                </Text>
                 <View style={styles.popularityRow}>
                   <View style={styles.popularityStat}>
                     <Text style={styles.popularityValue}>
                       {restaurant.analytics.totalViews || 0}
                     </Text>
-                    <Text style={styles.popularityLabel}>Total Views</Text>
+                    <Text style={styles.popularityLabel}>
+                      Total Views
+                    </Text>
                   </View>
                   <View style={styles.popularityStat}>
                     <Text style={styles.popularityValue}>
                       {restaurant.totalFavorites || 0}
                     </Text>
-                    <Text style={styles.popularityLabel}>Favourited</Text>
+                    <Text style={styles.popularityLabel}>
+                      Favourited
+                    </Text>
                   </View>
                   <View style={styles.popularityStat}>
                     <Text style={styles.popularityValue}>
                       {restaurant.totalReviews || 0}
                     </Text>
-                    <Text style={styles.popularityLabel}>Reviews</Text>
+                    <Text style={styles.popularityLabel}>
+                      Reviews
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -837,7 +1063,7 @@ export default function RestaurantDetailScreen({ route }) {
 
       </ScrollView>
 
-      {/* ── Review Modal ─────────────────────── */}
+      {/* ── Review Modal ─────────────────── */}
       <Modal
         visible={showReviewModal}
         transparent
@@ -860,20 +1086,23 @@ export default function RestaurantDetailScreen({ route }) {
               activeOpacity={1}
               style={[
                 styles.reviewModal,
-                // ✅ Bottom padding clears Android nav bar
                 { paddingBottom: insets.bottom + SIZES.lg },
               ]}
               onPress={() => {}}
             >
               <Text style={styles.reviewModalTitle}>
-                {editingReview ? '✏️ Edit Review' : '⭐ Write a Review'}
+                {editingReview
+                  ? '✏️ Edit Review'
+                  : '⭐ Write a Review'}
               </Text>
               <Text style={styles.reviewModalSubtitle}>
                 {restaurant.name}
               </Text>
 
               <View style={styles.starPickerContainer}>
-                <Text style={styles.starPickerLabel}>Your Rating</Text>
+                <Text style={styles.starPickerLabel}>
+                  Your Rating
+                </Text>
                 <StarRating
                   rating={reviewRating}
                   size={40}
@@ -912,10 +1141,15 @@ export default function RestaurantDetailScreen({ route }) {
                 activeOpacity={0.8}
               >
                 {reviewLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                    size="small"
+                  />
                 ) : (
                   <Text style={styles.submitReviewBtnText}>
-                    {editingReview ? 'Update Review' : 'Submit Review'}
+                    {editingReview
+                      ? 'Update Review'
+                      : 'Submit Review'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -924,7 +1158,9 @@ export default function RestaurantDetailScreen({ route }) {
                 style={styles.cancelReviewBtn}
                 onPress={() => setShowReviewModal(false)}
               >
-                <Text style={styles.cancelReviewBtnText}>Cancel</Text>
+                <Text style={styles.cancelReviewBtnText}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
             </TouchableOpacity>
           </TouchableOpacity>
@@ -993,8 +1229,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     textAlign: 'center',
   },
-
-  // ── Cover ────────────────────────────────
   coverContainer: { height: 240, position: 'relative' },
   coverImage:     { width: '100%', height: '100%' },
   coverOverlay:   {
@@ -1003,7 +1237,6 @@ const styles = StyleSheet.create({
   },
   favoriteBtn: {
     position: 'absolute',
-    // ✅ `top` set dynamically via insets in JSX
     right: SIZES.lg,
     backgroundColor: 'rgba(0,0,0,0.45)',
     padding: SIZES.sm,
@@ -1031,8 +1264,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: FONTS.sm,
   },
-
-  // ── Info card ────────────────────────────
   infoCard: {
     backgroundColor: COLORS.surface,
     padding: SIZES.lg,
@@ -1146,8 +1377,6 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     lineHeight: 20,
   },
-
-  // ── Tab bar ──────────────────────────────
   tabBar: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
@@ -1164,8 +1393,6 @@ const styles = StyleSheet.create({
   tabActive:     { borderBottomColor: COLORS.primary },
   tabText:       { fontSize: FONTS.md, color: COLORS.textMuted, fontWeight: '500' },
   tabTextActive: { color: COLORS.primary, fontWeight: '700' },
-
-  // ── Category tabs ────────────────────────
   categoryTabs: { marginVertical: SIZES.md },
   categoryTab: {
     paddingHorizontal: SIZES.md,
@@ -1178,8 +1405,6 @@ const styles = StyleSheet.create({
   categoryTabActive:     { backgroundColor: COLORS.primary },
   categoryTabText:       { fontSize: FONTS.sm, color: COLORS.text, fontWeight: '500' },
   categoryTabTextActive: { color: COLORS.textWhite, fontWeight: '600' },
-
-  // ── Menu section ─────────────────────────
   menuSection:   { paddingHorizontal: SIZES.md },
   categoryTitle: {
     fontSize: FONTS.lg,
@@ -1188,8 +1413,6 @@ const styles = StyleSheet.create({
     marginTop: SIZES.lg,
     marginBottom: SIZES.sm,
   },
-
-  // ── Reviews tab ──────────────────────────
   reviewsTab: { padding: SIZES.md },
   ratingsSummary: {
     alignItems: 'center',
@@ -1269,8 +1492,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: FONTS.md,
   },
-
-  // ── Info tab ─────────────────────────────
   infoTab:     { padding: SIZES.md, gap: SIZES.md },
   infoSection: {
     backgroundColor: COLORS.surface,
@@ -1325,8 +1546,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   popularityLabel: { fontSize: FONTS.xs, color: COLORS.textMuted },
-
-  // ── Empty state ──────────────────────────
   emptyState: {
     alignItems: 'center',
     paddingVertical: SIZES.xxl,
@@ -1334,8 +1553,6 @@ const styles = StyleSheet.create({
   },
   emptyTitle:   { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text },
   emptySubtext: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center' },
-
-  // ── Review modal ─────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -1347,7 +1564,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     padding: SIZES.lg,
     gap: SIZES.md,
-    // ✅ paddingBottom set dynamically via insets in JSX
   },
   reviewModalTitle: {
     fontSize: FONTS.xxl,
