@@ -847,11 +847,20 @@ export function getAutoFoodImage(
     pool = IMAGE_POOLS[category] || IMAGE_POOLS['default'];
   }
 
-  // Step 3: Extract counter from seed
-  const parts   = seed.split('-');
-  const counter = parseInt(parts[parts.length - 1]) || 0;
+  // ✅ FIX: Extract counter from end of seed using regex
+  // Handles dish names that contain hyphens e.g. "Stir-Fry"
+  let counter = 0;
+  try {
+    const match = seed.match(/-(\d+)$/);
+    if (match) {
+      counter = parseInt(match[1], 10) || 0;
+    }
+  } catch {
+    counter = 0;
+  }
 
   // Step 4: Base hash from item name
+  // Different dish names start at different positions in pool
   const baseHash = nameLower.length > 0
     ? nameLower
         .split('')
@@ -861,6 +870,7 @@ export function getAutoFoodImage(
     : 0;
 
   // Step 5: Counter shifts the index
+  // Each tap moves one step forward in the pool
   const index   = (baseHash + counter) % pool.length;
   const photoId = pool[index];
 
@@ -868,36 +878,27 @@ export function getAutoFoodImage(
 }
 
 // ─── uploadImage ─────────────────────────────
-// ✅ Improved error handling and progress feedback
 export async function uploadImage(uri, path) {
-  // ✅ Guard — validate inputs
   if (!uri || !path) {
     console.error('uploadImage: missing uri or path');
     return { success: false, error: 'Missing image URI or path' };
   }
 
   try {
-    // ✅ Fetch the local file as a blob
     const response = await fetch(uri);
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to read image: HTTP ${response.status}`
-      );
+      throw new Error(`Failed to read image: HTTP ${response.status}`);
     }
 
     const blob = await response.blob();
 
-    // ✅ Validate blob is not empty
     if (!blob || blob.size === 0) {
       throw new Error('Image file is empty or could not be read');
     }
 
-    // ✅ Upload to Firebase Storage
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, blob);
-
-    // ✅ Get the public download URL
     const url = await getDownloadURL(storageRef);
 
     if (!url) {
@@ -910,14 +911,12 @@ export async function uploadImage(uri, path) {
   } catch (error) {
     console.error('uploadImage error:', error.message);
 
-    // ✅ Friendly error messages
     let friendlyError = 'Failed to upload image';
     if (error.message.includes('network')) {
       friendlyError = 'No internet connection. Please try again.';
-    } else if (error.message.includes('permission')) {
+    } else if (error.message.includes('permission') ||
+               error.message.includes('unauthorized')) {
       friendlyError = 'Storage permission denied. Please check Firebase rules.';
-    } else if (error.message.includes('storage/unauthorized')) {
-      friendlyError = 'Not authorised to upload. Please sign in.';
     } else if (error.message.includes('empty')) {
       friendlyError = 'Image file is empty. Please choose another photo.';
     }
