@@ -15,13 +15,16 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import { useAuth }         from '../../hooks/useAuth';
-import { useRestaurants }  from '../../hooks/useRestaurants';
+import * as ImagePicker      from 'expo-image-picker';
+import * as Location         from 'expo-location';
+import { useAuth }           from '../../hooks/useAuth';
+import { useRestaurants }    from '../../hooks/useRestaurants';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+
+// ✅ Safe color fallback
+const ACCENT_COLOR = COLORS.accent || COLORS.secondary || '#8E44AD';
 
 const CUISINE_OPTIONS = [
   'caribbean', 'jamaican', 'american', 'chinese',
@@ -102,8 +105,10 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     !!(existingRestaurant?.coords?.latitude)
   );
 
+  // ── Form handlers ─────────────────────────
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
+    // ✅ Reset coords verified if address fields change
     if (['address', 'city', 'state', 'country'].includes(field)) {
       setCoordsFound(false);
     }
@@ -121,18 +126,22 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     });
   };
 
+  // ── Image picker ──────────────────────────
   const pickImage = async (type) => {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access');
+      Alert.alert(
+        'Permission needed',
+        'Please allow photo library access'
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes:    ['images'],
       allowsEditing: true,
-      aspect: type === 'logo' ? [1, 1] : [16, 9],
-      quality: 0.8,
+      aspect:        type === 'logo' ? [1, 1] : [16, 9],
+      quality:       0.8,
     });
     if (!result.canceled) {
       const uri = result.assets[0].uri;
@@ -146,6 +155,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     }
   };
 
+  // ── Verify address ────────────────────────
   const handleVerifyAddress = async () => {
     if (!form.address.trim() || !form.city.trim()) {
       Alert.alert(
@@ -159,22 +169,28 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       form.address, form.city, form.state, form.country,
     );
     setGeocoding(false);
+
     if (coords) {
       setCoordsFound(true);
       Alert.alert(
         '✅ Address Verified',
-        `Location found!\nLat: ${coords.latitude.toFixed(4)}\nLng: ${coords.longitude.toFixed(4)}\n\nCustomers can now find you on "Near Me" search.`
+        `Location found!\n` +
+        `Lat: ${coords.latitude.toFixed(4)}\n` +
+        `Lng: ${coords.longitude.toFixed(4)}\n\n` +
+        `Customers can now find you on "Near Me" search.`
       );
     } else {
       setCoordsFound(false);
       Alert.alert(
         '⚠️ Address Not Found',
-        'Could not find this address on the map. Please check the spelling or add more details.',
+        'Could not find this address on the map. ' +
+        'Please check the spelling or add more details.',
         [{ text: 'OK' }]
       );
     }
   };
 
+  // ── Save handler ──────────────────────────
   const handleSave = async () => {
     if (!form.name.trim()) {
       Alert.alert('Error', 'Restaurant name is required');
@@ -188,9 +204,15 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       Alert.alert('Error', 'Address and city are required');
       return;
     }
+    // ✅ Warn if cuisine not selected
+    if (form.cuisineTypes.length === 0) {
+      Alert.alert('Error', 'Please select at least one cuisine type');
+      return;
+    }
 
     setLoading(true);
 
+    // ✅ Geocode if not already done
     let coords = null;
     if (existingRestaurant?.coords?.latitude && coordsFound) {
       coords = existingRestaurant.coords;
@@ -227,17 +249,21 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     };
 
     let result;
-    if (existingRestaurant) {
-      result = await updateRestaurant(
-        existingRestaurant.id, data, logoUri, coverUri,
-      );
-    } else {
-      result = await createRestaurant(data, logoUri, coverUri);
+    try {
+      if (existingRestaurant) {
+        result = await updateRestaurant(
+          existingRestaurant.id, data, logoUri, coverUri,
+        );
+      } else {
+        result = await createRestaurant(data, logoUri, coverUri);
+      }
+    } catch (err) {
+      result = { success: false, error: err.message };
     }
 
     setLoading(false);
 
-    if (result.success) {
+    if (result?.success) {
       Alert.alert(
         '✅ Success!',
         existingRestaurant
@@ -246,32 +272,28 @@ export default function RestaurantSetupScreen({ navigation, route }) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert('Error', result?.error || 'Something went wrong');
     }
   };
 
+  // ─── Render ───────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView outermost
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={
-        Platform.OS === 'ios'
-          ? 0
-          // ✅ Stack header (~56) + translucent status bar
-          : insets.top + 56
+        Platform.OS === 'ios' ? 0 : insets.top + 56
       }
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          // ✅ Bottom clears Android nav bar
           paddingBottom: insets.bottom + SIZES.xl,
         }}
       >
 
-        {/* ── Cover photo ──────────────────────── */}
+        {/* ── Cover photo ──────────────────── */}
         <TouchableOpacity
           style={styles.coverPicker}
           onPress={() => pickImage('cover')}
@@ -281,6 +303,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             <Image
               source={{ uri: coverPreview }}
               style={styles.coverImage}
+              resizeMode="cover"
             />
           ) : (
             <View style={styles.coverPlaceholder}>
@@ -299,17 +322,25 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           </View>
         </TouchableOpacity>
 
-        {/* ── Logo ─────────────────────────────── */}
+        {/* ── Logo ─────────────────────────── */}
         <TouchableOpacity
           style={styles.logoPicker}
           onPress={() => pickImage('logo')}
           activeOpacity={0.85}
         >
           {logoPreview ? (
-            <Image source={{ uri: logoPreview }} style={styles.logoImage} />
+            <Image
+              source={{ uri: logoPreview }}
+              style={styles.logoImage}
+              resizeMode="cover"
+            />
           ) : (
             <View style={styles.logoPlaceholder}>
-              <Ionicons name="camera" size={22} color={COLORS.textMuted} />
+              <Ionicons
+                name="camera"
+                size={22}
+                color={COLORS.textMuted}
+              />
             </View>
           )}
           <View style={styles.logoEditBadge}>
@@ -317,10 +348,10 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           </View>
         </TouchableOpacity>
 
-        {/* ── Form ─────────────────────────────── */}
+        {/* ── Form ─────────────────────────── */}
         <View style={styles.form}>
 
-          {/* Basic info */}
+          {/* ── Basic info ─────────────────── */}
           <Text style={styles.sectionTitle}>📋 Basic Information</Text>
 
           <View style={styles.field}>
@@ -354,13 +385,17 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             />
           </View>
 
-          {/* Contact */}
+          {/* ── Contact ────────────────────── */}
           <Text style={styles.sectionTitle}>📞 Contact Info</Text>
 
           <View style={styles.field}>
             <Text style={styles.label}>Phone Number *</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="call-outline" size={18} color={COLORS.textMuted} />
+              <Ionicons
+                name="call-outline"
+                size={18}
+                color={COLORS.textMuted}
+              />
               <TextInput
                 ref={phoneRef}
                 style={styles.inputFlex}
@@ -378,7 +413,11 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.field}>
             <Text style={styles.label}>WhatsApp Number</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="logo-whatsapp" size={18} color={COLORS.success} />
+              <Ionicons
+                name="logo-whatsapp"
+                size={18}
+                color={COLORS.success}
+              />
               <TextInput
                 ref={whatsappRef}
                 style={styles.inputFlex}
@@ -396,7 +435,11 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.field}>
             <Text style={styles.label}>Email Address</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
+              <Ionicons
+                name="mail-outline"
+                size={18}
+                color={COLORS.textMuted}
+              />
               <TextInput
                 ref={emailRef}
                 style={styles.inputFlex}
@@ -416,7 +459,11 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.field}>
             <Text style={styles.label}>Website</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="globe-outline" size={18} color={COLORS.textMuted} />
+              <Ionicons
+                name="globe-outline"
+                size={18}
+                color={COLORS.textMuted}
+              />
               <TextInput
                 ref={websiteRef}
                 style={styles.inputFlex}
@@ -432,7 +479,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             </View>
           </View>
 
-          {/* Location */}
+          {/* ── Location ───────────────────── */}
           <Text style={styles.sectionTitle}>📍 Location</Text>
 
           <View style={styles.field}>
@@ -496,6 +543,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             style={[
               styles.verifyBtn,
               coordsFound && styles.verifyBtnSuccess,
+              geocoding  && styles.verifyBtnLoading,
             ]}
             onPress={handleVerifyAddress}
             disabled={geocoding}
@@ -503,18 +551,35 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           >
             {geocoding ? (
               <>
-                <ActivityIndicator size="small" color={COLORS.textWhite} />
-                <Text style={styles.verifyBtnText}>Finding location...</Text>
+                <ActivityIndicator
+                  size="small"
+                  color={COLORS.textWhite}
+                />
+                <Text style={styles.verifyBtnText}>
+                  Finding location...
+                </Text>
               </>
             ) : coordsFound ? (
               <>
-                <Ionicons name="checkmark-circle" size={18} color={COLORS.textWhite} />
-                <Text style={styles.verifyBtnText}>✅ Address Verified</Text>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={COLORS.textWhite}
+                />
+                <Text style={styles.verifyBtnText}>
+                  ✅ Address Verified
+                </Text>
               </>
             ) : (
               <>
-                <Ionicons name="navigate" size={18} color={COLORS.textWhite} />
-                <Text style={styles.verifyBtnText}>Verify Address on Map</Text>
+                <Ionicons
+                  name="navigate"
+                  size={18}
+                  color={COLORS.textWhite}
+                />
+                <Text style={styles.verifyBtnText}>
+                  Verify Address on Map
+                </Text>
               </>
             )}
           </TouchableOpacity>
@@ -532,23 +597,27 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             </Text>
           </View>
 
-          {/* Cuisine types */}
+          {/* ── Cuisine types ──────────────── */}
           <Text style={styles.sectionTitle}>🍴 Cuisine Type</Text>
-          <Text style={styles.sectionHint}>Select all that apply</Text>
+          <Text style={styles.sectionHint}>
+            Select all that apply
+          </Text>
           <View style={styles.chipGrid}>
             {CUISINE_OPTIONS.map(cuisine => (
               <TouchableOpacity
                 key={cuisine}
                 style={[
                   styles.chip,
-                  form.cuisineTypes.includes(cuisine) && styles.chipActive,
+                  form.cuisineTypes.includes(cuisine) &&
+                    styles.chipActive,
                 ]}
                 onPress={() => toggleCuisine(cuisine)}
                 activeOpacity={0.7}
               >
                 <Text style={[
                   styles.chipText,
-                  form.cuisineTypes.includes(cuisine) && styles.chipTextActive,
+                  form.cuisineTypes.includes(cuisine) &&
+                    styles.chipTextActive,
                 ]}>
                   {cuisine.charAt(0).toUpperCase() + cuisine.slice(1)}
                 </Text>
@@ -556,7 +625,15 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             ))}
           </View>
 
-          {/* Price range */}
+          {/* ✅ Show selected count */}
+          {form.cuisineTypes.length > 0 && (
+            <Text style={styles.selectedHint}>
+              ✅ {form.cuisineTypes.length} cuisine
+              {form.cuisineTypes.length !== 1 ? 's' : ''} selected
+            </Text>
+          )}
+
+          {/* ── Price range ─────────────────── */}
           <Text style={styles.sectionTitle}>💰 Price Range</Text>
           <View style={styles.priceRow}>
             {PRICE_OPTIONS.map(p => (
@@ -579,7 +656,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             ))}
           </View>
 
-          {/* Services */}
+          {/* ── Services ─────────────────────── */}
           <Text style={styles.sectionTitle}>🛎️ Services Offered</Text>
           {[
             { key: 'hasDineIn',   label: 'Dine In',  icon: '🪑' },
@@ -589,7 +666,9 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             <TouchableOpacity
               key={service.key}
               style={styles.serviceRow}
-              onPress={() => updateForm(service.key, !form[service.key])}
+              onPress={() =>
+                updateForm(service.key, !form[service.key])
+              }
               activeOpacity={0.7}
             >
               <Text style={styles.serviceEmoji}>{service.icon}</Text>
@@ -605,7 +684,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             </TouchableOpacity>
           ))}
 
-          {/* Save button */}
+          {/* ── Save button ──────────────────── */}
           <TouchableOpacity
             style={[
               styles.saveBtn,
@@ -622,7 +701,11 @@ export default function RestaurantSetupScreen({ navigation, route }) {
               </>
             ) : (
               <>
-                <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+                <Ionicons
+                  name="checkmark-circle"
+                  size={22}
+                  color="#FFFFFF"
+                />
                 <Text style={styles.saveBtnText}>
                   {existingRestaurant
                     ? 'Update Restaurant'
@@ -789,6 +872,10 @@ const styles = StyleSheet.create({
   verifyBtnSuccess: {
     backgroundColor: COLORS.success,
   },
+  // ✅ Dimmed while geocoding
+  verifyBtnLoading: {
+    opacity: 0.8,
+  },
   verifyBtnText: {
     color: COLORS.textWhite,
     fontSize: FONTS.md,
@@ -841,6 +928,13 @@ const styles = StyleSheet.create({
     color:      '#FFFFFF',
     fontWeight: '600',
   },
+  // ✅ Selected cuisine count hint
+  selectedHint: {
+    fontSize: FONTS.xs,
+    color: COLORS.success,
+    fontWeight: '600',
+    marginTop: -SIZES.xs,
+  },
 
   // ── Price range ──────────────────────────
   priceRow: {
@@ -858,8 +952,9 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   priceBtnActive: {
-    backgroundColor: COLORS.accent,
-    borderColor:     COLORS.accent,
+    // ✅ Safe color fallback
+    backgroundColor: ACCENT_COLOR,
+    borderColor:     ACCENT_COLOR,
   },
   priceBtnText: {
     fontSize: FONTS.xl,
