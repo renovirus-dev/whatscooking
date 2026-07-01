@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/screens/owner/ManageMenuScreen.js
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection,
@@ -25,57 +25,119 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db }      from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+
+// ✅ Safe color fallback
+const INFO_COLOR = COLORS.info || '#3498DB';
+
+const FALLBACK_IMAGE =
+  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&h=100&fit=crop';
 
 export default function ManageMenuScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+
+  // ✅ isMounted ref — prevents setState after unmount
+  const isMounted = useRef(true);
 
   const [restaurantId, setRestaurantId] = useState(null);
   const [menuItems, setMenuItems]       = useState([]);
   const [loading, setLoading]           = useState(true);
   const [filter, setFilter]             = useState('all');
 
+  // ── Mounted lifecycle ─────────────────────
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
+
   // ── Step 1: Get owner's restaurant ───────
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, 'restaurants'),
-      where('ownerId', '==', user.uid)
-    );
-    const unsub = onSnapshot(q, snap => {
-      if (!snap.empty) {
-        setRestaurantId(snap.docs[0].id);
-      } else {
-        setLoading(false);
-      }
-    });
-    return unsub;
+
+    let unsubscribe = null;
+
+    try {
+      const q = query(
+        collection(db, 'restaurants'),
+        where('ownerId', '==', user.uid)
+      );
+
+      unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          if (!isMounted.current) return;
+          if (!snap.empty) {
+            setRestaurantId(snap.docs[0].id);
+          } else {
+            setRestaurantId(null);
+            setLoading(false);
+          }
+        },
+        (err) => {
+          if (!isMounted.current) return;
+          console.error('Restaurant listener error:', err);
+          setLoading(false);
+        }
+      );
+    } catch (err) {
+      console.error('Restaurant setup error:', err);
+      if (isMounted.current) setLoading(false);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [user]);
 
   // ── Step 2: Get menu items ────────────────
   useEffect(() => {
     if (!restaurantId) return;
-    const q = query(
-      collection(db, 'menuItems'),
-      where('restaurantId', '==', restaurantId)
-    );
-    const unsub = onSnapshot(q, snap => {
-      const items = snap.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-      }));
-      items.sort((a, b) => {
-        if (a.category < b.category) return -1;
-        if (a.category > b.category) return 1;
-        return a.name?.localeCompare(b.name);
-      });
-      setMenuItems(items);
-      setLoading(false);
-    });
-    return unsub;
+
+    let unsubscribe = null;
+
+    try {
+      const q = query(
+        collection(db, 'menuItems'),
+        where('restaurantId', '==', restaurantId)
+      );
+
+      unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          if (!isMounted.current) return;
+
+          const items = snap.docs.map(d => ({
+            id: d.id,
+            ...d.data(),
+          }));
+
+          // Sort by category then name
+          items.sort((a, b) => {
+            if (a.category < b.category) return -1;
+            if (a.category > b.category) return 1;
+            return a.name?.localeCompare(b.name) || 0;
+          });
+
+          setMenuItems(items);
+          setLoading(false);
+        },
+        (err) => {
+          if (!isMounted.current) return;
+          console.error('Menu items listener error:', err);
+          setLoading(false);
+        }
+      );
+    } catch (err) {
+      console.error('Menu items setup error:', err);
+      if (isMounted.current) setLoading(false);
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [restaurantId]);
 
   // ── Toggle availability ───────────────────
@@ -85,8 +147,11 @@ export default function ManageMenuScreen({ navigation }) {
         isAvailable: !current,
         updatedAt:   serverTimestamp(),
       });
-    } catch (error) {
-      Alert.alert('Error', 'Could not update item');
+    } catch (err) {
+      console.error('toggleAvailability error:', err);
+      if (isMounted.current) {
+        Alert.alert('Error', 'Could not update item');
+      }
     }
   };
 
@@ -103,8 +168,11 @@ export default function ManageMenuScreen({ navigation }) {
           onPress: async () => {
             try {
               await deleteDoc(doc(db, 'menuItems', itemId));
-            } catch (error) {
-              Alert.alert('Error', 'Could not delete item');
+            } catch (err) {
+              console.error('handleDelete error:', err);
+              if (isMounted.current) {
+                Alert.alert('Error', 'Could not delete item');
+              }
             }
           },
         },
@@ -137,7 +205,9 @@ export default function ManageMenuScreen({ navigation }) {
         },
       ]}>
         <Text style={styles.centeredEmoji}>🍽️</Text>
-        <Text style={styles.centeredTitle}>No Restaurant Found</Text>
+        <Text style={styles.centeredTitle}>
+          No Restaurant Found
+        </Text>
         <Text style={styles.centeredText}>
           Set up your restaurant profile first
         </Text>
@@ -218,23 +288,34 @@ export default function ManageMenuScreen({ navigation }) {
       {filteredItems.length === 0 ? (
         <View style={[
           styles.centered,
-          // ✅ Bottom inset so button clears nav bar
           { paddingBottom: insets.bottom + SIZES.lg },
         ]}>
           <Text style={styles.centeredEmoji}>🍴</Text>
-          <Text style={styles.centeredTitle}>No Menu Items Yet</Text>
-          <Text style={styles.centeredText}>
-            Tap "Add Item" to build your menu
+          <Text style={styles.centeredTitle}>
+            {filter === 'all'
+              ? 'No Menu Items Yet'
+              : filter === 'available'
+              ? 'No Available Items'
+              : 'No Unavailable Items'}
           </Text>
-          <TouchableOpacity
-            style={styles.setupBtn}
-            onPress={() =>
-              navigation.navigate('AddMenuItem', { restaurantId })
-            }
-            activeOpacity={0.8}
-          >
-            <Text style={styles.setupBtnText}>+ Add First Item</Text>
-          </TouchableOpacity>
+          <Text style={styles.centeredText}>
+            {filter === 'all'
+              ? 'Tap "Add Item" to build your menu'
+              : 'Change the filter above'}
+          </Text>
+          {filter === 'all' && (
+            <TouchableOpacity
+              style={styles.setupBtn}
+              onPress={() =>
+                navigation.navigate('AddMenuItem', { restaurantId })
+              }
+              activeOpacity={0.8}
+            >
+              <Text style={styles.setupBtnText}>
+                + Add First Item
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         /* ── Menu list grouped by category ─── */
@@ -242,9 +323,9 @@ export default function ManageMenuScreen({ navigation }) {
           data={Object.entries(grouped)}
           keyExtractor={([category]) => category}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.listContent,
-            // ✅ Last card clears Android nav bar
             { paddingBottom: insets.bottom + SIZES.xl },
           ]}
           renderItem={({ item: [category, items] }) => (
@@ -271,14 +352,18 @@ export default function ManageMenuScreen({ navigation }) {
                   <Image
                     source={{
                       uri: menuItem.imageUrl ||
-                        'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100',
+                           menuItem.autoImageUrl ||
+                           FALLBACK_IMAGE,
                     }}
                     style={styles.itemImage}
+                    resizeMode="cover"
+                    // ✅ Fallback if image fails
+                    defaultSource={{ uri: FALLBACK_IMAGE }}
                   />
 
                   {/* Item info */}
                   <View style={styles.itemInfo}>
-                    <Text style={styles.itemName}>
+                    <Text style={styles.itemName} numberOfLines={1}>
                       {menuItem.name}
                     </Text>
                     <Text style={styles.itemPrice}>
@@ -293,7 +378,7 @@ export default function ManageMenuScreen({ navigation }) {
                       </Text>
                     ) : null}
 
-                    {/* ✅ Dietary tags inline */}
+                    {/* Dietary tags */}
                     {menuItem.dietaryInfo && (
                       <View style={styles.dietaryRow}>
                         {menuItem.dietaryInfo.isVegetarian && (
@@ -359,12 +444,16 @@ export default function ManageMenuScreen({ navigation }) {
                           restaurantId,
                         })
                       }
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      hitSlop={{
+                        top: 6, bottom: 6,
+                        left: 6, right: 6,
+                      }}
                     >
                       <Ionicons
                         name="pencil"
                         size={16}
-                        color={COLORS.info}
+                        // ✅ Safe color fallback
+                        color={INFO_COLOR}
                       />
                     </TouchableOpacity>
 
@@ -374,7 +463,10 @@ export default function ManageMenuScreen({ navigation }) {
                       onPress={() =>
                         handleDelete(menuItem.id, menuItem.name)
                       }
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      hitSlop={{
+                        top: 6, bottom: 6,
+                        left: 6, right: 6,
+                      }}
                     >
                       <Ionicons
                         name="trash"
@@ -434,6 +526,7 @@ const styles = StyleSheet.create({
     paddingVertical: SIZES.md,
     borderRadius: RADIUS.lg,
     marginTop: SIZES.lg,
+    ...SHADOW,
   },
   setupBtnText: {
     color: '#FFFFFF',
@@ -506,7 +599,6 @@ const styles = StyleSheet.create({
   // ── List ────────────────────────────────
   listContent: {
     padding: SIZES.md,
-    // ✅ paddingBottom set dynamically via insets
   },
 
   // ── Category group ───────────────────────
@@ -588,7 +680,8 @@ const styles = StyleSheet.create({
   },
   editBtn: {
     padding: SIZES.sm,
-    backgroundColor: COLORS.info + '15',
+    // ✅ Safe color fallback
+    backgroundColor: INFO_COLOR + '15',
     borderRadius: RADIUS.md,
   },
   deleteBtn: {
