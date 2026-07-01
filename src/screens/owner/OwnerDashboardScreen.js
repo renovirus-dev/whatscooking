@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/screens/owner/OwnerDashboardScreen.js
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,9 @@ import {
   Switch,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection, query, where, onSnapshot,
@@ -23,10 +24,18 @@ import { useAuth }               from '../../hooks/useAuth';
 import { PLANS, useSubscription } from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
+// ✅ Safe color fallbacks
+const WARNING_COLOR = COLORS.warning  || '#F39C12';
+const INFO_COLOR    = COLORS.info     || '#3498DB';
+const DIVIDER_COLOR = COLORS.divider  || COLORS.border || '#E0E0E0';
+
 export default function OwnerDashboardScreen({ navigation }) {
-  const insets            = useSafeAreaInsets();
-  const { user }          = useAuth();
-  const { hasAnalytics }  = useSubscription();
+  const insets           = useSafeAreaInsets();
+  const { user }         = useAuth();
+  const { hasAnalytics } = useSubscription();
+
+  // ✅ isMounted ref — prevents setState after unmount
+  const isMounted = useRef(true);
 
   const [restaurant, setRestaurant] = useState(null);
   const [stats, setStats]           = useState({
@@ -34,67 +43,100 @@ export default function OwnerDashboardScreen({ navigation }) {
   });
   const [isOpen, setIsOpen]         = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  // ── Mounted lifecycle ─────────────────────
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   // ── Firestore listener ────────────────────
   useEffect(() => {
     if (!user) return;
+
+    let unsubscribe = null;
+
     const q = query(
       collection(db, 'restaurants'),
       where('ownerId', '==', user.uid)
     );
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      if (!snapshot.empty) {
-        const rest = {
-          id: snapshot.docs[0].id,
-          ...snapshot.docs[0].data(),
-        };
-        setRestaurant(rest);
-        setIsOpen(rest.isCurrentlyOpen || false);
-        try {
-          const [menuSnap, reviewSnap] = await Promise.all([
-            getCountFromServer(query(
-              collection(db, 'menuItems'),
-              where('restaurantId', '==', rest.id)
-            )),
-            getCountFromServer(query(
-              collection(db, 'reviews'),
-              where('restaurantId', '==', rest.id)
-            )),
-          ]);
-          setStats({
-            menuItems: menuSnap.data().count,
-            reviews:   reviewSnap.data().count,
-            favorites: rest.totalFavorites || 0,
-          });
-        } catch (err) {
-          console.error('Stats fetch error:', err);
+
+    unsubscribe = onSnapshot(
+      q,
+      async (snapshot) => {
+        // ✅ Guard all setState calls
+        if (!isMounted.current) return;
+
+        if (!snapshot.empty) {
+          const rest = {
+            id: snapshot.docs[0].id,
+            ...snapshot.docs[0].data(),
+          };
+          setRestaurant(rest);
+          setIsOpen(rest.isCurrentlyOpen || false);
+
+          // ✅ Fetch counts separately
+          try {
+            if (isMounted.current) setStatsLoading(true);
+            const [menuSnap, reviewSnap] = await Promise.all([
+              getCountFromServer(query(
+                collection(db, 'menuItems'),
+                where('restaurantId', '==', rest.id)
+              )),
+              getCountFromServer(query(
+                collection(db, 'reviews'),
+                where('restaurantId', '==', rest.id)
+              )),
+            ]);
+            if (isMounted.current) {
+              setStats({
+                menuItems: menuSnap.data().count,
+                reviews:   reviewSnap.data().count,
+                favorites: rest.totalFavorites || 0,
+              });
+            }
+          } catch (err) {
+            console.error('Stats fetch error:', err);
+          } finally {
+            if (isMounted.current) setStatsLoading(false);
+          }
+        } else {
+          if (isMounted.current) setRestaurant(null);
         }
-      } else {
-        setRestaurant(null);
+      },
+      (err) => {
+        if (!isMounted.current) return;
+        console.error('Dashboard listener error:', err);
       }
-    }, (err) => {
-      console.error('Dashboard listener error:', err);
-    });
-    return unsubscribe;
+    );
+
+    return () => {
+      // ✅ Always unsubscribe on unmount
+      if (unsubscribe) unsubscribe();
+    };
   }, [user]);
 
+  // ── Toggle open/closed ────────────────────
   const handleToggleOpen = async (value) => {
     if (!restaurant) return;
-    setIsOpen(value);
+    if (isMounted.current) setIsOpen(value);
     try {
       await updateDoc(doc(db, 'restaurants', restaurant.id), {
         isCurrentlyOpen: value,
         updatedAt:       serverTimestamp(),
       });
     } catch (err) {
-      setIsOpen(!value);
+      if (isMounted.current) setIsOpen(!value);
       Alert.alert('Error', 'Could not update status');
     }
   };
 
   const handleRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    if (isMounted.current) setRefreshing(true);
+    setTimeout(() => {
+      if (isMounted.current) setRefreshing(false);
+    }, 1000);
   };
 
   // ── Subscription helpers ──────────────────
@@ -126,9 +168,24 @@ export default function OwnerDashboardScreen({ navigation }) {
 
   // ── Stats cards ───────────────────────────
   const STATS = [
-    { label: 'Menu Items', value: stats.menuItems, icon: 'restaurant', color: COLORS.primary },
-    { label: 'Reviews',    value: stats.reviews,   icon: 'star',       color: COLORS.warning },
-    { label: 'Favorites',  value: stats.favorites, icon: 'heart',      color: COLORS.error   },
+    {
+      label: 'Menu Items',
+      value: statsLoading ? '...' : stats.menuItems,
+      icon:  'restaurant',
+      color: COLORS.primary,
+    },
+    {
+      label: 'Reviews',
+      value: statsLoading ? '...' : stats.reviews,
+      icon:  'star',
+      color: WARNING_COLOR,
+    },
+    {
+      label: 'Favorites',
+      value: statsLoading ? '...' : stats.favorites,
+      icon:  'heart',
+      color: COLORS.error,
+    },
     {
       label: 'Rating',
       value: restaurant?.averageRating?.toFixed(1) || '—',
@@ -150,14 +207,15 @@ export default function OwnerDashboardScreen({ navigation }) {
     {
       label:   "Today's Menu",
       icon:    'today',
-      color:   COLORS.info,
+      color:   INFO_COLOR,
       onPress: () => navigation.navigate('Daily'),
     },
     {
       label:   'Edit Restaurant',
       icon:    'pencil',
       color:   COLORS.success,
-      onPress: () => navigation.navigate('RestaurantSetup', { restaurant }),
+      onPress: () =>
+        navigation.navigate('RestaurantSetup', { restaurant }),
     },
     {
       label:   'View as Customer',
@@ -171,14 +229,16 @@ export default function OwnerDashboardScreen({ navigation }) {
     ...(analyticsEnabled ? [{
       label:   'Analytics',
       icon:    'bar-chart',
-      color:   COLORS.info,
-      onPress: () => navigation.navigate('Analytics', { restaurant }),
+      color:   INFO_COLOR,
+      onPress: () =>
+        navigation.navigate('Analytics', { restaurant }),
     }] : []),
     {
       label:   'Subscription',
       icon:    'diamond',
-      color:   COLORS.warning,
-      onPress: () => navigation.navigate('Subscription', { restaurant }),
+      color:   WARNING_COLOR,
+      onPress: () =>
+        navigation.navigate('Subscription', { restaurant }),
     },
   ];
 
@@ -188,13 +248,14 @@ export default function OwnerDashboardScreen({ navigation }) {
       <View style={[
         styles.noRestaurant,
         {
-          // ✅ Respect system bars on the empty state too
           paddingTop:    insets.top    + SIZES.xl,
           paddingBottom: insets.bottom + SIZES.xl,
         },
       ]}>
         <Text style={{ fontSize: 60 }}>🍽️</Text>
-        <Text style={styles.noRestaurantTitle}>No Restaurant Yet</Text>
+        <Text style={styles.noRestaurantTitle}>
+          No Restaurant Yet
+        </Text>
         <Text style={styles.noRestaurantText}>
           Create your restaurant profile to get started
         </Text>
@@ -211,12 +272,12 @@ export default function OwnerDashboardScreen({ navigation }) {
     );
   }
 
+  // ── Main render ───────────────────────────
   return (
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{
-        // ✅ Bottom padding clears Android nav bar
         paddingBottom: insets.bottom + SIZES.xl,
       }}
       refreshControl={
@@ -236,11 +297,19 @@ export default function OwnerDashboardScreen({ navigation }) {
             {restaurant.name}
           </Text>
           <View style={styles.planRow}>
-            <Text style={styles.planEmoji}>{currentPlan.emoji}</Text>
-            <Text style={styles.planName}>{currentPlan.name} Plan</Text>
+            <Text style={styles.planEmoji}>
+              {currentPlan.emoji}
+            </Text>
+            <Text style={styles.planName}>
+              {currentPlan.name} Plan
+            </Text>
             {restaurant.isVerified && (
               <View style={styles.verifiedBadge}>
-                <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color="#FFFFFF"
+                />
                 <Text style={styles.verifiedText}>Verified</Text>
               </View>
             )}
@@ -256,7 +325,7 @@ export default function OwnerDashboardScreen({ navigation }) {
             {isOpen ? 'Open' : 'Closed'}
           </Text>
           <Switch
-            value={isOpen}
+            value={!!isOpen}
             onValueChange={handleToggleOpen}
             trackColor={{
               false: 'rgba(255,255,255,0.3)',
@@ -274,7 +343,9 @@ export default function OwnerDashboardScreen({ navigation }) {
             styles.subscriptionIconBg,
             { backgroundColor: currentPlan.color + '20' },
           ]}>
-            <Text style={{ fontSize: 26 }}>{currentPlan.emoji}</Text>
+            <Text style={{ fontSize: 26 }}>
+              {currentPlan.emoji}
+            </Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.subscriptionPlanName}>
@@ -283,7 +354,7 @@ export default function OwnerDashboardScreen({ navigation }) {
             <Text style={[
               styles.subscriptionStatus,
               getSubscriptionStatus().includes('⚠️') && {
-                color: COLORS.warning,
+                color: WARNING_COLOR,
               },
             ]}>
               {getSubscriptionStatus()}
@@ -300,13 +371,19 @@ export default function OwnerDashboardScreen({ navigation }) {
             styles.upgradeBtn,
             currentPlanId === 'premium' && styles.upgradeBtnManage,
           ]}
-          onPress={() => navigation.navigate('Subscription', { restaurant })}
+          onPress={() =>
+            navigation.navigate('Subscription', { restaurant })
+          }
           activeOpacity={0.8}
         >
           <Text style={styles.upgradeBtnText}>
             {currentPlanId === 'premium' ? 'Manage' : 'Upgrade'}
           </Text>
-          <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+          <Ionicons
+            name="chevron-forward"
+            size={14}
+            color="#FFFFFF"
+          />
         </TouchableOpacity>
       </View>
 
@@ -324,17 +401,27 @@ export default function OwnerDashboardScreen({ navigation }) {
               { icon: 'infinite',      label: 'Unlimited Menu' },
             ].map((f, i) => (
               <View key={i} style={styles.featureItem}>
-                <Ionicons name={f.icon} size={18} color={COLORS.primary} />
-                <Text style={styles.featureItemLabel}>{f.label}</Text>
+                <Ionicons
+                  name={f.icon}
+                  size={18}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.featureItemLabel}>
+                  {f.label}
+                </Text>
               </View>
             ))}
           </View>
           <TouchableOpacity
             style={styles.seeAllPlansBtn}
-            onPress={() => navigation.navigate('Subscription', { restaurant })}
+            onPress={() =>
+              navigation.navigate('Subscription', { restaurant })
+            }
             activeOpacity={0.7}
           >
-            <Text style={styles.seeAllPlansBtnText}>See All Plans →</Text>
+            <Text style={styles.seeAllPlansBtnText}>
+              See All Plans →
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -343,22 +430,36 @@ export default function OwnerDashboardScreen({ navigation }) {
       {analyticsEnabled && (
         <TouchableOpacity
           style={styles.analyticsCard}
-          onPress={() => navigation.navigate('Analytics', { restaurant })}
+          onPress={() =>
+            navigation.navigate('Analytics', { restaurant })
+          }
           activeOpacity={0.85}
         >
           <View style={styles.analyticsCardHeader}>
             <View style={styles.analyticsCardTitle}>
-              <Ionicons name="bar-chart" size={20} color={COLORS.secondary} />
+              <Ionicons
+                name="bar-chart"
+                size={20}
+                color={COLORS.secondary}
+              />
               <Text style={styles.analyticsCardTitleText}>
                 Analytics Overview
               </Text>
               <View style={styles.premiumBadge}>
-                <Text style={styles.premiumBadgeText}>👑 Premium</Text>
+                <Text style={styles.premiumBadgeText}>
+                  👑 Premium
+                </Text>
               </View>
             </View>
             <View style={styles.analyticsViewAll}>
-              <Text style={styles.analyticsViewAllText}>View All</Text>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+              <Text style={styles.analyticsViewAllText}>
+                View All
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={COLORS.primary}
+              />
             </View>
           </View>
 
@@ -368,7 +469,7 @@ export default function OwnerDashboardScreen({ navigation }) {
                 icon:  'eye',
                 value: restaurant?.analytics?.totalViews    || 0,
                 label: 'Views',
-                color: COLORS.info,
+                color: INFO_COLOR,
               },
               {
                 icon:  'call',
@@ -399,21 +500,31 @@ export default function OwnerDashboardScreen({ navigation }) {
               <React.Fragment key={i}>
                 {i > 0 && <View style={styles.analyticsMinDivider} />}
                 <View style={styles.analyticsMiniStat}>
-                  <Ionicons name={stat.icon} size={18} color={stat.color} />
+                  <Ionicons
+                    name={stat.icon}
+                    size={18}
+                    color={stat.color}
+                  />
                   <Text style={[
                     styles.analyticsMiniValue,
                     { color: i === 3 ? COLORS.primary : COLORS.text },
                   ]}>
                     {stat.value}
                   </Text>
-                  <Text style={styles.analyticsMiniLabel}>{stat.label}</Text>
+                  <Text style={styles.analyticsMiniLabel}>
+                    {stat.label}
+                  </Text>
                 </View>
               </React.Fragment>
             ))}
           </View>
 
           <View style={styles.viewerBreakdown}>
-            <Ionicons name="people-outline" size={14} color={COLORS.textMuted} />
+            <Ionicons
+              name="people-outline"
+              size={14}
+              color={COLORS.textMuted}
+            />
             <Text style={styles.viewerBreakdownText}>
               {restaurant?.analytics?.weeklyViews || 0} views this week
               · Tap to see guest vs user breakdown →
@@ -422,22 +533,26 @@ export default function OwnerDashboardScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ── Analytics — Basic locked ───────────── */}
-      {currentPlanId === 'basic' && (
+      {/* ── Analytics — Locked (basic + free trial) ── */}
+      {(currentPlanId === 'basic' || currentPlanId === 'free_trial') && (
         <TouchableOpacity
           style={styles.analyticsLockedCard}
-          onPress={() => navigation.navigate('Subscription', { restaurant })}
+          onPress={() =>
+            navigation.navigate('Subscription', { restaurant })
+          }
           activeOpacity={0.85}
         >
           <View style={styles.analyticsLockedMock}>
-            {['Views', 'Calls', 'WhatsApp', 'Conversion'].map((l, i) => (
-              <View key={i} style={styles.analyticsMockStat}>
-                <Text style={styles.analyticsMockValue}>
-                  {i === 3 ? '??%' : '???'}
-                </Text>
-                <Text style={styles.analyticsMockLabel}>{l}</Text>
-              </View>
-            ))}
+            {['Views', 'Calls', 'WhatsApp', 'Conversion'].map(
+              (l, i) => (
+                <View key={i} style={styles.analyticsMockStat}>
+                  <Text style={styles.analyticsMockValue}>
+                    {i === 3 ? '??%' : '???'}
+                  </Text>
+                  <Text style={styles.analyticsMockLabel}>{l}</Text>
+                </View>
+              )
+            )}
           </View>
           <View style={styles.analyticsLockOverlay}>
             <Ionicons name="lock-closed" size={32} color="#FFFFFF" />
@@ -445,43 +560,9 @@ export default function OwnerDashboardScreen({ navigation }) {
               Analytics — Premium Only
             </Text>
             <Text style={styles.analyticsLockDesc}>
-              See who's viewing your restaurant, calling, and ordering.
-              Upgrade to Premium to unlock.
-            </Text>
-            <View style={styles.analyticsUpgradeChip}>
-              <Text style={styles.analyticsUpgradeChipText}>
-                👑 Upgrade to Premium →
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Analytics — Free trial locked ─────── */}
-      {currentPlanId === 'free_trial' && (
-        <TouchableOpacity
-          style={styles.analyticsLockedCard}
-          onPress={() => navigation.navigate('Subscription', { restaurant })}
-          activeOpacity={0.85}
-        >
-          <View style={styles.analyticsLockedMock}>
-            {['Views', 'Calls', 'WhatsApp', 'Conversion'].map((l, i) => (
-              <View key={i} style={styles.analyticsMockStat}>
-                <Text style={styles.analyticsMockValue}>
-                  {i === 3 ? '??%' : '???'}
-                </Text>
-                <Text style={styles.analyticsMockLabel}>{l}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.analyticsLockOverlay}>
-            <Ionicons name="lock-closed" size={32} color="#FFFFFF" />
-            <Text style={styles.analyticsLockTitle}>
-              Analytics — Premium Only
-            </Text>
-            <Text style={styles.analyticsLockDesc}>
-              Track views, calls and orders from guests and users.
-              Available on the Premium plan.
+              {currentPlanId === 'basic'
+                ? "See who's viewing your restaurant, calling, and ordering. Upgrade to Premium to unlock."
+                : 'Track views, calls and orders from guests and users. Available on the Premium plan.'}
             </Text>
             <View style={styles.analyticsUpgradeChip}>
               <Text style={styles.analyticsUpgradeChipText}>
@@ -501,7 +582,11 @@ export default function OwnerDashboardScreen({ navigation }) {
               styles.statIcon,
               { backgroundColor: stat.color + '20' },
             ]}>
-              <Ionicons name={stat.icon} size={24} color={stat.color} />
+              <Ionicons
+                name={stat.icon}
+                size={24}
+                color={stat.color}
+              />
             </View>
             <Text style={styles.statValue}>{stat.value}</Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -523,7 +608,11 @@ export default function OwnerDashboardScreen({ navigation }) {
               styles.actionIcon,
               { backgroundColor: action.color + '20' },
             ]}>
-              <Ionicons name={action.icon} size={28} color={action.color} />
+              <Ionicons
+                name={action.icon}
+                size={28}
+                color={action.color}
+              />
             </View>
             <Text style={styles.actionLabel}>{action.label}</Text>
           </TouchableOpacity>
@@ -560,14 +649,22 @@ export default function OwnerDashboardScreen({ navigation }) {
               activeOpacity={0.8}
             >
               <View style={styles.lockedIconBg}>
-                <Ionicons name={feat.icon} size={22} color={COLORS.primary} />
+                <Ionicons
+                  name={feat.icon}
+                  size={22}
+                  color={COLORS.primary}
+                />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.lockedTitle}>{feat.title}</Text>
                 <Text style={styles.lockedDesc}>{feat.desc}</Text>
               </View>
               <View style={styles.lockBadge}>
-                <Ionicons name="lock-closed" size={14} color={COLORS.textMuted} />
+                <Ionicons
+                  name="lock-closed"
+                  size={14}
+                  color={COLORS.textMuted}
+                />
               </View>
             </TouchableOpacity>
           ))}
@@ -604,7 +701,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: SIZES.xl,
     backgroundColor: COLORS.background,
-    // ✅ paddingTop/Bottom set dynamically from insets in JSX
   },
   noRestaurantTitle: {
     fontSize: FONTS.xxl,
@@ -632,8 +728,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Header ──────────────────────────────
-  // Stack navigator provides the top inset/header
-  // so no extra paddingTop needed on the orange header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -859,7 +953,8 @@ const styles = StyleSheet.create({
     gap: SIZES.xs,
     paddingTop: SIZES.xs,
     borderTopWidth: 1,
-    borderTopColor: COLORS.divider,
+    // ✅ Safe divider color fallback
+    borderTopColor: DIVIDER_COLOR,
   },
   viewerBreakdownText: {
     fontSize: FONTS.xs,
