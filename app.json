@@ -75,6 +75,19 @@
         {
           "userInterfaceStyle": "light"
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FF6B35",
+          "image": "./assets/splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "dark": {
+            "backgroundColor": "#FF6B35",
+            "image": "./assets/splash.png"
+          }
+        }
       ]
     ],
     "extra": {
