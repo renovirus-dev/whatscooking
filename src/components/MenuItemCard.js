@@ -1,19 +1,30 @@
 // ============================================
 // FILE: src/components/MenuItemCard.js
 // ============================================
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, Image, TouchableOpacity,
   StyleSheet, Modal, Alert, ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }  from '@expo/vector-icons';
 import {
   doc, updateDoc, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
-import { db }              from '../firebase/config';
-import { useAuth }         from '../hooks/useAuth';
-import { useAnalytics }    from '../hooks/useAnalytics';  // ✅ NEW
+import { db }      from '../firebase/config';
+import { useAuth } from '../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
+
+// ✅ Safe import of useAnalytics
+// If the hook doesn't exist — use no-op fallback
+let useAnalytics;
+try {
+  useAnalytics = require('../hooks/useAnalytics').useAnalytics;
+} catch (e) {
+  useAnalytics = () => ({
+    trackMenuItemView: () => {},
+    trackAction:       () => {},
+  });
+}
 
 // ─── Constants ───────────────────────────────
 const DIETARY_BADGES = {
@@ -31,8 +42,21 @@ const FALLBACK_IMAGE =
 export default function MenuItemCard({ item, onLoginRequired }) {
   const { user, userProfile, updateUserProfile } = useAuth();
 
-  // ✅ Analytics tracking
-  const { trackMenuItemView } = useAnalytics();
+  // ✅ Safe analytics
+  let analytics;
+  try {
+    analytics = useAnalytics();
+  } catch (e) {
+    analytics = { trackMenuItemView: () => {}, trackAction: () => {} };
+  }
+  const { trackMenuItemView } = analytics;
+
+  // ✅ isMounted ref — prevents setState after unmount
+  const isMounted = useRef(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => { isMounted.current = false; };
+  }, []);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [imageError, setImageError]     = useState(false);
@@ -46,18 +70,30 @@ export default function MenuItemCard({ item, onLoginRequired }) {
     ([key]) => item.dietaryInfo?.[key]
   );
 
-  // ✅ Consistent fallback image based on item id
+  // ✅ Image source with fallback
   const imageUri = imageError || !item.imageUrl
     ? FALLBACK_IMAGE
     : item.imageUrl;
-
   const imageSource = { uri: imageUri };
 
   // ─── Open modal + track view ─────────────
   const handleCardPress = () => {
-    setModalVisible(true);
-    // ✅ Track menu item view (works for guests too)
-    trackMenuItemView(item.id, item.name, item.restaurantId);
+    if (isMounted.current) {
+      setModalVisible(true);
+    }
+    // ✅ Safe analytics call
+    try {
+      trackMenuItemView(item.id, item.name, item.restaurantId);
+    } catch (e) {
+      // Analytics should never crash the UI
+    }
+  };
+
+  // ─── Close modal ──────────────────────────
+  const handleCloseModal = () => {
+    if (isMounted.current) {
+      setModalVisible(false);
+    }
   };
 
   // ─── Toggle dish favourite ────────────────
@@ -76,6 +112,8 @@ export default function MenuItemCard({ item, onLoginRequired }) {
       return;
     }
 
+    if (!isMounted.current) return;
+
     try {
       setFavLoading(true);
 
@@ -91,14 +129,27 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         });
       }
 
-      // ✅ Refresh local userProfile so heart updates instantly
-      await updateUserProfile({});
+      // ✅ Refresh local userProfile
+      if (isMounted.current) {
+        await updateUserProfile({});
+      }
 
     } catch (err) {
       console.error('handleFavourite error:', err);
-      Alert.alert('Error', 'Could not update favourite');
+      if (isMounted.current) {
+        Alert.alert('Error', 'Could not update favourite');
+      }
     } finally {
-      setFavLoading(false);
+      if (isMounted.current) {
+        setFavLoading(false);
+      }
+    }
+  };
+
+  // ─── Image error handler ──────────────────
+  const handleImageError = () => {
+    if (isMounted.current) {
+      setImageError(true);
     }
   };
 
@@ -113,7 +164,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
           styles.card,
           !item.isAvailable && styles.cardUnavailable,
         ]}
-        onPress={handleCardPress}   // ✅ tracks view
+        onPress={handleCardPress}
         activeOpacity={0.85}
       >
         {/* ── Left: Info ───────────────────── */}
@@ -184,7 +235,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               styles.image,
               !item.isAvailable && styles.imageGray,
             ]}
-            onError={() => setImageError(true)}
+            onError={handleImageError}
             resizeMode="cover"
           />
 
@@ -194,6 +245,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             onPress={handleFavourite}
             disabled={favLoading}
             activeOpacity={0.8}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
             <Ionicons
               name={isFavorited ? 'heart' : 'heart-outline'}
@@ -220,12 +272,12 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         visible={modalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={handleCloseModal}
       >
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setModalVisible(false)}
+          onPress={handleCloseModal}
         >
           {/* Stop inner taps closing modal */}
           <TouchableOpacity
@@ -237,14 +289,15 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             <Image
               source={imageSource}
               style={styles.modalImage}
-              onError={() => setImageError(true)}
+              onError={handleImageError}
               resizeMode="cover"
             />
 
             {/* Close button */}
             <TouchableOpacity
               style={styles.closeIconBtn}
-              onPress={() => setModalVisible(false)}
+              onPress={handleCloseModal}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
@@ -263,11 +316,12 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               />
             </TouchableOpacity>
 
-            {/* ✅ Scrollable body for long content */}
+            {/* Scrollable body */}
             <ScrollView
               style={styles.modalScroll}
               showsVerticalScrollIndicator={false}
               bounces={false}
+              keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalBody}>
 
@@ -363,7 +417,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* ✅ Analytics info on modal */}
+                {/* View count */}
                 {item.viewCount > 0 && (
                   <View style={styles.viewCountRow}>
                     <Ionicons
@@ -401,25 +455,39 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   disabled={favLoading}
                   activeOpacity={0.8}
                 >
-                  <Ionicons
-                    name={isFavorited ? 'heart' : 'heart-outline'}
-                    size={20}
-                    color={isFavorited ? '#FFFFFF' : COLORS.error}
-                  />
-                  <Text style={[
-                    styles.modalFavBtnText,
-                    isFavorited && styles.modalFavBtnTextActive,
-                  ]}>
-                    {isFavorited
-                      ? 'Saved to Favourites ✓'
-                      : 'Save to Favourites'}
-                  </Text>
+                  {favLoading ? (
+                    // ✅ Show loading state on button
+                    <Text style={[
+                      styles.modalFavBtnText,
+                      isFavorited && styles.modalFavBtnTextActive,
+                    ]}>
+                      Saving...
+                    </Text>
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={isFavorited ? 'heart' : 'heart-outline'}
+                        size={20}
+                        color={
+                          isFavorited ? '#FFFFFF' : COLORS.error
+                        }
+                      />
+                      <Text style={[
+                        styles.modalFavBtnText,
+                        isFavorited && styles.modalFavBtnTextActive,
+                      ]}>
+                        {isFavorited
+                          ? 'Saved to Favourites ✓'
+                          : 'Save to Favourites'}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
 
                 {/* Close button */}
                 <TouchableOpacity
                   style={styles.modalCloseBtn}
-                  onPress={() => setModalVisible(false)}
+                  onPress={handleCloseModal}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.modalCloseBtnText}>
@@ -520,8 +588,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
   },
   imageGray: { opacity: 0.4 },
-
-  // Heart button on card
   heartBtn: {
     position: 'absolute',
     top: 4,
@@ -533,8 +599,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // Expand hint
   expandHint: {
     position: 'absolute',
     bottom: 4,
@@ -561,8 +625,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
   },
-
-  // Close button on image
   closeIconBtn: {
     position: 'absolute',
     top: 12,
@@ -574,8 +636,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // Heart button on modal image
   modalHeartBtn: {
     position: 'absolute',
     top: 12,
@@ -587,8 +647,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  // Modal scroll + body
   modalScroll: {
     maxHeight: 420,
   },
@@ -596,8 +654,6 @@ const styles = StyleSheet.create({
     padding: SIZES.lg,
     gap: SIZES.sm,
   },
-
-  // Modal name row
   modalNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -614,8 +670,6 @@ const styles = StyleSheet.create({
     color: COLORS.warning,
     fontWeight: '600',
   },
-
-  // Price row
   modalPriceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -635,15 +689,11 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
     color: COLORS.textMuted,
   },
-
-  // Description
   modalDesc: {
     fontSize: FONTS.md,
     color: COLORS.textLight,
     lineHeight: 22,
   },
-
-  // Dietary
   dietaryList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -662,8 +712,6 @@ const styles = StyleSheet.create({
     color: COLORS.success,
     fontWeight: '500',
   },
-
-  // Extras
   modalExtras: {
     flexDirection: 'row',
     gap: SIZES.lg,
@@ -675,8 +723,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   extraText: { fontSize: FONTS.sm, color: COLORS.textMuted },
-
-  // Tags
   tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -693,8 +739,6 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '500',
   },
-
-  // ✅ View count row
   viewCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -704,8 +748,6 @@ const styles = StyleSheet.create({
     fontSize: FONTS.xs,
     color: COLORS.textMuted,
   },
-
-  // Unavailable banner
   unavailableBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -721,8 +763,6 @@ const styles = StyleSheet.create({
     color: COLORS.error,
     fontWeight: '500',
   },
-
-  // Save favourite button
   modalFavBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -747,8 +787,6 @@ const styles = StyleSheet.create({
   modalFavBtnTextActive: {
     color: '#FFFFFF',
   },
-
-  // Close button
   modalCloseBtn: {
     backgroundColor: COLORS.primary,
     padding: SIZES.md,
