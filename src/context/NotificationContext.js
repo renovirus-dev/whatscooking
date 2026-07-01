@@ -7,6 +7,7 @@ import React, {
   useState,
   useEffect,
   useRef,
+  useCallback,
 } from 'react';
 import * as Notifications from 'expo-notifications';
 import * as Device        from 'expo-device';
@@ -28,7 +29,7 @@ import {
 import { db }      from '../firebase/config';
 import { useAuth } from '../hooks/useAuth';
 
-// ✅ Show notifications when app is open
+// ✅ How notifications appear when app is open
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -37,50 +38,59 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// ✅ Read project ID from app.json
 const EXPO_PROJECT_ID =
   Constants.expoConfig?.extra?.eas?.projectId ||
   Constants.manifest?.extra?.eas?.projectId  ||
   '15062ebe-c1c0-4d13-9bf4-bcce99cc9e62';
 
-// ─── Create context ───────────────────────────
+// ─── Context default values ───────────────────
 const NotificationContext = createContext({
-  notifications:   [],
-  unreadCount:     0,
-  loading:         false,
-  expoPushToken:   null,
-  permissionStatus: null,
-  markAsRead:            async () => {},
-  markAllAsRead:         async () => {},
-  deleteNotification:    async () => {},
+  notifications:          [],
+  unreadCount:            0,
+  loading:                false,
+  expoPushToken:          null,
+  permissionStatus:       null,
+  markAsRead:             async () => {},
+  markAllAsRead:          async () => {},
+  deleteNotification:     async () => {},
   sendNotificationToUser: async () => {},
   sendLocalNotification:  async () => {},
+  registerForPushNotifications: async () => {},
 });
 
 // ─── Provider ─────────────────────────────────
 export function NotificationProvider({ children }) {
   const { user } = useAuth();
 
-  const [expoPushToken, setExpoPushToken]   = useState(null);
-  const [notifications, setNotifications]   = useState([]);
-  const [unreadCount, setUnreadCount]       = useState(0);
-  const [loading, setLoading]               = useState(false);
+  const [expoPushToken, setExpoPushToken]       = useState(null);
+  const [notifications, setNotifications]       = useState([]);
+  const [unreadCount, setUnreadCount]           = useState(0);
+  const [loading, setLoading]                   = useState(false);
   const [permissionStatus, setPermissionStatus] = useState(null);
 
   const notificationListener = useRef();
   const responseListener     = useRef();
+  // ✅ Track if we already registered for this user
+  // Prevents re-registering every time context re-renders
+  const registeredForUid = useRef(null);
 
-  // ── Push notification setup ───────────────
+  // ── Push notification listeners ───────────
+  // These run once — they don't depend on user
   useEffect(() => {
-    registerForPushNotifications();
-
     notificationListener.current =
       Notifications.addNotificationReceivedListener(n => {
-        console.log('🔔 Notification received:', n);
+        console.log('🔔 Notification received:', n.request.content.title);
       });
 
     responseListener.current =
       Notifications.addNotificationResponseReceivedListener(r => {
-        console.log('👆 Notification tapped:', r);
+        console.log(
+          '👆 Notification tapped:',
+          r.notification.request.content.data
+        );
+        // ✅ Handle navigation from notification tap here if needed
+        // e.g. if data.screen === 'RestaurantDetail' → navigate
       });
 
     return () => {
@@ -97,15 +107,29 @@ export function NotificationProvider({ children }) {
     };
   }, []);
 
-  // ── Firestore listener ────────────────────
-  // ✅ Only ONE listener for the whole app
-  // Lives here at context level — never unmounts
-  // until user logs out
+  // ── Register push when user logs in ───────
+  // ✅ FIX: Re-register when user changes
+  // Previously this only ran once on mount —
+  // if user wasn't logged in yet, token wouldn't save
+  useEffect(() => {
+    if (!user?.uid) return;
+    // ✅ Skip if already registered for this user
+    if (registeredForUid.current === user.uid) return;
+
+    registeredForUid.current = user.uid;
+    registerForPushNotifications();
+  }, [user?.uid]);
+
+  // ── Firestore notification listener ───────
+  // ✅ Single listener for the whole app
+  // Lives at context level so never destroyed on screen navigation
   useEffect(() => {
     if (!user?.uid) {
+      // ✅ Clear state when user logs out
       setNotifications([]);
       setUnreadCount(0);
       setLoading(false);
+      registeredForUid.current = null;
       return;
     }
 
@@ -132,15 +156,21 @@ export function NotificationProvider({ children }) {
           setLoading(false);
         },
         (err) => {
+          // ✅ Handle missing Firestore index gracefully
           if (err.code === 'failed-precondition') {
             console.warn(
-              '⚠️ Add Firestore index:\n' +
-              'Collection: notifications\n' +
-              'Fields: userId ASC, createdAt DESC'
+              '⚠️ Missing Firestore index for notifications.\n' +
+              'Go to Firebase Console → Firestore → Indexes\n' +
+              'Add composite index:\n' +
+              '  Collection: notifications\n' +
+              '  Fields: userId ASC, createdAt DESC'
             );
           } else {
-            console.error('Notifications error:', err);
+            console.error('Notifications listener error:', err);
           }
+          // ✅ Show empty state instead of crashing
+          setNotifications([]);
+          setUnreadCount(0);
           setLoading(false);
         }
       );
@@ -150,22 +180,26 @@ export function NotificationProvider({ children }) {
     }
 
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      if (unsubscribe) unsubscribe();
     };
   }, [user?.uid]);
 
-  // ── Register push ─────────────────────────
-  const registerForPushNotifications = async () => {
-    if (!Device.isDevice) return null;
+  // ── Register push token ────────────────────
+  const registerForPushNotifications = useCallback(async () => {
+    // ✅ Skip on simulator — push requires real device
+    if (!Device.isDevice) {
+      console.log('ℹ️ Push notifications require a physical device');
+      return null;
+    }
 
     try {
+      // Check existing permission
       const { status: existing } =
         await Notifications.getPermissionsAsync();
       let finalStatus = existing;
       setPermissionStatus(existing);
 
+      // Request if not granted
       if (existing !== 'granted') {
         const { status } =
           await Notifications.requestPermissionsAsync();
@@ -173,23 +207,32 @@ export function NotificationProvider({ children }) {
         setPermissionStatus(status);
       }
 
-      if (finalStatus !== 'granted') return null;
+      if (finalStatus !== 'granted') {
+        console.log('⚠️ Push notification permission denied');
+        return null;
+      }
 
+      // Get push token
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: EXPO_PROJECT_ID,
       });
       const token = tokenData.data;
       setExpoPushToken(token);
 
+      // ✅ Save token to Firestore only if user is logged in
       if (user?.uid && token) {
         await updateDoc(doc(db, 'users', user.uid), {
           expoPushToken:  token,
           pushEnabled:    true,
           deviceOS:       Platform.OS,
           tokenUpdatedAt: serverTimestamp(),
+        }).catch(err => {
+          // ✅ Don't crash if user doc doesn't exist yet
+          console.warn('Could not save push token:', err.message);
         });
       }
 
+      // ✅ Set up Android notification channels
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
           name:             'default',
@@ -198,6 +241,7 @@ export function NotificationProvider({ children }) {
           lightColor:       '#FF6B35',
           sound:            'default',
         });
+
         await Notifications.setNotificationChannelAsync(
           'menu-updates',
           {
@@ -207,6 +251,7 @@ export function NotificationProvider({ children }) {
             lightColor: '#FF6B35',
           }
         );
+
         await Notifications.setNotificationChannelAsync(
           'promotions',
           {
@@ -217,14 +262,17 @@ export function NotificationProvider({ children }) {
         );
       }
 
+      console.log('✅ Push token registered:', token);
       return token;
+
     } catch (err) {
+      // ✅ Never crash the app if push registration fails
       console.error('Push registration error:', err);
       return null;
     }
-  };
+  }, [user?.uid]);
 
-  // ── Actions ───────────────────────────────
+  // ── Mark single notification as read ──────
   const markAsRead = async (notificationId) => {
     try {
       await updateDoc(
@@ -236,6 +284,7 @@ export function NotificationProvider({ children }) {
     }
   };
 
+  // ── Mark all as read ──────────────────────
   const markAllAsRead = async () => {
     try {
       const unread = notifications.filter(n => !n.isRead);
@@ -253,6 +302,7 @@ export function NotificationProvider({ children }) {
     }
   };
 
+  // ── Delete a notification ─────────────────
   const deleteNotification = async (id) => {
     try {
       await deleteDoc(doc(db, 'notifications', id));
@@ -261,13 +311,24 @@ export function NotificationProvider({ children }) {
     }
   };
 
+  // ── Send notification to a user ───────────
+  // ✅ Saves to Firestore — appears in Notifications screen
   const sendNotificationToUser = async ({
-    userId, title, body, data = {}, type = 'general',
+    userId,
+    title,
+    body,
+    data  = {},
+    type  = 'general',
   }) => {
     try {
       await addDoc(collection(db, 'notifications'), {
-        userId, title, body, data, type,
-        isRead: false, createdAt: serverTimestamp(),
+        userId,
+        title,
+        body,
+        data,
+        type,
+        isRead:    false,
+        createdAt: serverTimestamp(),
       });
       return { success: true };
     } catch (err) {
@@ -276,17 +337,28 @@ export function NotificationProvider({ children }) {
     }
   };
 
-  const sendLocalNotification = async (title, body, data = {}) => {
+  // ── Send local notification (on-device) ───
+  const sendLocalNotification = async (
+    title,
+    body,
+    data = {}
+  ) => {
     try {
       await Notifications.scheduleNotificationAsync({
-        content: { title, body, data, sound: 'default' },
-        trigger: null,
+        content: {
+          title,
+          body,
+          data,
+          sound: 'default',
+        },
+        trigger: null, // show immediately
       });
     } catch (err) {
       console.error('sendLocalNotification error:', err);
     }
   };
 
+  // ── Context value ─────────────────────────
   const value = {
     notifications,
     unreadCount,
@@ -308,7 +380,7 @@ export function NotificationProvider({ children }) {
   );
 }
 
-// ─── Hook to use anywhere ─────────────────────
+// ─── Hook ─────────────────────────────────────
 export const useNotifications = () => {
   return useContext(NotificationContext);
 };
