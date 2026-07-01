@@ -1,19 +1,21 @@
 // ============================================
 // FILE: App.js
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Animated,
   StatusBar,
   View,
 } from 'react-native';
-import { SafeAreaProvider }      from 'react-native-safe-area-context';
-import * as SplashScreen         from 'expo-splash-screen';
-import { AuthProvider }          from './src/hooks/useAuth';
-import { NotificationProvider }  from './src/context/NotificationContext';
-import AppNavigator              from './src/navigation/AppNavigator';
+import { SafeAreaProvider }     from 'react-native-safe-area-context';
+import * as SplashScreen        from 'expo-splash-screen';
+import * as Font                from 'expo-font';
+import { AuthProvider }         from './src/hooks/useAuth';
+import { NotificationProvider } from './src/context/NotificationContext';
+import AppNavigator             from './src/navigation/AppNavigator';
 
+// ✅ Keep splash screen visible until we say hide
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
@@ -23,24 +25,45 @@ export default function App() {
   useEffect(() => {
     const prepare = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // ✅ Load any assets here
+        // Add font loading, image pre-loading etc
+        // Minimum delay so splash is actually visible
+        await Promise.all([
+          // ✅ Small delay so splash screen shows
+          new Promise(resolve => setTimeout(resolve, 1500)),
+          // ✅ Add any font loading here if needed
+          // Font.loadAsync({ ... }),
+        ]);
       } catch (err) {
         console.warn('App prepare error:', err);
       } finally {
+        // ✅ Mark app as ready
         setAppReady(true);
-        await SplashScreen.hideAsync();
-        Animated.timing(fadeAnim, {
-          toValue:         1,
-          duration:        400,
-          useNativeDriver: true,
-        }).start();
       }
     };
+
     prepare();
   }, []);
 
+  // ✅ Called when root view layout is complete
+  // This is the correct way to hide splash with expo-splash-screen
+  const onLayoutRootView = useCallback(async () => {
+    if (appReady) {
+      // ✅ Hide splash — triggers fade in
+      await SplashScreen.hideAsync();
+
+      // ✅ Fade in the app
+      Animated.timing(fadeAnim, {
+        toValue:         1,
+        duration:        300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [appReady, fadeAnim]);
+
+  // ✅ Keep splash visible while preparing
   if (!appReady) {
-    return <View style={styles.splashFallback} />;
+    return null;
   }
 
   return (
@@ -51,15 +74,15 @@ export default function App() {
         barStyle="dark-content"
       />
       <AuthProvider>
-        {/*
-          ✅ NotificationProvider inside AuthProvider
-          so it has access to user from useAuth()
-          ✅ Outside AppNavigator so listener never
-          mounts/unmounts when navigating between screens
-        */}
         <NotificationProvider>
+          {/*
+            ✅ onLayout on the root view
+            This is what triggers SplashScreen.hideAsync()
+            at exactly the right moment
+          */}
           <Animated.View
             style={[styles.container, { opacity: fadeAnim }]}
+            onLayout={onLayoutRootView}
           >
             <AppNavigator />
           </Animated.View>
@@ -72,10 +95,10 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#FF6B35', // ✅ Match splash background color
   },
   splashFallback: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#FF6B35',
   },
 });
