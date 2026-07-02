@@ -19,8 +19,11 @@ import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker      from 'expo-image-picker';
 import { useMenu }           from '../../hooks/useMenu';
-import { getAutoFoodImage }  from '../../utils/imageUpload';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+// ✅ Use local images — no internet needed, no Unsplash blocking
+import {
+  getLocalFoodImage,
+} from '../../utils/localFoodImages';
 
 const CATEGORIES = [
   { id: 'appetizer',   label: '🥗 Appetizer'  },
@@ -42,22 +45,6 @@ const DIETARY = [
   { id: 'isHalal',      label: '☪️ Halal'        },
   { id: 'isSpicy',      label: '🌶️ Spicy'       },
 ];
-
-// ✅ Category placeholder images
-// Used when no name is typed yet
-// Each category has a known good photo
-const CATEGORY_PLACEHOLDERS = {
-  appetizer:   'https://images.unsplash.com/photo-1541014741259-de529411b96a?w=400&h=300&fit=crop&q=80',
-  soup:        'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300&fit=crop&q=80',
-  salad:       'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=300&fit=crop&q=80',
-  main_course: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=300&fit=crop&q=80',
-  side_dish:   'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&h=300&fit=crop&q=80',
-  dessert:     'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400&h=300&fit=crop&q=80',
-  beverage:    'https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&h=300&fit=crop&q=80',
-  breakfast:   'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=400&h=300&fit=crop&q=80',
-  combo_meal:  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop&q=80',
-  snack:       'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400&h=300&fit=crop&q=80',
-};
 
 export default function AddMenuItemScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -90,31 +77,34 @@ export default function AddMenuItemScreen({ route, navigation }) {
     !!(existingItem?.imageUrl || existingItem?.autoImageUrl)
   );
   const [regenerateCount, setRegenerateCount] = useState(0);
-  const [imageLoading, setImageLoading]       = useState(false);
   const [loading, setLoading]                 = useState(false);
 
-  // ✅ Get auto image — only when name is typed
+  // ✅ Get local image — works offline, no URLs
   const getAutoImage = useCallback(() => {
-    const name     = form.name.trim();
-    const category = form.category || 'main_course';
+    // Returns a require() number — works without internet
+    return getLocalFoodImage(form.name, form.category);
+  }, [form.name, form.category]);
 
-    // ✅ KEY FIX: If no name typed yet —
-    // show the category placeholder instead of
-    // running through the keyword match which
-    // falls to default pool with random photos
-    if (!name) {
-      return CATEGORY_PLACEHOLDERS[category] ||
-             CATEGORY_PLACEHOLDERS['main_course'];
+  // ✅ Display image source
+  // Priority: new picked > existing Firebase URL > local image
+  const getDisplaySource = useCallback(() => {
+    if (isShowingNewPhoto) {
+      // Local file picked from gallery
+      return { uri: newImageUri };
     }
-
-    const seed = `${name}-${category}-${regenerateCount}`;
-    return getAutoFoodImage(name, category, seed);
-  }, [form.name, form.category, regenerateCount]);
-
-  // ✅ Display image priority
-  const displayImage = useCustomImage
-    ? (newImageUri || existingImageUrl || getAutoImage())
-    : getAutoImage();
+    if (isShowingExistingPhoto && existingImageUrl) {
+      // Firebase Storage URL from previous upload
+      return { uri: existingImageUrl };
+    }
+    // ✅ Local bundled image — no internet needed
+    return getAutoImage();
+  }, [
+    newImageUri,
+    existingImageUrl,
+    useCustomImage,
+    form.name,
+    form.category,
+  ]);
 
   const isShowingNewPhoto      = useCustomImage && !!newImageUri;
   const isShowingExistingPhoto = useCustomImage && !newImageUri && !!existingImageUrl;
@@ -155,17 +145,17 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
+  // ✅ Cycle auto image — just re-render
+  // Local images change instantly with no loading
   const handleRegenerateImage = useCallback(() => {
     setUseCustomImage(false);
     setNewImageUri(null);
-    setImageLoading(true);
     setRegenerateCount(prev => prev + 1);
   }, []);
 
   const handleRemoveCustomImage = () => {
     setUseCustomImage(false);
     setNewImageUri(null);
-    setImageLoading(true);
     setRegenerateCount(prev => prev + 1);
   };
 
@@ -186,13 +176,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
     setLoading(true);
 
-    // ✅ Generate stable auto image using the dish name
-    const stableAutoImage = getAutoFoodImage(
-      form.name.trim(),
-      form.category,
-      `${form.name.trim()}-${form.category}-0`
-    );
-
+    // ✅ For auto images — save the dish name and category
+    // so we can regenerate the local image anytime
+    // No URL needed — image comes from local assets
     const data = {
       name:            form.name.trim(),
       description:     form.description.trim(),
@@ -205,7 +191,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .split(',')
                          .map(t => t.trim())
                          .filter(Boolean),
-      autoImageUrl: useCustomImage ? null : stableAutoImage,
+      // ✅ For local images — store null for imageUrl
+      // getLocalFoodImage(name, category) regenerates from name
+      autoImageUrl: null,
       imageUrl:     isShowingExistingPhoto ? existingImageUrl : null,
     };
 
@@ -215,10 +203,15 @@ export default function AddMenuItemScreen({ route, navigation }) {
         result = await updateMenuItem(
           existingItem.id,
           data,
+          // ✅ Only upload if user picked a NEW photo
           isShowingNewPhoto ? newImageUri : null
         );
       } else {
-        result = await addMenuItem(data, newImageUri);
+        result = await addMenuItem(
+          data,
+          // ✅ Only upload if user picked a photo
+          newImageUri || null
+        );
       }
     } catch (err) {
       result = { success: false, error: err.message };
@@ -236,6 +229,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
       Alert.alert('Error', result?.error || 'Something went wrong');
     }
   };
+
+  // ✅ Compute display source once
+  const displaySource = getDisplaySource();
 
   return (
     <KeyboardAvoidingView
@@ -261,22 +257,16 @@ export default function AddMenuItemScreen({ route, navigation }) {
             onPress={pickImage}
             activeOpacity={0.85}
           >
-            {imageLoading && isShowingAutoPhoto && (
-              <View style={styles.imageLoadingOverlay}>
-                <ActivityIndicator
-                  size="large"
-                  color={COLORS.primary}
-                />
-              </View>
-            )}
-
+            {/*
+              ✅ source works with both:
+              - require() number (local image)
+              - { uri: string } (Firebase URL or local file)
+            */}
             <Image
-              key={`${displayImage}-${regenerateCount}`}
-              source={{ uri: displayImage }}
+              key={`${form.name}-${form.category}-${regenerateCount}`}
+              source={displaySource}
               style={styles.previewImage}
               resizeMode="cover"
-              onLoad={() => setImageLoading(false)}
-              onError={() => setImageLoading(false)}
             />
 
             <View style={styles.imageOverlay}>
@@ -310,30 +300,15 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
           {/* Action buttons */}
           <View style={styles.imageActions}>
+
+            {/* ✅ Regenerate — instant, no loading needed */}
             <TouchableOpacity
-              style={[
-                styles.imageActionBtn,
-                imageLoading && styles.imageActionBtnDisabled,
-              ]}
+              style={styles.imageActionBtn}
               onPress={handleRegenerateImage}
-              disabled={imageLoading}
               activeOpacity={0.7}
             >
-              {imageLoading ? (
-                <ActivityIndicator
-                  size="small"
-                  color={COLORS.primary}
-                />
-              ) : (
-                <Ionicons
-                  name="refresh"
-                  size={16}
-                  color={COLORS.primary}
-                />
-              )}
-              <Text style={styles.imageActionText}>
-                {imageLoading ? 'Loading...' : 'Auto Image'}
-              </Text>
+              <Ionicons name="refresh" size={16} color={COLORS.primary} />
+              <Text style={styles.imageActionText}>Auto Image</Text>
             </TouchableOpacity>
 
             {(isShowingNewPhoto || isShowingExistingPhoto) && (
@@ -360,14 +335,14 @@ export default function AddMenuItemScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* ✅ Better hint text */}
+          {/* Hint text */}
           <Text style={styles.imageHint}>
             {isShowingNewPhoto
               ? '📷 New photo selected — tap Save to apply'
               : isShowingExistingPhoto
               ? '🖼️ Current saved photo — tap 🔄 for auto or tap image to change'
               : form.name.trim()
-              ? `🤖 Auto image for "${form.name.trim()}" — tap 🔄 for next`
+              ? `🤖 Auto image for "${form.name.trim()}" — tap 🔄 for different`
               : `🍽️ Showing ${form.category.replace(/_/g, ' ')} photo — type a name for specific image`}
           </Text>
         </View>
@@ -383,10 +358,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
               placeholder="e.g. Jerk Chicken, Fried Fish..."
               placeholderTextColor={COLORS.textMuted}
               value={form.name}
-              onChangeText={v => {
-                updateForm('name', v);
-                if (isShowingAutoPhoto) setImageLoading(true);
-              }}
+              onChangeText={v => updateForm('name', v)}
               autoCapitalize="words"
               returnKeyType="next"
               onSubmitEditing={() => descriptionRef.current?.focus()}
@@ -474,10 +446,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
                     styles.categoryBtn,
                     form.category === cat.id && styles.categoryBtnActive,
                   ]}
-                  onPress={() => {
-                    updateForm('category', cat.id);
-                    if (isShowingAutoPhoto) setImageLoading(true);
-                  }}
+                  onPress={() => updateForm('category', cat.id)}
                   activeOpacity={0.7}
                 >
                   <Text style={[
@@ -587,14 +556,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  imageLoadingOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: COLORS.border + '80',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1,
-  },
   imageOverlay: {
     position: 'absolute',
     bottom: 0, left: 0, right: 0,
@@ -651,7 +612,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.error + '10',
     borderColor: COLORS.error,
   },
-  imageActionBtnDisabled: { opacity: 0.6 },
   imageActionText: {
     color: COLORS.primary,
     fontWeight: '600',

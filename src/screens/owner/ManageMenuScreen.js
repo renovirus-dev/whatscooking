@@ -25,15 +25,13 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db }               from '../../firebase/config';
-import { useAuth }          from '../../hooks/useAuth';
-import { getAutoFoodImage } from '../../utils/imageUpload';
+import { db }      from '../../firebase/config';
+import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+// ✅ Use local images — no internet needed, no Unsplash blocking
+import { getImageSource } from '../../utils/localFoodImages';
 
 const INFO_COLOR = COLORS.info || '#3498DB';
-
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100&h=100&fit=crop';
 
 export default function ManageMenuScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -41,11 +39,10 @@ export default function ManageMenuScreen({ navigation }) {
 
   const isMounted = useRef(true);
 
-  const [restaurantId, setRestaurantId]         = useState(null);
-  const [menuItems, setMenuItems]               = useState([]);
-  const [loading, setLoading]                   = useState(true);
-  const [filter, setFilter]                     = useState('all');
-  const [refreshingImages, setRefreshingImages] = useState(false);
+  const [restaurantId, setRestaurantId] = useState(null);
+  const [menuItems, setMenuItems]       = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [filter, setFilter]             = useState('all');
 
   useEffect(() => {
     isMounted.current = true;
@@ -91,7 +88,10 @@ export default function ManageMenuScreen({ navigation }) {
       );
       unsubscribe = onSnapshot(q, (snap) => {
         if (!isMounted.current) return;
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const items = snap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        }));
         items.sort((a, b) => {
           if (a.category < b.category) return -1;
           if (a.category > b.category) return 1;
@@ -118,7 +118,9 @@ export default function ManageMenuScreen({ navigation }) {
         updatedAt:   serverTimestamp(),
       });
     } catch (err) {
-      if (isMounted.current) Alert.alert('Error', 'Could not update item');
+      if (isMounted.current) {
+        Alert.alert('Error', 'Could not update item');
+      }
     }
   };
 
@@ -146,64 +148,6 @@ export default function ManageMenuScreen({ navigation }) {
     );
   };
 
-  // ✅ Refresh single item image
-  const refreshSingleImage = async (menuItem) => {
-    try {
-      // ✅ Generate correct cuisine image for this dish
-      // Random counter 0-4 picks a good photo from the pool
-      const randomCounter = Math.floor(Math.random() * 5);
-      const newAutoImage  = getAutoFoodImage(
-        menuItem.name,
-        menuItem.category,
-        `${menuItem.name}-${menuItem.category}-${randomCounter}`
-      );
-
-      await updateDoc(doc(db, 'menuItems', menuItem.id), {
-        autoImageUrl: newAutoImage,
-        imageUrl:     newAutoImage,
-        updatedAt:    serverTimestamp(),
-      });
-    } catch (err) {
-      console.error('refreshSingleImage error:', err);
-    }
-  };
-
-  // ✅ Refresh ALL item images
-  const handleRefreshAllImages = () => {
-    Alert.alert(
-      '🔄 Refresh All Images',
-      `Update photos for all ${menuItems.length} menu items?\n\n` +
-      `Jamaican dishes will get Jamaican food photos, Italian dishes Italian photos, etc.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Refresh All',
-          onPress: async () => {
-            if (isMounted.current) setRefreshingImages(true);
-            try {
-              await Promise.all(
-                menuItems.map(item => refreshSingleImage(item))
-              );
-              if (isMounted.current) {
-                Alert.alert(
-                  '✅ Done!',
-                  `Updated images for ${menuItems.length} menu items.\n\nJamaican dishes now show correct photos!`
-                );
-              }
-            } catch (err) {
-              console.error('refreshAllImages error:', err);
-              if (isMounted.current) {
-                Alert.alert('Error', 'Some images could not be updated');
-              }
-            } finally {
-              if (isMounted.current) setRefreshingImages(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
   // ── Filter & group ────────────────────────
   const filteredItems = menuItems.filter(item => {
     if (filter === 'available')   return item.isAvailable;
@@ -223,7 +167,10 @@ export default function ManageMenuScreen({ navigation }) {
     return (
       <View style={[
         styles.centered,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
       ]}>
         <Text style={styles.centeredEmoji}>🍽️</Text>
         <Text style={styles.centeredTitle}>No Restaurant Found</Text>
@@ -246,7 +193,10 @@ export default function ManageMenuScreen({ navigation }) {
     return (
       <View style={[
         styles.centered,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
+        {
+          paddingTop:    insets.top,
+          paddingBottom: insets.bottom,
+        },
       ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading menu...</Text>
@@ -263,61 +213,17 @@ export default function ManageMenuScreen({ navigation }) {
         <Text style={styles.headerTitle}>
           Menu Items ({menuItems.length})
         </Text>
-        <View style={styles.headerActions}>
-
-          {/* ✅ Refresh images button */}
-          {menuItems.length > 0 && (
-            <TouchableOpacity
-              style={styles.refreshBtn}
-              onPress={handleRefreshAllImages}
-              disabled={refreshingImages}
-              activeOpacity={0.8}
-            >
-              {refreshingImages ? (
-                <ActivityIndicator size="small" color={COLORS.primary} />
-              ) : (
-                <Ionicons
-                  name="images-outline"
-                  size={20}
-                  color={COLORS.primary}
-                />
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* Add item button */}
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() =>
-              navigation.navigate('AddMenuItem', { restaurantId })
-            }
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={22} color="#FFFFFF" />
-            <Text style={styles.addBtnText}>Add Item</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ✅ Refresh hint banner */}
-      {menuItems.length > 0 && (
         <TouchableOpacity
-          style={styles.refreshHint}
-          onPress={handleRefreshAllImages}
-          disabled={refreshingImages}
-          activeOpacity={0.7}
+          style={styles.addBtn}
+          onPress={() =>
+            navigation.navigate('AddMenuItem', { restaurantId })
+          }
+          activeOpacity={0.8}
         >
-          <Ionicons name="images-outline" size={14} color={COLORS.primary} />
-          <Text style={styles.refreshHintText}>
-            {refreshingImages
-              ? 'Updating cuisine photos...'
-              : 'Tap to fix photos — Jamaican dishes get Jamaican food images'}
-          </Text>
-          {!refreshingImages && (
-            <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
-          )}
+          <Ionicons name="add" size={22} color="#FFFFFF" />
+          <Text style={styles.addBtnText}>Add Item</Text>
         </TouchableOpacity>
-      )}
+      </View>
 
       {/* ── Filter tabs ─────────────────────── */}
       <View style={styles.filterRow}>
@@ -404,12 +310,14 @@ export default function ManageMenuScreen({ navigation }) {
                     !menuItem.isAvailable && styles.itemCardDim,
                   ]}
                 >
+                  {/*
+                    ✅ getImageSource() returns:
+                    - require() number if no Firebase URL
+                    - { uri: string } if Firebase Storage URL exists
+                    Works with both seamlessly
+                  */}
                   <Image
-                    source={{
-                      uri: menuItem.imageUrl ||
-                           menuItem.autoImageUrl ||
-                           FALLBACK_IMAGE,
-                    }}
+                    source={getImageSource(menuItem)}
                     style={styles.itemImage}
                     resizeMode="cover"
                   />
@@ -422,7 +330,10 @@ export default function ManageMenuScreen({ navigation }) {
                       ${menuItem.price?.toFixed(2)}
                     </Text>
                     {menuItem.description ? (
-                      <Text style={styles.itemDesc} numberOfLines={1}>
+                      <Text
+                        style={styles.itemDesc}
+                        numberOfLines={1}
+                      >
                         {menuItem.description}
                       </Text>
                     ) : null}
@@ -431,22 +342,30 @@ export default function ManageMenuScreen({ navigation }) {
                       <View style={styles.dietaryRow}>
                         {menuItem.dietaryInfo.isVegetarian && (
                           <View style={styles.dietaryTag}>
-                            <Text style={styles.dietaryTagText}>🥬 Veg</Text>
+                            <Text style={styles.dietaryTagText}>
+                              🥬 Veg
+                            </Text>
                           </View>
                         )}
                         {menuItem.dietaryInfo.isVegan && (
                           <View style={styles.dietaryTag}>
-                            <Text style={styles.dietaryTagText}>🌱 Vegan</Text>
+                            <Text style={styles.dietaryTagText}>
+                              🌱 Vegan
+                            </Text>
                           </View>
                         )}
                         {menuItem.dietaryInfo.isHalal && (
                           <View style={styles.dietaryTag}>
-                            <Text style={styles.dietaryTagText}>☪️ Halal</Text>
+                            <Text style={styles.dietaryTagText}>
+                              ☪️ Halal
+                            </Text>
                           </View>
                         )}
                         {menuItem.dietaryInfo.isSpicy && (
                           <View style={styles.dietaryTag}>
-                            <Text style={styles.dietaryTagText}>🌶️ Spicy</Text>
+                            <Text style={styles.dietaryTagText}>
+                              🌶️ Spicy
+                            </Text>
                           </View>
                         )}
                       </View>
@@ -457,14 +376,19 @@ export default function ManageMenuScreen({ navigation }) {
                     <Switch
                       value={!!menuItem.isAvailable}
                       onValueChange={() =>
-                        toggleAvailability(menuItem.id, menuItem.isAvailable)
+                        toggleAvailability(
+                          menuItem.id,
+                          menuItem.isAvailable
+                        )
                       }
                       trackColor={{
                         false: '#E0E0E0',
                         true:  COLORS.success + '80',
                       }}
                       thumbColor={
-                        menuItem.isAvailable ? COLORS.success : '#f4f3f4'
+                        menuItem.isAvailable
+                          ? COLORS.success
+                          : '#f4f3f4'
                       }
                     />
 
@@ -476,9 +400,16 @@ export default function ManageMenuScreen({ navigation }) {
                           restaurantId,
                         })
                       }
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      hitSlop={{
+                        top: 6, bottom: 6,
+                        left: 6, right: 6,
+                      }}
                     >
-                      <Ionicons name="pencil" size={16} color={INFO_COLOR} />
+                      <Ionicons
+                        name="pencil"
+                        size={16}
+                        color={INFO_COLOR}
+                      />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -486,9 +417,16 @@ export default function ManageMenuScreen({ navigation }) {
                       onPress={() =>
                         handleDelete(menuItem.id, menuItem.name)
                       }
-                      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      hitSlop={{
+                        top: 6, bottom: 6,
+                        left: 6, right: 6,
+                      }}
                     >
-                      <Ionicons name="trash" size={16} color={COLORS.error} />
+                      <Ionicons
+                        name="trash"
+                        size={16}
+                        color={COLORS.error}
+                      />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -561,24 +499,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
   },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
-  },
-
-  // ✅ Refresh icon button
-  refreshBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.primary + '15',
-    borderWidth: 1,
-    borderColor: COLORS.primary + '40',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -592,24 +512,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: FONTS.sm,
-  },
-
-  // ✅ Refresh hint banner
-  refreshHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.xs,
-    backgroundColor: COLORS.primary + '08',
-    paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.primary + '20',
-  },
-  refreshHintText: {
-    flex: 1,
-    fontSize: FONTS.xs,
-    color: COLORS.primary,
-    fontWeight: '500',
   },
 
   // ── Filter row ───────────────────────────
@@ -654,6 +556,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: COLORS.primary,
   },
+
+  // ── Item card ────────────────────────────
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -705,6 +609,8 @@ const styles = StyleSheet.create({
     color: COLORS.success,
     fontWeight: '600',
   },
+
+  // ── Item actions ─────────────────────────
   itemActions: {
     alignItems: 'center',
     gap: SIZES.sm,

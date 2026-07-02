@@ -13,9 +13,10 @@ import {
 import { db }      from '../firebase/config';
 import { useAuth } from '../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
+// ✅ Use local images — no internet needed, no Unsplash blocking
+import { getImageSource } from '../utils/localFoodImages';
 
 // ✅ Safe import of useAnalytics
-// If the hook doesn't exist — use no-op fallback
 let useAnalytics;
 try {
   useAnalytics = require('../hooks/useAnalytics').useAnalytics;
@@ -35,9 +36,6 @@ const DIETARY_BADGES = {
   isSpicy:      { icon: '🌶️', label: 'Spicy'       },
 };
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop';
-
 // ─── Component ───────────────────────────────
 export default function MenuItemCard({ item, onLoginRequired }) {
   const { user, userProfile, updateUserProfile } = useAuth();
@@ -51,7 +49,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
   }
   const { trackMenuItemView } = analytics;
 
-  // ✅ isMounted ref — prevents setState after unmount
+  // ✅ isMounted ref
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -59,7 +57,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
   }, []);
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [imageError, setImageError]     = useState(false);
   const [favLoading, setFavLoading]     = useState(false);
 
   // ✅ Check if dish is in user's favourites
@@ -70,33 +67,23 @@ export default function MenuItemCard({ item, onLoginRequired }) {
     ([key]) => item.dietaryInfo?.[key]
   );
 
-  // ✅ Image source with fallback
-  const imageUri = imageError || !item.imageUrl
-    ? FALLBACK_IMAGE
-    : item.imageUrl;
-  const imageSource = { uri: imageUri };
+  // ✅ Get image source — local bundled image
+  // If item has a Firebase Storage URL (custom upload) use that
+  // Otherwise use local image based on dish name and category
+  const imageSource = getImageSource(item);
 
-  // ─── Open modal + track view ─────────────
+  // ─── Handlers ────────────────────────────
   const handleCardPress = () => {
-    if (isMounted.current) {
-      setModalVisible(true);
-    }
-    // ✅ Safe analytics call
+    if (isMounted.current) setModalVisible(true);
     try {
       trackMenuItemView(item.id, item.name, item.restaurantId);
-    } catch (e) {
-      // Analytics should never crash the UI
-    }
+    } catch (e) {}
   };
 
-  // ─── Close modal ──────────────────────────
   const handleCloseModal = () => {
-    if (isMounted.current) {
-      setModalVisible(false);
-    }
+    if (isMounted.current) setModalVisible(false);
   };
 
-  // ─── Toggle dish favourite ────────────────
   const handleFavourite = async (e) => {
     e?.stopPropagation?.();
 
@@ -116,7 +103,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 
     try {
       setFavLoading(true);
-
       const userRef = doc(db, 'users', user.uid);
 
       if (isFavorited) {
@@ -129,36 +115,23 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         });
       }
 
-      // ✅ Refresh local userProfile
       if (isMounted.current) {
         await updateUserProfile({});
       }
-
     } catch (err) {
       console.error('handleFavourite error:', err);
       if (isMounted.current) {
         Alert.alert('Error', 'Could not update favourite');
       }
     } finally {
-      if (isMounted.current) {
-        setFavLoading(false);
-      }
-    }
-  };
-
-  // ─── Image error handler ──────────────────
-  const handleImageError = () => {
-    if (isMounted.current) {
-      setImageError(true);
+      if (isMounted.current) setFavLoading(false);
     }
   };
 
   // ─── Render ──────────────────────────────
   return (
     <>
-      {/* ══════════════════════════════════════ */}
-      {/* CARD                                   */}
-      {/* ══════════════════════════════════════ */}
+      {/* ── Card ──────────────────────────── */}
       <TouchableOpacity
         style={[
           styles.card,
@@ -167,10 +140,8 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         onPress={handleCardPress}
         activeOpacity={0.85}
       >
-        {/* ── Left: Info ───────────────────── */}
+        {/* Left: Info */}
         <View style={styles.info}>
-
-          {/* Name + Special badge */}
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={2}>
               {item.name}
@@ -182,14 +153,12 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             )}
           </View>
 
-          {/* Description */}
           {item.description ? (
             <Text style={styles.description} numberOfLines={2}>
               {item.description}
             </Text>
           ) : null}
 
-          {/* Dietary icons */}
           {activeDietary.length > 0 && (
             <View style={styles.dietaryRow}>
               {activeDietary.map(([key, d]) => (
@@ -200,7 +169,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             </View>
           )}
 
-          {/* Price + prep time */}
           <View style={styles.priceRow}>
             <Text style={styles.price}>
               ${item.price?.toFixed(2)}
@@ -219,7 +187,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             ) : null}
           </View>
 
-          {/* Unavailable notice */}
           {!item.isAvailable && (
             <Text style={styles.unavailableText}>
               ❌ Not available today
@@ -227,19 +194,22 @@ export default function MenuItemCard({ item, onLoginRequired }) {
           )}
         </View>
 
-        {/* ── Right: Image + Heart ─────────── */}
+        {/* Right: Image + Heart */}
         <View style={styles.imageWrapper}>
+          {/*
+            ✅ source works with both:
+            - require() number (local bundled image)
+            - { uri: string } (Firebase Storage URL)
+          */}
           <Image
             source={imageSource}
             style={[
               styles.image,
               !item.isAvailable && styles.imageGray,
             ]}
-            onError={handleImageError}
             resizeMode="cover"
           />
 
-          {/* Heart button */}
           <TouchableOpacity
             style={styles.heartBtn}
             onPress={handleFavourite}
@@ -254,7 +224,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             />
           </TouchableOpacity>
 
-          {/* Expand hint */}
           <View style={styles.expandHint}>
             <Ionicons
               name="expand-outline"
@@ -265,9 +234,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         </View>
       </TouchableOpacity>
 
-      {/* ══════════════════════════════════════ */}
-      {/* DETAIL MODAL                           */}
-      {/* ══════════════════════════════════════ */}
+      {/* ── Detail Modal ──────────────────── */}
       <Modal
         visible={modalVisible}
         transparent
@@ -279,21 +246,18 @@ export default function MenuItemCard({ item, onLoginRequired }) {
           activeOpacity={1}
           onPress={handleCloseModal}
         >
-          {/* Stop inner taps closing modal */}
           <TouchableOpacity
             activeOpacity={1}
             onPress={() => {}}
             style={styles.modalCard}
           >
-            {/* Hero image */}
+            {/* Hero image — same source */}
             <Image
               source={imageSource}
               style={styles.modalImage}
-              onError={handleImageError}
               resizeMode="cover"
             />
 
-            {/* Close button */}
             <TouchableOpacity
               style={styles.closeIconBtn}
               onPress={handleCloseModal}
@@ -302,7 +266,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Heart button on image */}
             <TouchableOpacity
               style={styles.modalHeartBtn}
               onPress={handleFavourite}
@@ -316,7 +279,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               />
             </TouchableOpacity>
 
-            {/* Scrollable body */}
             <ScrollView
               style={styles.modalScroll}
               showsVerticalScrollIndicator={false}
@@ -325,19 +287,13 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             >
               <View style={styles.modalBody}>
 
-                {/* Name + special */}
                 <View style={styles.modalNameRow}>
-                  <Text style={styles.modalName}>
-                    {item.name}
-                  </Text>
+                  <Text style={styles.modalName}>{item.name}</Text>
                   {item.isSpecialOfTheDay && (
-                    <Text style={styles.modalSpecial}>
-                      ⭐ Special
-                    </Text>
+                    <Text style={styles.modalSpecial}>⭐ Special</Text>
                   )}
                 </View>
 
-                {/* Price + favourite count */}
                 <View style={styles.modalPriceRow}>
                   <Text style={styles.modalPrice}>
                     ${item.price?.toFixed(2)}
@@ -356,14 +312,12 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   )}
                 </View>
 
-                {/* Description */}
                 {item.description ? (
                   <Text style={styles.modalDesc}>
                     {item.description}
                   </Text>
                 ) : null}
 
-                {/* Dietary badges */}
                 {activeDietary.length > 0 && (
                   <View style={styles.dietaryList}>
                     {activeDietary.map(([key, d]) => (
@@ -376,7 +330,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* Extra info */}
                 {(item.servingSize || item.preparationTime) && (
                   <View style={styles.modalExtras}>
                     {item.servingSize ? (
@@ -406,7 +359,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* Tags */}
                 {item.tags?.length > 0 && (
                   <View style={styles.tagsRow}>
                     {item.tags.map((tag, i) => (
@@ -417,7 +369,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* View count */}
                 {item.viewCount > 0 && (
                   <View style={styles.viewCountRow}>
                     <Ionicons
@@ -431,7 +382,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* Unavailable banner */}
                 {!item.isAvailable && (
                   <View style={styles.unavailableBanner}>
                     <Ionicons
@@ -456,7 +406,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   activeOpacity={0.8}
                 >
                   {favLoading ? (
-                    // ✅ Show loading state on button
                     <Text style={[
                       styles.modalFavBtnText,
                       isFavorited && styles.modalFavBtnTextActive,
@@ -468,9 +417,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                       <Ionicons
                         name={isFavorited ? 'heart' : 'heart-outline'}
                         size={20}
-                        color={
-                          isFavorited ? '#FFFFFF' : COLORS.error
-                        }
+                        color={isFavorited ? '#FFFFFF' : COLORS.error}
                       />
                       <Text style={[
                         styles.modalFavBtnText,
@@ -490,9 +437,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   onPress={handleCloseModal}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.modalCloseBtnText}>
-                    Close
-                  </Text>
+                  <Text style={styles.modalCloseBtnText}>Close</Text>
                 </TouchableOpacity>
 
               </View>
@@ -504,10 +449,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
   );
 }
 
-// ─── Styles ──────────────────────────────────
 const styles = StyleSheet.create({
-
-  // ── Card ─────────────────────────────────
   card: {
     flexDirection: 'row',
     backgroundColor: COLORS.surface,
@@ -518,8 +460,6 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   cardUnavailable: { opacity: 0.65 },
-
-  // ── Info section ─────────────────────────
   info: { flex: 1, justifyContent: 'space-between' },
   nameRow: {
     flexDirection: 'row',
@@ -579,8 +519,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: '500',
   },
-
-  // ── Image wrapper ─────────────────────────
   imageWrapper: { position: 'relative' },
   image: {
     width: 95,
@@ -607,8 +545,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     padding: 3,
   },
-
-  // ── Modal ─────────────────────────────────
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -647,9 +583,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalScroll: {
-    maxHeight: 420,
-  },
+  modalScroll: { maxHeight: 420 },
   modalBody: {
     padding: SIZES.lg,
     gap: SIZES.sm,
@@ -784,9 +718,7 @@ const styles = StyleSheet.create({
     fontSize: FONTS.md,
     fontWeight: 'bold',
   },
-  modalFavBtnTextActive: {
-    color: '#FFFFFF',
-  },
+  modalFavBtnTextActive: { color: '#FFFFFF' },
   modalCloseBtn: {
     backgroundColor: COLORS.primary,
     padding: SIZES.md,
