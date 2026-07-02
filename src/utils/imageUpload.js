@@ -15,10 +15,10 @@ import {
 } from 'firebase/firestore';
 import { storage, db } from '../firebase/config';
 
-// ─── All image pools with their categories ───
-// These are the Unsplash source URLs
-// They get downloaded ONCE and stored in Firebase
-const IMAGE_POOLS = {
+// ─── All image pools ──────────────────────────
+export const IMAGE_POOLS = {
+
+  // ── Breakfast ──────────────────────────────
   breakfast: [
     'photo-1533089860892-a7c6f0a88666',
     'photo-1484723091739-30a097e8f929',
@@ -31,6 +31,8 @@ const IMAGE_POOLS = {
     'photo-1604908176997-125f25cc6f3d',
     'photo-1565299585323-38d6b0865b47',
   ],
+
+  // ── Main course ────────────────────────────
   main_course: [
     'photo-1504674900247-0877df9cc836',
     'photo-1555939594-58d7cb561ad1',
@@ -54,6 +56,8 @@ const IMAGE_POOLS = {
     'photo-1528975604071-b4dc52a2d18c',
     'photo-1558030006-450675393462',
   ],
+
+  // ── Lunch special ──────────────────────────
   lunch_special: [
     'photo-1546069901-ba9599a7e63c',
     'photo-1567620905732-2d1ec7ab7445',
@@ -68,6 +72,8 @@ const IMAGE_POOLS = {
     'photo-1585937421612-70a008356fbe',
     'photo-1563245372-f21724e3856d',
   ],
+
+  // ── Dinner special ─────────────────────────
   dinner_special: [
     'photo-1544025162-d76694265947',
     'photo-1504674900247-0877df9cc836',
@@ -80,6 +86,8 @@ const IMAGE_POOLS = {
     'photo-1574071318508-1cdbab80d002',
     'photo-1559847844-5315695dadae',
   ],
+
+  // ── Appetizer ──────────────────────────────
   appetizer: [
     'photo-1541014741259-de529411b96a',
     'photo-1572441713132-c542a4354a9e',
@@ -92,6 +100,8 @@ const IMAGE_POOLS = {
     'photo-1585937421612-70a008356fbe',
     'photo-1566478989037-eec170784d0b',
   ],
+
+  // ── Soup ───────────────────────────────────
   soup: [
     'photo-1547592180-85f173990554',
     'photo-1603105037880-880cd4edfb0d',
@@ -104,6 +114,8 @@ const IMAGE_POOLS = {
     'photo-1591814468924-caf88d1232e1',
     'photo-1569718212165-3a8278d5f624',
   ],
+
+  // ── Salad ──────────────────────────────────
   salad: [
     'photo-1512621776951-a57141f2eefd',
     'photo-1540189549336-e6e99c3679fe',
@@ -113,6 +125,8 @@ const IMAGE_POOLS = {
     'photo-1551248429-40975aa4de74',
     'photo-1529059997568-3d847b1154f0',
   ],
+
+  // ── Side dish ──────────────────────────────
   side_dish: [
     'photo-1541014741259-de529411b96a',
     'photo-1565557623262-b51c2513a641',
@@ -127,6 +141,8 @@ const IMAGE_POOLS = {
     'photo-1518013431117-eb1465fa5463',
     'photo-1585937421612-70a008356fbe',
   ],
+
+  // ── Dessert ────────────────────────────────
   dessert: [
     'photo-1488477181946-6428a0291777',
     'photo-1578985545062-69928b1d9587',
@@ -138,6 +154,8 @@ const IMAGE_POOLS = {
     'photo-1587613991119-fbbe8e90531d',
     'photo-1497034825429-c343d7c6a68f',
   ],
+
+  // ── Beverage ───────────────────────────────
   beverage: [
     'photo-1544145945-f90425340c7e',
     'photo-1497534446932-c925b458314e',
@@ -150,6 +168,8 @@ const IMAGE_POOLS = {
     'photo-1546173159-315724a31696',
     'photo-1600271886742-f049cd451bba',
   ],
+
+  // ── Snack ──────────────────────────────────
   snack: [
     'photo-1566478989037-eec170784d0b',
     'photo-1576618148400-f54bed99fcfd',
@@ -160,6 +180,8 @@ const IMAGE_POOLS = {
     'photo-1555507036-ab1f4038808a',
     'photo-1543339308-43e59d6b73a6',
   ],
+
+  // ── Combo meal ─────────────────────────────
   combo_meal: [
     'photo-1504674900247-0877df9cc836',
     'photo-1565299624946-b28f40a0ae38',
@@ -171,6 +193,8 @@ const IMAGE_POOLS = {
     'photo-1568901346375-23c9450c58cd',
     'photo-1565299585323-38d6b0865b47',
   ],
+
+  // ── Kids menu ──────────────────────────────
   kids_menu: [
     'photo-1567620905732-2d1ec7ab7445',
     'photo-1565299624946-b28f40a0ae38',
@@ -179,7 +203,12 @@ const IMAGE_POOLS = {
     'photo-1482049016688-2d3e1b311543',
     'photo-1568901346375-23c9450c58cd',
   ],
-  // ── Keyword-specific pools ─────────────────
+
+  // ══════════════════════════════════════════
+  // KEYWORD SPECIFIC POOLS
+  // ══════════════════════════════════════════
+
+  // ── Jamaican ───────────────────────────────
   jerk: [
     'photo-1544025162-d76694265947',
     'photo-1527477396000-e27163b481c2',
@@ -264,6 +293,8 @@ const IMAGE_POOLS = {
     'photo-1600271886742-f049cd451bba',
     'photo-1621506289937-a8e4df240d0b',
   ],
+
+  // ── American ───────────────────────────────
   burger: [
     'photo-1568901346375-23c9450c58cd',
     'photo-1553979459-d2229ba7433b',
@@ -306,6 +337,8 @@ const IMAGE_POOLS = {
     'photo-1518013431117-eb1465fa5463',
     'photo-1565299507177-b0ac66763828',
   ],
+
+  // ── Italian ────────────────────────────────
   pizza: [
     'photo-1565299624946-b28f40a0ae38',
     'photo-1574071318508-1cdbab80d002',
@@ -341,6 +374,8 @@ const IMAGE_POOLS = {
     'photo-1570197788417-0e82375c9371',
     'photo-1497034825429-c343d7c6a68f',
   ],
+
+  // ── Chinese ────────────────────────────────
   chinese: [
     'photo-1563245372-f21724e3856d',
     'photo-1455619452474-d2be8b1e70cd',
@@ -376,6 +411,8 @@ const IMAGE_POOLS = {
     'photo-1586201375761-83865001e31c',
     'photo-1455619452474-d2be8b1e70cd',
   ],
+
+  // ── Japanese ───────────────────────────────
   sushi: [
     'photo-1579584425555-c3ce17fd4351',
     'photo-1617196034183-421b4040ed20',
@@ -411,6 +448,8 @@ const IMAGE_POOLS = {
     'photo-1585032226651-759b368d7246',
     'photo-1555126634-323283e090fa',
   ],
+
+  // ── Mexican ────────────────────────────────
   taco: [
     'photo-1565299585323-38d6b0865b47',
     'photo-1604467794349-0b74285de7e7',
@@ -446,6 +485,8 @@ const IMAGE_POOLS = {
     'photo-1565299585323-38d6b0865b47',
     'photo-1604467794349-0b74285de7e7',
   ],
+
+  // ── Indian ─────────────────────────────────
   curry: [
     'photo-1585937421612-70a008356fbe',
     'photo-1596797038530-2c107229654b',
@@ -481,6 +522,8 @@ const IMAGE_POOLS = {
     'photo-1596797038530-2c107229654b',
     'photo-1562967914-608f82629710',
   ],
+
+  // ── Thai ───────────────────────────────────
   thai: [
     'photo-1562565652-a0d8f0c59eb4',
     'photo-1569718212165-3a8278d5f624',
@@ -509,6 +552,8 @@ const IMAGE_POOLS = {
     'photo-1541014741259-de529411b96a',
     'photo-1548943487-a2e4e43b4853',
   ],
+
+  // ── Mediterranean ──────────────────────────
   mediterranean: [
     'photo-1529059997568-3d847b1154f0',
     'photo-1551248429-40975aa4de74',
@@ -551,6 +596,8 @@ const IMAGE_POOLS = {
     'photo-1544025162-d76694265947',
     'photo-1490474418585-ba9bad8fd0ea',
   ],
+
+  // ── Seafood ────────────────────────────────
   seafood: [
     'photo-1565680018434-b513d5e5fd47',
     'photo-1559847844-5315695dadae',
@@ -567,6 +614,8 @@ const IMAGE_POOLS = {
     'photo-1580822184713-fc5400e7fe10',
     'photo-1504675099198-7023dd85f5a3',
   ],
+
+  // ── BBQ ────────────────────────────────────
   bbq: [
     'photo-1529193591184-b1d58069ecdd',
     'photo-1544025162-d76694265947',
@@ -575,6 +624,8 @@ const IMAGE_POOLS = {
     'photo-1504674900247-0877df9cc836',
     'photo-1527477396000-e27163b481c2',
   ],
+
+  // ── Vegetarian / Vegan ─────────────────────
   vegetarian: [
     'photo-1512621776951-a57141f2eefd',
     'photo-1540189549336-e6e99c3679fe',
@@ -599,6 +650,8 @@ const IMAGE_POOLS = {
     'photo-1546793665-c74683f339c1',
     'photo-1490474418585-ba9bad8fd0ea',
   ],
+
+  // ── Bakery ─────────────────────────────────
   bakery: [
     'photo-1509440159596-0249088772ff',
     'photo-1464195244916-405fa0a82545',
@@ -627,6 +680,8 @@ const IMAGE_POOLS = {
     'photo-1563805042-7684c019e1cb',
     'photo-1488477181946-6428a0291777',
   ],
+
+  // ── General pools ──────────────────────────
   chicken: [
     'photo-1598103442097-8b74394b95c4',
     'photo-1527477396000-e27163b481c2',
@@ -674,6 +729,8 @@ const IMAGE_POOLS = {
     'photo-1574484284002-952d92456975',
     'photo-1567620905732-2d1ec7ab7445',
   ],
+
+  // ── Default fallback ───────────────────────
   default: [
     'photo-1546069901-ba9599a7e63c',
     'photo-1504674900247-0877df9cc836',
@@ -694,7 +751,7 @@ const IMAGE_POOLS = {
 };
 
 // ─── Keyword → pool mapping ───────────────────
-const NAME_KEYWORDS = [
+export const NAME_KEYWORDS = [
   // Jamaican — FIRST
   { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'],             pool: 'jerk'       },
   { keywords: ['oxtail', 'ox tail'],                                            pool: 'oxtail'     },
@@ -781,208 +838,259 @@ const NAME_KEYWORDS = [
   { keywords: ['pancake', 'waffle', 'omelette', 'eggs', 'breakfast'],         pool: 'breakfast'  },
 ];
 
-// ─── In-memory cache of Firebase image URLs ───
-// Loaded once from Firestore — used everywhere
+// ─── Category placeholders ────────────────────
+// Used when no name is typed yet
+const CATEGORY_PLACEHOLDERS = {
+  appetizer:   'photo-1541014741259-de529411b96a',
+  soup:        'photo-1547592180-85f173990554',
+  salad:       'photo-1512621776951-a57141f2eefd',
+  main_course: 'photo-1504674900247-0877df9cc836',
+  side_dish:   'photo-1512058564366-18510be2db19',
+  dessert:     'photo-1488477181946-6428a0291777',
+  beverage:    'photo-1544145945-f90425340c7e',
+  breakfast:   'photo-1533089860892-a7c6f0a88666',
+  combo_meal:  'photo-1546069901-ba9599a7e63c',
+  snack:       'photo-1604908176997-125f25cc6f3d',
+};
+
+// ─── In-memory cache ──────────────────────────
 let cachedImageUrls = null;
 let cacheLoaded     = false;
 
-// ─── Load all image URLs from Firestore ───────
-// Called once when app starts
+// ─── Load image cache from Firestore ─────────
 export async function loadImageCache() {
   if (cacheLoaded && cachedImageUrls) {
     return cachedImageUrls;
   }
 
   try {
-    console.log('📥 Loading food images from Firestore...');
-    const snap = await getDocs(
-      collection(db, 'foodImages')
-    );
+    console.log('📥 Loading food image cache from Firestore...');
+    const snap = await getDocs(collection(db, 'foodImages'));
 
     if (!snap.empty) {
       cachedImageUrls = {};
       snap.docs.forEach(d => {
-        cachedImageUrls[d.id] = d.data();
+        if (d.data()?.urls?.length > 0) {
+          cachedImageUrls[d.id] = d.data();
+        }
       });
       cacheLoaded = true;
-      console.log(
-        `✅ Loaded ${Object.keys(cachedImageUrls).length} image pools from Firestore`
-      );
+      const count = Object.keys(cachedImageUrls).length;
+      console.log(`✅ Loaded ${count} image pools from Firestore`);
       return cachedImageUrls;
     }
 
-    console.log('⚠️ No images in Firestore yet');
+    console.log('⚠️ No image pools in Firestore yet');
     return null;
   } catch (err) {
-    console.error('loadImageCache error:', err);
+    console.warn('loadImageCache error:', err.message);
     return null;
   }
 }
 
-// ─── Download all images and save to Firestore ─
-// Run this ONCE from admin panel
-// After that all images are stored in Firebase
+// ─── Download all images to Firebase Storage ──
 export async function downloadAndStoreAllImages(
   onProgress = () => {}
 ) {
   const results = {
-    total:    0,
-    success:  0,
-    failed:   0,
-    skipped:  0,
-    errors:   [],
+    total:   0,
+    success: 0,
+    failed:  0,
+    skipped: 0,
+    errors:  [],
   };
 
-  // Get all unique photo IDs across all pools
+  // Get all unique photo IDs
   const allPhotoIds = new Set();
   Object.values(IMAGE_POOLS).forEach(pool => {
     pool.forEach(id => allPhotoIds.add(id));
   });
 
-  results.total = allPhotoIds.size;
-  console.log(`📥 Starting download of ${results.total} images...`);
+  const photoIdArray = Array.from(allPhotoIds);
+  results.total      = photoIdArray.length;
 
-  let processed = 0;
+  console.log(
+    `📥 Starting download of ${results.total} images...`
+  );
 
-  for (const photoId of allPhotoIds) {
-    try {
-      // ✅ Check if already stored in Firebase
-      const existingDoc = await getDoc(
-        doc(db, 'foodImageFiles', photoId)
-      );
+  let processed  = 0;
+  const BATCH_SIZE = 5;
 
-      if (existingDoc.exists() && existingDoc.data()?.url) {
-        results.skipped++;
-        processed++;
-        onProgress(processed, results.total, photoId, 'skipped');
-        continue;
-      }
+  for (let i = 0; i < photoIdArray.length; i += BATCH_SIZE) {
+    const batch = photoIdArray.slice(i, i + BATCH_SIZE);
 
-      // ✅ Download from Unsplash
-      const unsplashUrl =
-        `https://images.unsplash.com/${photoId}?w=400&h=300&fit=crop&q=80`;
+    await Promise.all(
+      batch.map(async (photoId) => {
+        try {
+          // ✅ Skip if already stored
+          const existingDoc = await getDoc(
+            doc(db, 'foodImageFiles', photoId)
+          );
+          if (existingDoc.exists() && existingDoc.data()?.url) {
+            results.skipped++;
+            processed++;
+            onProgress(processed, results.total, photoId, 'skipped');
+            return;
+          }
 
-      const response = await fetch(unsplashUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+          // ✅ Download with retry
+          let blob      = null;
+          let lastError = null;
 
-      const blob = await response.blob();
-      if (!blob || blob.size === 0) {
-        throw new Error('Empty blob');
-      }
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              const unsplashUrl =
+                `https://images.unsplash.com/${photoId}` +
+                `?w=400&h=300&fit=crop&q=80`;
 
-      // ✅ Upload to Firebase Storage
-      const storagePath = `foodImages/${photoId}.jpg`;
-      const storageRef  = ref(storage, storagePath);
-      await uploadBytes(storageRef, blob);
-      const firebaseUrl = await getDownloadURL(storageRef);
+              const response = await fetch(unsplashUrl, {
+                headers: {
+                  'Accept': 'image/webp,image/jpeg,image/*',
+                },
+              });
 
-      // ✅ Save URL to Firestore
-      await setDoc(
-        doc(db, 'foodImageFiles', photoId),
-        {
-          photoId,
-          url:         firebaseUrl,
-          storagePath,
-          createdAt:   new Date().toISOString(),
+              if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+              }
+
+              blob = await response.blob();
+
+              if (!blob || blob.size === 0) {
+                throw new Error('Empty blob');
+              }
+
+              break; // Success
+
+            } catch (err) {
+              lastError = err;
+              if (attempt < 3) {
+                await new Promise(r =>
+                  setTimeout(r, 1000 * attempt)
+                );
+              }
+            }
+          }
+
+          if (!blob) {
+            throw lastError || new Error('Download failed after 3 attempts');
+          }
+
+          // ✅ Upload to Firebase Storage
+          const storagePath = `foodImages/${photoId}.jpg`;
+          const storageRef  = ref(storage, storagePath);
+          await uploadBytes(storageRef, blob);
+          const firebaseUrl = await getDownloadURL(storageRef);
+
+          // ✅ Save URL to Firestore
+          await setDoc(
+            doc(db, 'foodImageFiles', photoId),
+            {
+              photoId,
+              url:         firebaseUrl,
+              storagePath,
+              createdAt:   new Date().toISOString(),
+            }
+          );
+
+          results.success++;
+          processed++;
+          onProgress(processed, results.total, photoId, 'success');
+
+        } catch (err) {
+          console.error(`❌ Failed: ${photoId}:`, err.message);
+          results.failed++;
+          results.errors.push({ photoId, error: err.message });
+          processed++;
+          onProgress(processed, results.total, photoId, 'failed');
         }
-      );
+      })
+    );
 
-      results.success++;
-      processed++;
-      onProgress(processed, results.total, photoId, 'success');
-      console.log(`✅ ${processed}/${results.total}: ${photoId}`);
-
-      // ✅ Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-    } catch (err) {
-      console.error(`❌ Failed: ${photoId}:`, err.message);
-      results.failed++;
-      results.errors.push({ photoId, error: err.message });
-      processed++;
-      onProgress(processed, results.total, photoId, 'failed');
-
-      // Continue with next image
+    // ✅ Delay between batches
+    if (i + BATCH_SIZE < photoIdArray.length) {
+      await new Promise(r => setTimeout(r, 300));
     }
   }
 
-  // ✅ After all images downloaded
-  // Save the pool structure to Firestore
-  // so the app knows which Firebase URL to use
+  // ✅ Save pool structure after all downloads
+  console.log('💾 Saving pool structure to Firestore...');
   await savePoolStructureToFirestore();
 
-  console.log('\n📊 Download complete:');
-  console.log(`  ✅ Success:  ${results.success}`);
-  console.log(`  ⏭️ Skipped:  ${results.skipped}`);
-  console.log(`  ❌ Failed:   ${results.failed}`);
-  console.log(`  📦 Total:    ${results.total}`);
+  console.log(
+    `✅ Done: ${results.success} success, ` +
+    `${results.skipped} skipped, ${results.failed} failed`
+  );
 
   return results;
 }
 
-// ─── Save pool structure to Firestore ─────────
-// Stores which photoId belongs to which pool
-async function savePoolStructureToFirestore() {
+// ─── Save pool → Firebase URL structure ───────
+export async function savePoolStructureToFirestore() {
   try {
-    console.log('💾 Saving pool structure to Firestore...');
-
     // Get all stored Firebase URLs
     const storedSnap = await getDocs(
       collection(db, 'foodImageFiles')
     );
     const storedUrls = {};
     storedSnap.docs.forEach(d => {
-      storedUrls[d.id] = d.data().url;
+      if (d.data()?.url) {
+        storedUrls[d.id] = d.data().url;
+      }
     });
 
-    // Build pool → Firebase URL mapping
+    console.log(
+      `💾 Building pools from ${
+        Object.keys(storedUrls).length
+      } stored images...`
+    );
+
+    // ✅ Save each pool
+    const savePromises = [];
     for (const [poolName, photoIds] of Object.entries(IMAGE_POOLS)) {
       const urls = photoIds
         .map(id => storedUrls[id])
-        .filter(Boolean); // remove any that failed
+        .filter(Boolean);
 
       if (urls.length > 0) {
-        await setDoc(
-          doc(db, 'foodImages', poolName),
-          {
-            poolName,
-            urls,
-            count:     urls.length,
-            updatedAt: new Date().toISOString(),
-          }
-        );
-        console.log(
-          `✅ Saved pool: ${poolName} (${urls.length} images)`
+        savePromises.push(
+          setDoc(
+            doc(db, 'foodImages', poolName),
+            {
+              poolName,
+              urls,
+              count:     urls.length,
+              updatedAt: new Date().toISOString(),
+            }
+          )
         );
       }
     }
 
-    // Invalidate cache so next request reloads
+    await Promise.all(savePromises);
+
+    // ✅ Invalidate cache so next request reloads
     cachedImageUrls = null;
     cacheLoaded     = false;
 
-    console.log('✅ Pool structure saved to Firestore');
+    console.log(`✅ Saved ${savePromises.length} pools to Firestore`);
+    return true;
   } catch (err) {
     console.error('savePoolStructureToFirestore error:', err);
+    return false;
   }
 }
 
-// ─── Get image URL from Firebase cache ────────
-// Uses cached Firestore data — no external requests
-function getFirebaseImageUrl(pool, index) {
-  if (!cachedImageUrls || !cachedImageUrls[pool]) {
+// ─── Get Firebase URL from cache ──────────────
+function getFirebaseImageUrl(poolName, index) {
+  if (!cachedImageUrls || !cachedImageUrls[poolName]) {
     return null;
   }
-  const urls = cachedImageUrls[pool]?.urls || [];
+  const urls = cachedImageUrls[poolName]?.urls || [];
   if (urls.length === 0) return null;
   return urls[index % urls.length];
 }
 
 // ─── getAutoFoodImage ─────────────────────────
-// ✅ UPDATED: uses Firebase URLs when available
-// Falls back to Unsplash if not yet downloaded
 export function getAutoFoodImage(
   itemName = '',
   category = '',
@@ -991,22 +1099,20 @@ export function getAutoFoodImage(
   const nameLower = itemName.toLowerCase().trim();
   const catLower  = (category || '').toLowerCase().trim();
 
-  // ✅ If no name — show category placeholder
+  // ✅ No name — show category placeholder
   if (!nameLower) {
-    const placeholders = {
-      appetizer:   'https://images.unsplash.com/photo-1541014741259-de529411b96a?w=400&h=300&fit=crop&q=80',
-      soup:        'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300&fit=crop&q=80',
-      salad:       'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=300&fit=crop&q=80',
-      main_course: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=300&fit=crop&q=80',
-      side_dish:   'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&h=300&fit=crop&q=80',
-      dessert:     'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400&h=300&fit=crop&q=80',
-      beverage:    'https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&h=300&fit=crop&q=80',
-      breakfast:   'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=400&h=300&fit=crop&q=80',
-      combo_meal:  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop&q=80',
-      snack:       'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400&h=300&fit=crop&q=80',
-    };
-    return placeholders[catLower] ||
-           placeholders['main_course'];
+    const photoId =
+      CATEGORY_PLACEHOLDERS[catLower] ||
+      CATEGORY_PLACEHOLDERS['main_course'];
+
+    // Try Firebase cache first
+    const cached = getFirebaseImageUrl(catLower, 0) ||
+                   getFirebaseImageUrl('main_course', 0);
+    if (cached) return cached;
+
+    // Fallback to Unsplash
+    return `https://images.unsplash.com/${photoId}` +
+           `?w=400&h=300&fit=crop&q=80`;
   }
 
   // Step 1: Match by keyword
@@ -1051,7 +1157,7 @@ export function getAutoFoodImage(
     pool     = IMAGE_POOLS['main_course'];
   }
 
-  // Step 4: Extract counter
+  // Step 4: Extract counter from seed
   let counter = 0;
   try {
     const match = seed.match(/-(\d+)$/);
@@ -1074,29 +1180,41 @@ export function getAutoFoodImage(
     return firebaseUrl;
   }
 
-  // ✅ Fallback to Unsplash URL if not downloaded yet
+  // ✅ Fallback to Unsplash URL
   const photoId = pool[index];
-  return `https://images.unsplash.com/${photoId}?w=400&h=300&fit=crop&q=80`;
+  return `https://images.unsplash.com/${photoId}` +
+         `?w=400&h=300&fit=crop&q=80`;
 }
 
-// ─── Upload image from URL to Firebase Storage ─
+// ─── Upload image from external URL ──────────
 export async function uploadImageFromUrl(url, path) {
   if (!url || !path) {
     return { success: false, error: 'Missing URL or path' };
   }
+
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'image/webp,image/jpeg,image/*',
+      },
+    });
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
+
     const blob = await response.blob();
+
     if (!blob || blob.size === 0) {
       throw new Error('Empty image');
     }
+
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, blob);
     const downloadUrl = await getDownloadURL(storageRef);
+
     return { success: true, url: downloadUrl };
+
   } catch (error) {
     console.error('uploadImageFromUrl error:', error.message);
     return { success: false, error: error.message };
@@ -1108,22 +1226,30 @@ export async function uploadImage(uri, path) {
   if (!uri || !path) {
     return { success: false, error: 'Missing URI or path' };
   }
+
   try {
     const response = await fetch(uri);
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
+
     const blob = await response.blob();
+
     if (!blob || blob.size === 0) {
       throw new Error('Empty image');
     }
+
     const storageRef = ref(storage, path);
     await uploadBytes(storageRef, blob);
     const url = await getDownloadURL(storageRef);
+
     console.log('✅ Image uploaded:', path);
     return { success: true, url };
+
   } catch (error) {
     console.error('uploadImage error:', error.message);
+
     let friendlyError = 'Failed to upload image';
     if (error.message.includes('network')) {
       friendlyError = 'No internet connection.';
@@ -1135,9 +1261,7 @@ export async function uploadImage(uri, path) {
     } else if (error.message.includes('empty')) {
       friendlyError = 'Image file is empty.';
     }
+
     return { success: false, error: friendlyError };
   }
 }
-
-// ─── Export pools for admin use ───────────────
-export { IMAGE_POOLS, NAME_KEYWORDS };
