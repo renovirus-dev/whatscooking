@@ -22,7 +22,6 @@ import { useMenu }           from '../../hooks/useMenu';
 import { getAutoFoodImage }  from '../../utils/imageUpload';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
-// ─── Constants ───────────────────────────────
 const CATEGORIES = [
   { id: 'appetizer',   label: '🥗 Appetizer'  },
   { id: 'soup',        label: '🍲 Soup'        },
@@ -44,12 +43,27 @@ const DIETARY = [
   { id: 'isSpicy',      label: '🌶️ Spicy'       },
 ];
 
+// ✅ Category placeholder images
+// Used when no name is typed yet
+// Each category has a known good photo
+const CATEGORY_PLACEHOLDERS = {
+  appetizer:   'https://images.unsplash.com/photo-1541014741259-de529411b96a?w=400&h=300&fit=crop&q=80',
+  soup:        'https://images.unsplash.com/photo-1547592180-85f173990554?w=400&h=300&fit=crop&q=80',
+  salad:       'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&h=300&fit=crop&q=80',
+  main_course: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=300&fit=crop&q=80',
+  side_dish:   'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&h=300&fit=crop&q=80',
+  dessert:     'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=400&h=300&fit=crop&q=80',
+  beverage:    'https://images.unsplash.com/photo-1544145945-f90425340c7e?w=400&h=300&fit=crop&q=80',
+  breakfast:   'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=400&h=300&fit=crop&q=80',
+  combo_meal:  'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=300&fit=crop&q=80',
+  snack:       'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=400&h=300&fit=crop&q=80',
+};
+
 export default function AddMenuItemScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const { restaurantId, item: existingItem } = route.params || {};
   const { addMenuItem, updateMenuItem }       = useMenu(restaurantId);
 
-  // ── Input refs ───────────────────────────
   const descriptionRef = useRef(null);
   const priceRef       = useRef(null);
   const prepTimeRef    = useRef(null);
@@ -67,46 +81,46 @@ export default function AddMenuItemScreen({ route, navigation }) {
     tags:            existingItem?.tags?.join(', ')            || '',
   });
 
-  // ✅ IMAGE STATE — 3 separate concerns
-
-  // 1. New photo picked from gallery this session
-  const [newImageUri, setNewImageUri] = useState(null);
-
-  // 2. The existing saved image URL from Firestore
-  const [existingImageUrl] = useState(
+  // ── Image state ───────────────────────────
+  const [newImageUri, setNewImageUri]         = useState(null);
+  const [existingImageUrl]                    = useState(
     existingItem?.imageUrl || existingItem?.autoImageUrl || null
   );
-
-  // 3. Whether showing custom (new/existing) or auto
-  const [useCustomImage, setUseCustomImage] = useState(
+  const [useCustomImage, setUseCustomImage]   = useState(
     !!(existingItem?.imageUrl || existingItem?.autoImageUrl)
   );
-
-  // 4. Counter for cycling — NEVER resets
   const [regenerateCount, setRegenerateCount] = useState(0);
   const [imageLoading, setImageLoading]       = useState(false);
   const [loading, setLoading]                 = useState(false);
 
-  // ── Compute display image ─────────────────
+  // ✅ Get auto image — only when name is typed
   const getAutoImage = useCallback(() => {
-    const name     = form.name     || 'food';
+    const name     = form.name.trim();
     const category = form.category || 'main_course';
-    // ✅ Regex extracts number from end: /-(\d+)$/
-    const seed     = `${name}-${category}-${regenerateCount}`;
+
+    // ✅ KEY FIX: If no name typed yet —
+    // show the category placeholder instead of
+    // running through the keyword match which
+    // falls to default pool with random photos
+    if (!name) {
+      return CATEGORY_PLACEHOLDERS[category] ||
+             CATEGORY_PLACEHOLDERS['main_course'];
+    }
+
+    const seed = `${name}-${category}-${regenerateCount}`;
     return getAutoFoodImage(name, category, seed);
   }, [form.name, form.category, regenerateCount]);
 
-  // ✅ Priority: new picked > existing saved > auto generated
+  // ✅ Display image priority
   const displayImage = useCustomImage
     ? (newImageUri || existingImageUrl || getAutoImage())
     : getAutoImage();
 
-  // ✅ Badge state helpers
   const isShowingNewPhoto      = useCustomImage && !!newImageUri;
   const isShowingExistingPhoto = useCustomImage && !newImageUri && !!existingImageUrl;
   const isShowingAutoPhoto     = !useCustomImage;
 
-  // ─── Form handlers ────────────────────────
+  // ── Form handlers ─────────────────────────
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -121,9 +135,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }));
   };
 
-  // ─── Image handlers ───────────────────────
-
-  // Pick new photo from gallery
+  // ── Image handlers ────────────────────────
   const pickImage = async () => {
     const { status } =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -143,7 +155,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ✅ Cycle to next auto image — counter NEVER resets
   const handleRegenerateImage = useCallback(() => {
     setUseCustomImage(false);
     setNewImageUri(null);
@@ -151,7 +162,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
     setRegenerateCount(prev => prev + 1);
   }, []);
 
-  // ✅ Remove custom/existing — back to auto
   const handleRemoveCustomImage = () => {
     setUseCustomImage(false);
     setNewImageUri(null);
@@ -159,7 +169,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
     setRegenerateCount(prev => prev + 1);
   };
 
-  // ─── Save handler ─────────────────────────
+  // ── Save handler ──────────────────────────
   const handleSave = async () => {
     if (!form.name.trim()) {
       Alert.alert('Error', 'Item name is required');
@@ -176,7 +186,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
     setLoading(true);
 
-    // ✅ Stable auto image — consistent across sessions
+    // ✅ Generate stable auto image using the dish name
     const stableAutoImage = getAutoFoodImage(
       form.name.trim(),
       form.category,
@@ -195,7 +205,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .split(',')
                          .map(t => t.trim())
                          .filter(Boolean),
-      // ✅ Smart image logic
       autoImageUrl: useCustomImage ? null : stableAutoImage,
       imageUrl:     isShowingExistingPhoto ? existingImageUrl : null,
     };
@@ -206,7 +215,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
         result = await updateMenuItem(
           existingItem.id,
           data,
-          // ✅ Only upload if NEW photo was picked
           isShowingNewPhoto ? newImageUri : null
         );
       } else {
@@ -229,7 +237,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ─── Render ───────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -254,10 +261,12 @@ export default function AddMenuItemScreen({ route, navigation }) {
             onPress={pickImage}
             activeOpacity={0.85}
           >
-            {/* Loading overlay — only on auto mode */}
             {imageLoading && isShowingAutoPhoto && (
               <View style={styles.imageLoadingOverlay}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
+                <ActivityIndicator
+                  size="large"
+                  color={COLORS.primary}
+                />
               </View>
             )}
 
@@ -277,7 +286,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </Text>
             </View>
 
-            {/* ✅ 3 badge states */}
             {isShowingNewPhoto && (
               <View style={[styles.badge, styles.badgeNew]}>
                 <Ionicons name="camera" size={12} color="#FFFFFF" />
@@ -293,15 +301,15 @@ export default function AddMenuItemScreen({ route, navigation }) {
             {isShowingAutoPhoto && (
               <View style={[styles.badge, styles.badgeAuto]}>
                 <Ionicons name="sparkles" size={12} color="#FFFFFF" />
-                <Text style={styles.badgeText}>Auto</Text>
+                <Text style={styles.badgeText}>
+                  {form.name.trim() ? 'Auto' : 'Category'}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
 
           {/* Action buttons */}
           <View style={styles.imageActions}>
-
-            {/* ✅ Always show auto/regenerate button */}
             <TouchableOpacity
               style={[
                 styles.imageActionBtn,
@@ -312,16 +320,22 @@ export default function AddMenuItemScreen({ route, navigation }) {
               activeOpacity={0.7}
             >
               {imageLoading ? (
-                <ActivityIndicator size="small" color={COLORS.primary} />
+                <ActivityIndicator
+                  size="small"
+                  color={COLORS.primary}
+                />
               ) : (
-                <Ionicons name="refresh" size={16} color={COLORS.primary} />
+                <Ionicons
+                  name="refresh"
+                  size={16}
+                  color={COLORS.primary}
+                />
               )}
               <Text style={styles.imageActionText}>
                 {imageLoading ? 'Loading...' : 'Auto Image'}
               </Text>
             </TouchableOpacity>
 
-            {/* ✅ Remove button — only when showing custom/existing */}
             {(isShowingNewPhoto || isShowingExistingPhoto) && (
               <TouchableOpacity
                 style={[
@@ -331,21 +345,30 @@ export default function AddMenuItemScreen({ route, navigation }) {
                 onPress={handleRemoveCustomImage}
                 activeOpacity={0.7}
               >
-                <Ionicons name="trash-outline" size={16} color={COLORS.error} />
-                <Text style={[styles.imageActionText, { color: COLORS.error }]}>
+                <Ionicons
+                  name="trash-outline"
+                  size={16}
+                  color={COLORS.error}
+                />
+                <Text style={[
+                  styles.imageActionText,
+                  { color: COLORS.error },
+                ]}>
                   {isShowingNewPhoto ? 'Remove New' : 'Remove Photo'}
                 </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* ✅ Descriptive hint for each state */}
+          {/* ✅ Better hint text */}
           <Text style={styles.imageHint}>
             {isShowingNewPhoto
               ? '📷 New photo selected — tap Save to apply'
               : isShowingExistingPhoto
-              ? '🖼️ Current saved photo — tap 🔄 to use auto or tap image to change'
-              : `🤖 Auto image #${regenerateCount + 1} — tap 🔄 for next`}
+              ? '🖼️ Current saved photo — tap 🔄 for auto or tap image to change'
+              : form.name.trim()
+              ? `🤖 Auto image for "${form.name.trim()}" — tap 🔄 for next`
+              : `🍽️ Showing ${form.category.replace(/_/g, ' ')} photo — type a name for specific image`}
           </Text>
         </View>
 
@@ -362,8 +385,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               value={form.name}
               onChangeText={v => {
                 updateForm('name', v);
-                // ✅ Only trigger reload if in auto mode
-                // NEVER reset regenerateCount
                 if (isShowingAutoPhoto) setImageLoading(true);
               }}
               autoCapitalize="words"
@@ -455,8 +476,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
                   ]}
                   onPress={() => {
                     updateForm('category', cat.id);
-                    // ✅ Only reload if in auto mode
-                    // NEVER reset regenerateCount
                     if (isShowingAutoPhoto) setImageLoading(true);
                   }}
                   activeOpacity={0.7}
@@ -526,7 +545,11 @@ export default function AddMenuItemScreen({ route, navigation }) {
               <ActivityIndicator color={COLORS.textWhite} />
             ) : (
               <>
-                <Ionicons name="checkmark-circle" size={22} color={COLORS.textWhite} />
+                <Ionicons
+                  name="checkmark-circle"
+                  size={22}
+                  color={COLORS.textWhite}
+                />
                 <Text style={styles.saveBtnText}>
                   {existingItem ? 'Update Item' : 'Add to Menu'}
                 </Text>
@@ -587,8 +610,6 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sm,
     fontWeight: '600',
   },
-
-  // ✅ 3 badge types
   badge: {
     position: 'absolute',
     top: SIZES.sm,
@@ -600,15 +621,14 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.round,
     gap: 4,
   },
-  badgeAuto:     { backgroundColor: COLORS.primary               },
-  badgeExisting: { backgroundColor: COLORS.info    || '#3498DB'  },
-  badgeNew:      { backgroundColor: COLORS.success                },
+  badgeAuto:     { backgroundColor: COLORS.primary              },
+  badgeExisting: { backgroundColor: COLORS.info   || '#3498DB'  },
+  badgeNew:      { backgroundColor: COLORS.success               },
   badgeText: {
     color: '#FFFFFF',
     fontSize: FONTS.xs,
     fontWeight: '700',
   },
-
   imageActions: {
     flexDirection: 'row',
     gap: SIZES.sm,
@@ -645,7 +665,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingHorizontal: SIZES.md,
   },
-
   form:      { padding: SIZES.md, gap: SIZES.md },
   field:     { gap: SIZES.xs },
   row:       { flexDirection: 'row', gap: SIZES.md },
