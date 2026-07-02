@@ -1,152 +1,156 @@
 // ============================================
 // FILE: src/hooks/useSubscription.js
 // ============================================
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { useAuth } from './useAuth';
 
+// ✅ Plans must match AdminDashboardScreen SUBSCRIPTION_PLANS
 export const PLANS = {
   free_trial: {
     id:       'free_trial',
     name:     'Free Trial',
-    price:    0,
     emoji:    '🆓',
+    price:    0,
+    duration: 'trial',
     color:    '#95A5A6',
-    duration: '14 days',
     features: [
-      '1 restaurant listing',
+      'Basic restaurant listing',
       'Up to 10 menu items',
       'Customer reviews',
-      'Basic profile page',
+      'Standard support',
     ],
-    limits: {
-      menuItems:     10,
-      featured:      false,
-      analytics:     false,   // ❌ no analytics
-      notifications: false,
-      priority:      false,
-    },
   },
-
   basic: {
     id:       'basic',
     name:     'Basic',
-    price:    9.99,
     emoji:    '⭐',
+    price:    9.99,
+    duration: 'month',
     color:    '#3498DB',
-    duration: 'per month',
     features: [
       'Unlimited menu items',
-      'Featured in search results',
-      'Daily menu specials',
+      'Basic analytics',
+      'Priority listing',
       'Customer reviews',
-      'WhatsApp integration',
+      'Email support',
     ],
-    limits: {
-      menuItems:     -1,      // unlimited
-      featured:      true,
-      analytics:     false,   // ❌ no analytics on basic
-      notifications: false,
-      priority:      false,
-    },
   },
-
   premium: {
     id:       'premium',
     name:     'Premium',
-    price:    24.99,
     emoji:    '👑',
+    price:    24.99,
+    duration: 'month',
     color:    '#FF6B35',
-    duration: 'per month',
     features: [
       'Everything in Basic',
-      'Full Analytics Dashboard',
-      'Guest & user tracking',
-      'Conversion rate insights',
+      'Full analytics dashboard',
       'Push notifications to followers',
-      'Promotional banners',
-      'Priority customer support',
-      'Top of search results',
-      'Custom restaurant URL',
-      'Unlimited photos',
+      'Featured listing',
+      'Guest vs user breakdown',
+      'Priority support',
     ],
-    limits: {
-      menuItems:     -1,
-      featured:      true,
-      analytics:     true,    // ✅ analytics ONLY on premium
-      notifications: true,
-      priority:      true,
-    },
   },
 };
 
 export const useSubscription = () => {
+  const { userProfile } = useAuth();
 
-  // ─── Check if plan has a feature ───────────
-  const canAccess = (restaurant, feature) => {
-    const planId = restaurant?.subscription?.plan || 'free_trial';
-    const plan   = PLANS[planId];
-    return plan?.limits?.[feature] === true;
-  };
-
-  // ✅ Specific check for analytics access
+  // ✅ Check if restaurant has analytics access
   const hasAnalytics = (restaurant) => {
-    return canAccess(restaurant, 'analytics');
+    if (!restaurant) return false;
+    const plan = restaurant?.subscription?.plan || 'free_trial';
+    return plan === 'premium';
   };
 
-  // ─── Upgrade plan ───────────────────────────
-  const upgradePlan = async (restaurantId, planId) => {
-    try {
-      const plan = PLANS[planId];
-      if (!plan) {
-        return { success: false, error: 'Invalid plan' };
-      }
+  // ✅ Check if restaurant has basic access
+  const hasBasic = (restaurant) => {
+    if (!restaurant) return false;
+    const plan = restaurant?.subscription?.plan || 'free_trial';
+    return plan === 'basic' || plan === 'premium';
+  };
 
-      const expiresAt = new Date();
-      expiresAt.setMonth(expiresAt.getMonth() + 1);
+  // ✅ Check if plan is expired
+  const isPlanExpired = (restaurant) => {
+    if (!restaurant) return false;
+    const plan      = restaurant?.subscription?.plan || 'free_trial';
+    const expiresAt = restaurant?.subscription?.expiresAt;
 
-      await updateDoc(doc(db, 'restaurants', restaurantId), {
-        subscription: {
-          plan:      planId,
-          status:    'active',
-          startedAt: serverTimestamp(),
-          expiresAt,
-          price:     plan.price,
-        },
-        // ✅ Premium gets featured automatically
-        isFeatured: planId === 'premium',
-        updatedAt:  serverTimestamp(),
-      });
-
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message };
+    if (plan === 'free_trial') {
+      const trialEnds = restaurant?.subscription?.trialEndsAt;
+      if (!trialEnds) return false;
+      return new Date(trialEnds) < new Date();
     }
+
+    if (!expiresAt) return false;
+    return new Date(expiresAt) < new Date();
   };
 
-  // ─── Cancel plan ────────────────────────────
-  const cancelPlan = async (restaurantId) => {
-    try {
-      await updateDoc(doc(db, 'restaurants', restaurantId), {
-        'subscription.status': 'cancelled',
-        isFeatured:            false,
-        updatedAt:             serverTimestamp(),
-      });
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  };
-
-  const getPlanDetails = (planId) => {
+  // ✅ Get current plan object
+  const getCurrentPlan = (restaurant) => {
+    const planId = restaurant?.subscription?.plan || 'free_trial';
     return PLANS[planId] || PLANS.free_trial;
   };
 
+  // ✅ Upgrade plan (called from SubscriptionScreen)
+  const upgradePlan = async (restaurantId, planId) => {
+    try {
+      const { doc, updateDoc, serverTimestamp } =
+        require('firebase/firestore');
+      const { db } = require('../firebase/config');
+
+      const plan      = PLANS[planId];
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+      await updateDoc(
+        doc(db, 'restaurants', restaurantId),
+        {
+          'subscription.plan':      planId,
+          'subscription.status':    'active',
+          'subscription.expiresAt': expiresAt.toISOString(),
+          'subscription.updatedAt': serverTimestamp(),
+          'subscription.price':     plan.price,
+          updatedAt:                serverTimestamp(),
+        }
+      );
+      return { success: true };
+    } catch (err) {
+      console.error('upgradePlan error:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // ✅ Cancel plan (called from SubscriptionScreen)
+  const cancelPlan = async (restaurantId) => {
+    try {
+      const { doc, updateDoc, serverTimestamp } =
+        require('firebase/firestore');
+      const { db } = require('../firebase/config');
+
+      await updateDoc(
+        doc(db, 'restaurants', restaurantId),
+        {
+          'subscription.plan':      'free_trial',
+          'subscription.status':    'cancelled',
+          'subscription.expiresAt': null,
+          'subscription.updatedAt': serverTimestamp(),
+          updatedAt:                serverTimestamp(),
+        }
+      );
+      return { success: true };
+    } catch (err) {
+      console.error('cancelPlan error:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
   return {
-    plans: PLANS,
+    plans:          PLANS,
+    hasAnalytics,
+    hasBasic,
+    isPlanExpired,
+    getCurrentPlan,
     upgradePlan,
     cancelPlan,
-    getPlanDetails,
-    canAccess,
-    hasAnalytics,   // ✅ exported for easy use
   };
 };
