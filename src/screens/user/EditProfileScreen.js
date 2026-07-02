@@ -110,7 +110,7 @@ export default function EditProfileScreen({ navigation }) {
       let avatarPath = userProfile?.avatarPath || '';
 
       if (avatarUri) {
-        avatarPath = `avatars/${user.uid}_${Date.now()}`;
+        avatarPath = `users/${user.uid}/avatar_${Date.now()}`;
         const uploadResult = await uploadImage(avatarUri, avatarPath);
         if (uploadResult.success) {
           avatarUrl = uploadResult.url;
