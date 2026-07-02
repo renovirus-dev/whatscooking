@@ -19,6 +19,7 @@ import {
 import { db }              from '../firebase/config';
 import {
   uploadImage,
+  uploadImageFromUrl,
   getAutoFoodImage,
 } from '../utils/imageUpload';
 
@@ -66,8 +67,8 @@ export const useMenu = (restaurantId) => {
   // ─── Add Menu Item ────────────────────────
   const addMenuItem = async (data, imageUri) => {
     try {
-      // ✅ Generate the doc ref FIRST
-      // so we can use itemId in the Storage path
+      // ✅ Generate doc ref FIRST so itemId is available
+      // for the Storage path
       const newRef = doc(collection(db, 'menuItems'));
       const itemId = newRef.id;
 
@@ -75,38 +76,56 @@ export const useMenu = (restaurantId) => {
       let isAutoImage = false;
 
       if (imageUri) {
-        // ✅ FIXED: path now matches Storage rule
-        // menuItems/{itemId}/... is allowed
+        // ✅ User picked a custom photo — upload to Firebase Storage
         const path   = `menuItems/${itemId}/image_${Date.now()}`;
         const result = await uploadImage(imageUri, path);
 
         if (result.success) {
           imageUrl    = result.url;
           isAutoImage = false;
-          console.log('✅ Menu item image uploaded:', imageUrl);
+          console.log('✅ Custom image uploaded to Firebase');
         } else {
-          console.warn('Image upload failed:', result.error);
+          console.warn('Custom upload failed:', result.error);
           // Fall back to auto image
-          imageUrl    = data.autoImageUrl ||
-                        getAutoFoodImage(
-                          data.name,
-                          data.category,
-                          `${data.name}-${data.category}-0`
-                        );
+          const autoUrl = data.autoImageUrl ||
+            getAutoFoodImage(
+              data.name,
+              data.category,
+              `${data.name}-${data.category}-0`
+            );
+          // ✅ Try to store auto image in Firebase too
+          const autoPath   = `menuItems/${itemId}/auto_${Date.now()}`;
+          const autoResult = await uploadImageFromUrl(autoUrl, autoPath);
+          imageUrl    = autoResult.success ? autoResult.url : autoUrl;
           isAutoImage = true;
         }
-      } else if (data.autoImageUrl) {
-        // ✅ Use pre-generated auto image URL
-        imageUrl    = data.autoImageUrl;
-        isAutoImage = true;
       } else {
-        // ✅ Generate auto image as fallback
-        imageUrl    = getAutoFoodImage(
-          data.name,
-          data.category,
-          `${data.name}-${data.category}-0`
-        );
-        isAutoImage = true;
+        // ✅ Auto image — get URL then store in Firebase Storage
+        // This makes it permanent and fast to load
+        const autoUrl = data.autoImageUrl ||
+          getAutoFoodImage(
+            data.name,
+            data.category,
+            `${data.name}-${data.category}-0`
+          );
+
+        console.log('📥 Storing auto image in Firebase...');
+        const path         = `menuItems/${itemId}/auto_${Date.now()}`;
+        const uploadResult = await uploadImageFromUrl(autoUrl, path);
+
+        if (uploadResult.success) {
+          imageUrl    = uploadResult.url;
+          isAutoImage = true;
+          console.log('✅ Auto image stored in Firebase Storage');
+        } else {
+          // ✅ Fallback — use Unsplash URL directly
+          console.warn(
+            'Could not store auto image in Firebase:',
+            uploadResult.error
+          );
+          imageUrl    = autoUrl;
+          isAutoImage = true;
+        }
       }
 
       // Remove autoImageUrl from Firestore data
@@ -147,22 +166,36 @@ export const useMenu = (restaurantId) => {
       };
 
       if (newImageUri) {
-        // ✅ FIXED: path now matches Storage rule
-        // menuItems/{itemId}/... is allowed
+        // ✅ New custom photo — upload to Firebase Storage
         const path   = `menuItems/${itemId}/image_${Date.now()}`;
         const result = await uploadImage(newImageUri, path);
 
         if (result.success) {
           updates.imageUrl    = result.url;
           updates.isAutoImage = false;
-          console.log('✅ Menu item image updated:', result.url);
+          console.log('✅ Custom image updated in Firebase');
         } else {
           console.warn('Image update failed:', result.error);
         }
       } else if (autoImageUrl) {
-        // Owner chose a new auto image
-        updates.imageUrl    = autoImageUrl;
-        updates.isAutoImage = true;
+        // ✅ New auto image selected — store in Firebase Storage
+        console.log('📥 Storing new auto image in Firebase...');
+        const path         = `menuItems/${itemId}/auto_${Date.now()}`;
+        const uploadResult = await uploadImageFromUrl(
+          autoImageUrl,
+          path
+        );
+
+        if (uploadResult.success) {
+          updates.imageUrl    = uploadResult.url;
+          updates.isAutoImage = true;
+          console.log('✅ Auto image updated in Firebase Storage');
+        } else {
+          // Fallback to Unsplash URL
+          console.warn('Auto image storage failed:', uploadResult.error);
+          updates.imageUrl    = autoImageUrl;
+          updates.isAutoImage = true;
+        }
       }
 
       await updateDoc(doc(db, 'menuItems', itemId), updates);
@@ -298,7 +331,10 @@ export const useMenu = (restaurantId) => {
       );
       const snapshot = await getDocs(q);
       if (snapshot.empty) return null;
-      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+      return {
+        id: snapshot.docs[0].id,
+        ...snapshot.docs[0].data(),
+      };
     } catch (error) {
       console.error('getUserReview error:', error);
       return null;
@@ -306,25 +342,35 @@ export const useMenu = (restaurantId) => {
   };
 
   // ─── Regenerate Auto Image ────────────────
+  // ✅ Now stores in Firebase Storage permanently
   const regenerateAutoImage = async (
     itemId,
     itemName,
     category
   ) => {
     try {
-      const newImageUrl = getAutoFoodImage(
+      // Generate new auto URL
+      const newAutoUrl = getAutoFoodImage(
         itemName,
         category,
         `${itemName}-${category}-${Date.now()}`
       );
 
+      // ✅ Store in Firebase Storage
+      const path         = `menuItems/${itemId}/auto_${Date.now()}`;
+      const uploadResult = await uploadImageFromUrl(newAutoUrl, path);
+
+      const finalUrl = uploadResult.success
+        ? uploadResult.url    // ✅ Firebase Storage URL — permanent
+        : newAutoUrl;         // Fallback to Unsplash if upload fails
+
       await updateDoc(doc(db, 'menuItems', itemId), {
-        imageUrl:    newImageUrl,
+        imageUrl:    finalUrl,
         isAutoImage: true,
         updatedAt:   serverTimestamp(),
       });
 
-      return { success: true, imageUrl: newImageUrl };
+      return { success: true, imageUrl: finalUrl };
     } catch (error) {
       return { success: false, error: error.message };
     }

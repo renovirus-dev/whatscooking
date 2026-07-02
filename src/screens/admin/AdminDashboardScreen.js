@@ -25,7 +25,6 @@ import {
 import { db }      from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-// ✅ Use the batch push utility we built
 import {
   sendPushNotificationBatch,
 } from '../../utils/sendPushNotification';
@@ -129,16 +128,10 @@ export default function AdminDashboardScreen({ navigation }) {
               setSigningOut(true);
               const result = await logout();
               if (!result.success) {
-                Alert.alert(
-                  'Error',
-                  result.error || 'Failed to sign out'
-                );
+                Alert.alert('Error', result.error || 'Failed to sign out');
               }
             } catch (err) {
-              Alert.alert(
-                'Error',
-                'Failed to sign out. Please try again.'
-              );
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
             } finally {
               setSigningOut(false);
             }
@@ -192,9 +185,7 @@ export default function AdminDashboardScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteDoc(
-                doc(db, 'restaurants', restaurant.id)
-              );
+              await deleteDoc(doc(db, 'restaurants', restaurant.id));
               await loadRestaurants();
             } catch (err) {
               Alert.alert('Error', err.message);
@@ -277,22 +268,17 @@ export default function AdminDashboardScreen({ navigation }) {
     setSending(true);
 
     try {
-      // ── Determine target users ──────────────
       let targetUsers = users;
       if (notifTarget === 'customers') {
         targetUsers = users.filter(u => u.role === 'customer');
       } else if (notifTarget === 'owners') {
-        targetUsers = users.filter(
-          u => u.role === 'restaurant_owner'
-        );
+        targetUsers = users.filter(u => u.role === 'restaurant_owner');
       }
 
       const title = notifTitle.trim();
       const body  = notifBody.trim();
 
-      // ── Step 1: Save to Firestore ───────────
-      // Each user gets a notification in their inbox
-      // This appears in the Notifications screen
+      // Save to Firestore
       const firestoreResults = await Promise.allSettled(
         targetUsers.map(u =>
           addDoc(collection(db, 'notifications'), {
@@ -312,42 +298,31 @@ export default function AdminDashboardScreen({ navigation }) {
       ).length;
 
       if (firestoreFailed > 0) {
-        console.warn(
-          `${firestoreFailed} Firestore notifications failed`
-        );
+        console.warn(`${firestoreFailed} Firestore notifications failed`);
       }
 
-      // ── Step 2: Send push notifications ─────
-      // ✅ Use batch utility — much more efficient
-      // Validates tokens, chunks into 100 per request
+      // Send push notifications
       const tokens = targetUsers
         .map(u => u.expoPushToken)
         .filter(Boolean);
 
       let pushResult = { sent: 0, errors: 0 };
-
       if (tokens.length > 0) {
         pushResult = await sendPushNotificationBatch({
-          tokens,
-          title,
-          body,
+          tokens, title, body,
           data: { type: 'broadcast' },
         });
       }
 
-      // ── Clear form ──────────────────────────
       setNotifTitle('');
       setNotifBody('');
 
-      // ── Show result ─────────────────────────
       Alert.alert(
         '✅ Notification Sent!',
         [
           `📬 In-app: ${targetUsers.length} users notified`,
           `📱 Push: ${pushResult.sent} devices reached`,
-          tokens.length === 0
-            ? '⚠️ No push tokens — in-app only'
-            : null,
+          tokens.length === 0 ? '⚠️ No push tokens — in-app only' : null,
         ].filter(Boolean).join('\n')
       );
 
@@ -406,11 +381,7 @@ export default function AdminDashboardScreen({ navigation }) {
               styles.statIcon,
               { backgroundColor: stat.color + '20' },
             ]}>
-              <Ionicons
-                name={stat.icon}
-                size={24}
-                color={stat.color}
-              />
+              <Ionicons name={stat.icon} size={24} color={stat.color} />
             </View>
             <Text style={styles.statValue}>{stat.value}</Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -418,12 +389,34 @@ export default function AdminDashboardScreen({ navigation }) {
         ))}
       </View>
 
+      {/* ✅ Food Image Manager button */}
+      <TouchableOpacity
+        style={styles.imageManagerBtn}
+        onPress={() => navigation.navigate('ImageDownload')}
+        activeOpacity={0.8}
+      >
+        <View style={styles.imageManagerIcon}>
+          <Text style={{ fontSize: 24 }}>🖼️</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.imageManagerTitle}>
+            Food Image Manager
+          </Text>
+          <Text style={styles.imageManagerDesc}>
+            Download all cuisine photos to Firebase Storage
+          </Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color={COLORS.primary}
+        />
+      </TouchableOpacity>
+
       {/* Pending Approvals */}
       {stats.pendingApprovals > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            ⏳ Pending Approvals
-          </Text>
+          <Text style={styles.sectionTitle}>⏳ Pending Approvals</Text>
           {restaurants
             .filter(r => !r.isApproved)
             .map(r => (
@@ -438,9 +431,7 @@ export default function AdminDashboardScreen({ navigation }) {
                   style={styles.approveBtn}
                   onPress={() => approveRestaurant(r)}
                 >
-                  <Text style={styles.approveBtnText}>
-                    Approve
-                  </Text>
+                  <Text style={styles.approveBtnText}>Approve</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -456,9 +447,7 @@ export default function AdminDashboardScreen({ navigation }) {
               <Text style={styles.reviewUser}>{r.userName}</Text>
               <View style={styles.reviewRating}>
                 <Ionicons name="star" size={12} color="#FFD700" />
-                <Text style={styles.reviewRatingText}>
-                  {r.rating}
-                </Text>
+                <Text style={styles.reviewRatingText}>{r.rating}</Text>
               </View>
             </View>
             <Text style={styles.reviewText} numberOfLines={2}>
@@ -487,11 +476,7 @@ export default function AdminDashboardScreen({ navigation }) {
           <ActivityIndicator color="#FFFFFF" size="small" />
         ) : (
           <>
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color="#FFFFFF"
-            />
+            <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
             <Text style={styles.signOutBtnText}>Sign Out</Text>
           </>
         )}
@@ -526,9 +511,7 @@ export default function AdminDashboardScreen({ navigation }) {
             <View style={styles.listCardBadges}>
               <View style={[
                 styles.badge,
-                item.isActive
-                  ? styles.badgeSuccess
-                  : styles.badgeError,
+                item.isActive ? styles.badgeSuccess : styles.badgeError,
               ]}>
                 <Text style={styles.badgeText}>
                   {item.isActive ? 'Active' : 'Inactive'}
@@ -548,20 +531,14 @@ export default function AdminDashboardScreen({ navigation }) {
                 style={[styles.actionBtn, styles.actionBtnSuccess]}
                 onPress={() => approveRestaurant(item)}
               >
-                <Ionicons
-                  name="checkmark"
-                  size={14}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="checkmark" size={14} color={COLORS.textWhite} />
                 <Text style={styles.actionBtnText}>Approve</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
               style={[
                 styles.actionBtn,
-                item.isActive
-                  ? styles.actionBtnWarning
-                  : styles.actionBtnSuccess,
+                item.isActive ? styles.actionBtnWarning : styles.actionBtnSuccess,
               ]}
               onPress={() => toggleRestaurantActive(item)}
             >
@@ -578,11 +555,7 @@ export default function AdminDashboardScreen({ navigation }) {
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteRestaurant(item)}
             >
-              <Ionicons
-                name="trash"
-                size={14}
-                color={COLORS.textWhite}
-              />
+              <Ionicons name="trash" size={14} color={COLORS.textWhite} />
               <Text style={styles.actionBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -647,11 +620,7 @@ export default function AdminDashboardScreen({ navigation }) {
                   )
                 }
               >
-                <Ionicons
-                  name="swap-horizontal"
-                  size={14}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="swap-horizontal" size={14} color={COLORS.textWhite} />
                 <Text style={styles.actionBtnText}>
                   {item.role === 'restaurant_owner'
                     ? 'Make Customer'
@@ -664,11 +633,7 @@ export default function AdminDashboardScreen({ navigation }) {
                 style={[styles.actionBtn, styles.actionBtnDanger]}
                 onPress={() => banUser(item)}
               >
-                <Ionicons
-                  name="ban"
-                  size={14}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="ban" size={14} color={COLORS.textWhite} />
                 <Text style={styles.actionBtnText}>Ban</Text>
               </TouchableOpacity>
             )}
@@ -697,20 +662,14 @@ export default function AdminDashboardScreen({ navigation }) {
         <View style={styles.listCard}>
           <View style={styles.listCardHeader}>
             <View style={styles.listCardInfo}>
-              <Text style={styles.listCardName}>
-                {item.userName}
-              </Text>
+              <Text style={styles.listCardName}>{item.userName}</Text>
               <View style={styles.reviewRating}>
                 {[1, 2, 3, 4, 5].map(star => (
                   <Ionicons
                     key={star}
                     name="star"
                     size={12}
-                    color={
-                      star <= item.rating
-                        ? '#FFD700'
-                        : COLORS.border
-                    }
+                    color={star <= item.rating ? '#FFD700' : COLORS.border}
                   />
                 ))}
               </View>
@@ -719,11 +678,7 @@ export default function AdminDashboardScreen({ navigation }) {
               style={[styles.actionBtn, styles.actionBtnDanger]}
               onPress={() => deleteReview(item)}
             >
-              <Ionicons
-                name="trash"
-                size={14}
-                color={COLORS.textWhite}
-              />
+              <Ionicons name="trash" size={14} color={COLORS.textWhite} />
               <Text style={styles.actionBtnText}>Remove</Text>
             </TouchableOpacity>
           </View>
@@ -740,9 +695,7 @@ export default function AdminDashboardScreen({ navigation }) {
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios' ? 0 : insets.top
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
       <ScrollView
         contentContainerStyle={[
@@ -756,7 +709,6 @@ export default function AdminDashboardScreen({ navigation }) {
           📢 Send Broadcast Notification
         </Text>
 
-        {/* Target selector */}
         <Text style={styles.fieldLabel}>Send To</Text>
         <View style={styles.targetRow}>
           {[
@@ -782,7 +734,6 @@ export default function AdminDashboardScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Title */}
         <Text style={styles.fieldLabel}>Notification Title</Text>
         <TextInput
           style={styles.notifInput}
@@ -793,7 +744,6 @@ export default function AdminDashboardScreen({ navigation }) {
           returnKeyType="next"
         />
 
-        {/* Message */}
         <Text style={styles.fieldLabel}>Message</Text>
         <TextInput
           style={[styles.notifInput, styles.notifTextarea]}
@@ -807,16 +757,11 @@ export default function AdminDashboardScreen({ navigation }) {
           returnKeyType="done"
         />
 
-        {/* Preview */}
         {(notifTitle.trim() || notifBody.trim()) && (
           <View style={styles.previewCard}>
             <Text style={styles.previewLabel}>PREVIEW</Text>
             <View style={styles.previewRow}>
-              <Ionicons
-                name="notifications"
-                size={20}
-                color={COLORS.primary}
-              />
+              <Ionicons name="notifications" size={20} color={COLORS.primary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.previewTitle}>
                   {notifTitle || 'Title'}
@@ -829,12 +774,8 @@ export default function AdminDashboardScreen({ navigation }) {
           </View>
         )}
 
-        {/* Send button */}
         <TouchableOpacity
-          style={[
-            styles.sendBtn,
-            sending && styles.sendBtnDisabled,
-          ]}
+          style={[styles.sendBtn, sending && styles.sendBtnDisabled]}
           onPress={handleSendNotification}
           disabled={sending}
         >
@@ -842,35 +783,22 @@ export default function AdminDashboardScreen({ navigation }) {
             <ActivityIndicator color={COLORS.textWhite} />
           ) : (
             <>
-              <Ionicons
-                name="send"
-                size={20}
-                color={COLORS.textWhite}
-              />
-              <Text style={styles.sendBtnText}>
-                Send Notification
-              </Text>
+              <Ionicons name="send" size={20} color={COLORS.textWhite} />
+              <Text style={styles.sendBtnText}>Send Notification</Text>
             </>
           )}
         </TouchableOpacity>
 
-        {/* Stats */}
         <View style={styles.notifStats}>
           <View style={styles.notifStatItem}>
             <Text style={styles.notifStatValue}>
               {users.filter(u => u.expoPushToken).length}
             </Text>
-            <Text style={styles.notifStatLabel}>
-              Push enabled
-            </Text>
+            <Text style={styles.notifStatLabel}>Push enabled</Text>
           </View>
           <View style={styles.notifStatItem}>
-            <Text style={styles.notifStatValue}>
-              {users.length}
-            </Text>
-            <Text style={styles.notifStatLabel}>
-              Total users
-            </Text>
+            <Text style={styles.notifStatValue}>{users.length}</Text>
+            <Text style={styles.notifStatLabel}>Total users</Text>
           </View>
           <View style={styles.notifStatItem}>
             <Text style={styles.notifStatValue}>
@@ -878,13 +806,9 @@ export default function AdminDashboardScreen({ navigation }) {
                 ? users.length
                 : notifTarget === 'customers'
                 ? users.filter(u => u.role === 'customer').length
-                : users.filter(
-                    u => u.role === 'restaurant_owner'
-                  ).length}
+                : users.filter(u => u.role === 'restaurant_owner').length}
             </Text>
-            <Text style={styles.notifStatLabel}>
-              Will receive
-            </Text>
+            <Text style={styles.notifStatLabel}>Will receive</Text>
           </View>
         </View>
       </ScrollView>
@@ -896,10 +820,7 @@ export default function AdminDashboardScreen({ navigation }) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{
-          color: COLORS.textMuted,
-          marginTop: SIZES.md,
-        }}>
+        <Text style={{ color: COLORS.textMuted, marginTop: SIZES.md }}>
           Loading dashboard...
         </Text>
       </View>
@@ -916,12 +837,8 @@ export default function AdminDashboardScreen({ navigation }) {
         { paddingTop: insets.top + SIZES.sm },
       ]}>
         <View>
-          <Text style={styles.adminHeaderTitle}>
-            ⚡ Admin Panel
-          </Text>
-          <Text style={styles.adminHeaderSubtitle}>
-            What's Cooking
-          </Text>
+          <Text style={styles.adminHeaderTitle}>⚡ Admin Panel</Text>
+          <Text style={styles.adminHeaderSubtitle}>What's Cooking</Text>
         </View>
         <TouchableOpacity
           style={styles.headerSignOutBtn}
@@ -933,14 +850,8 @@ export default function AdminDashboardScreen({ navigation }) {
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
             <>
-              <Ionicons
-                name="log-out-outline"
-                size={18}
-                color="#FFFFFF"
-              />
-              <Text style={styles.headerSignOutText}>
-                Sign Out
-              </Text>
+              <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.headerSignOutText}>Sign Out</Text>
             </>
           )}
         </TouchableOpacity>
@@ -966,11 +877,7 @@ export default function AdminDashboardScreen({ navigation }) {
             <Ionicons
               name={tab.icon}
               size={18}
-              color={
-                activeTab === tab.id
-                  ? COLORS.primary
-                  : COLORS.textMuted
-              }
+              color={activeTab === tab.id ? COLORS.primary : COLORS.textMuted}
             />
             <Text style={[
               styles.tabText,
@@ -1105,6 +1012,40 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     textAlign: 'center',
   },
+
+  // ✅ Food Image Manager button
+  imageManagerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    marginHorizontal: SIZES.md,
+    marginBottom: SIZES.sm,
+    padding: SIZES.md,
+    borderRadius: RADIUS.lg,
+    gap: SIZES.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary + '40',
+    ...SHADOW,
+  },
+  imageManagerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageManagerTitle: {
+    fontSize: FONTS.md,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  imageManagerDesc: {
+    fontSize: FONTS.xs,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+
   section: {
     padding: SIZES.md,
     gap: SIZES.sm,

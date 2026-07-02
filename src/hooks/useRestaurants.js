@@ -18,18 +18,20 @@ import {
   arrayRemove,
   increment,
 } from 'firebase/firestore';
-import { db }              from '../firebase/config';
+import { db }          from '../firebase/config';
 import {
   uploadImage,
   getAutoFoodImage,
 } from '../utils/imageUpload';
 
+// ✅ Re-export getAutoFoodImage for screens that import from here
 export { getAutoFoodImage };
 
 export const useRestaurants = () => {
   const [restaurants, setRestaurants] = useState([]);
   const [loading, setLoading]         = useState(true);
 
+  // ─── Real-time listener ───────────────────
   useEffect(() => {
     const q = query(
       collection(db, 'restaurants'),
@@ -37,20 +39,25 @@ export const useRestaurants = () => {
       limit(50)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-      }));
-      data.sort((a, b) =>
-        (b.averageRating || 0) - (a.averageRating || 0)
-      );
-      setRestaurants(data);
-      setLoading(false);
-    }, (error) => {
-      console.error('Restaurant query error:', error);
-      setLoading(false);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        }));
+        // ✅ Sort by rating in memory — no composite index needed
+        data.sort((a, b) =>
+          (b.averageRating || 0) - (a.averageRating || 0)
+        );
+        setRestaurants(data);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Restaurant query error:', error);
+        setLoading(false);
+      }
+    );
 
     return unsubscribe;
   }, []);
@@ -58,22 +65,22 @@ export const useRestaurants = () => {
   // ─── CREATE RESTAURANT ───────────────────
   const createRestaurant = async (data, logoUri, coverUri) => {
     try {
-      // Check if owner already has a restaurant
+      // ✅ Check if owner already has a restaurant
       const existingQuery = query(
         collection(db, 'restaurants'),
         where('ownerId', '==', data.ownerId)
       );
       const existingSnap = await getDocs(existingQuery);
 
+      // ✅ If exists — update instead of creating duplicate
       if (!existingSnap.empty) {
         console.log('Restaurant exists — updating instead');
         const existingId = existingSnap.docs[0].id;
-        return updateRestaurant(
-          existingId, data, logoUri, coverUri
-        );
+        return updateRestaurant(existingId, data, logoUri, coverUri);
       }
 
-      // ✅ Generate ID first so path uses restaurantId
+      // ✅ Generate ID FIRST so path uses restaurantId
+      // This matches Storage rule: restaurants/{restaurantId}/...
       const newRef       = doc(collection(db, 'restaurants'));
       const restaurantId = newRef.id;
 
@@ -83,24 +90,22 @@ export const useRestaurants = () => {
       let coverPath = '';
 
       if (logoUri) {
-        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
-        logoPath  = `restaurants/${restaurantId}/logo_${Date.now()}`;
+        logoPath     = `restaurants/${restaurantId}/logo_${Date.now()}`;
         const result = await uploadImage(logoUri, logoPath);
         if (result.success) {
           logoUrl = result.url;
-          console.log('✅ Logo uploaded:', logoUrl);
+          console.log('✅ Logo uploaded to Firebase');
         } else {
           console.error('❌ Logo upload failed:', result.error);
         }
       }
 
       if (coverUri) {
-        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
-        coverPath = `restaurants/${restaurantId}/cover_${Date.now()}`;
+        coverPath    = `restaurants/${restaurantId}/cover_${Date.now()}`;
         const result = await uploadImage(coverUri, coverPath);
         if (result.success) {
           coverUrl = result.url;
-          console.log('✅ Cover uploaded:', coverUrl);
+          console.log('✅ Cover uploaded to Firebase');
         } else {
           console.error('❌ Cover upload failed:', result.error);
         }
@@ -156,28 +161,26 @@ export const useRestaurants = () => {
       };
 
       if (newLogoUri) {
-        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
-        const logoPath =
+        const logoPath   =
           `restaurants/${restaurantId}/logo_${Date.now()}`;
-        const result = await uploadImage(newLogoUri, logoPath);
+        const result     = await uploadImage(newLogoUri, logoPath);
         if (result.success) {
           updates.logoUrl  = result.url;
           updates.logoPath = logoPath;
-          console.log('✅ Logo updated');
+          console.log('✅ Logo updated in Firebase');
         } else {
           console.error('❌ Logo update failed:', result.error);
         }
       }
 
       if (newCoverUri) {
-        // ✅ FIXED: restaurants/{restaurantId}/... matches rule
-        const coverPath =
+        const coverPath  =
           `restaurants/${restaurantId}/cover_${Date.now()}`;
-        const result = await uploadImage(newCoverUri, coverPath);
+        const result     = await uploadImage(newCoverUri, coverPath);
         if (result.success) {
           updates.coverUrl  = result.url;
           updates.coverPath = coverPath;
-          console.log('✅ Cover updated');
+          console.log('✅ Cover updated in Firebase');
         } else {
           console.error('❌ Cover update failed:', result.error);
         }
@@ -216,6 +219,7 @@ export const useRestaurants = () => {
     restaurantId,
     isFavorited
   ) => {
+    // ✅ Guard — guests cannot favorite
     if (!userId) {
       return {
         success: false,
@@ -228,6 +232,7 @@ export const useRestaurants = () => {
       const restaurantRef = doc(db, 'restaurants', restaurantId);
 
       if (isFavorited) {
+        // ✅ Remove from favorites
         await updateDoc(userRef, {
           favoriteRestaurants: arrayRemove(restaurantId),
         });
@@ -235,6 +240,7 @@ export const useRestaurants = () => {
           totalFavorites: increment(-1),
         });
       } else {
+        // ✅ Add to favorites
         await updateDoc(userRef, {
           favoriteRestaurants: arrayUnion(restaurantId),
         });
@@ -255,6 +261,7 @@ export const useRestaurants = () => {
     rating,
     comment
   ) => {
+    // ✅ Guard — guests cannot review
     if (!userId) {
       return {
         success: false,

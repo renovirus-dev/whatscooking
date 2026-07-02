@@ -103,11 +103,16 @@ try { AnalyticsScreen       = require('../screens/owner/AnalyticsScreen').defaul
 catch(e) { AnalyticsScreen       = makePlaceholder('Analytics');          }
 
 // ── Admin screens ─────────────────────────
-let AdminDashboardScreen, ManageRestaurantsScreen;
+let AdminDashboardScreen, ManageRestaurantsScreen,
+    ImageDownloadScreen;
+
 try { AdminDashboardScreen    = require('../screens/admin/AdminDashboardScreen').default;    }
-catch(e) { AdminDashboardScreen    = makePlaceholder('Admin');   }
+catch(e) { AdminDashboardScreen    = makePlaceholder('Admin');         }
 try { ManageRestaurantsScreen = require('../screens/admin/ManageRestaurantsScreen').default; }
-catch(e) { ManageRestaurantsScreen = makePlaceholder('Manage');  }
+catch(e) { ManageRestaurantsScreen = makePlaceholder('Manage');        }
+// ✅ NEW — Image download manager
+try { ImageDownloadScreen     = require('../screens/admin/ImageDownloadScreen').default;     }
+catch(e) { ImageDownloadScreen     = makePlaceholder('Image Manager'); }
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -192,11 +197,7 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           onPress={onLogin}
           activeOpacity={0.8}
         >
-          <Text style={{
-            color: '#FF6B35',
-            fontSize: 18,
-            fontWeight: 'bold',
-          }}>
+          <Text style={{ color: '#FF6B35', fontSize: 18, fontWeight: 'bold' }}>
             Sign In
           </Text>
         </TouchableOpacity>
@@ -216,11 +217,7 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           onPress={onRegister}
           activeOpacity={0.8}
         >
-          <Text style={{
-            color: '#FFFFFF',
-            fontSize: 18,
-            fontWeight: 'bold',
-          }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
             Create Account
           </Text>
         </TouchableOpacity>
@@ -289,11 +286,7 @@ function GuestFavoritesScreen({ onLogin }) {
           onPress={onLogin}
           activeOpacity={0.8}
         >
-          <Text style={{
-            color: '#FFFFFF',
-            fontSize: 16,
-            fontWeight: 'bold',
-          }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>
             Sign In
           </Text>
         </TouchableOpacity>
@@ -353,11 +346,7 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         onPress={onLogin}
         activeOpacity={0.8}
       >
-        <Text style={{
-          color: '#FFFFFF',
-          fontSize: 18,
-          fontWeight: 'bold',
-        }}>
+        <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
           Sign In
         </Text>
       </TouchableOpacity>
@@ -377,11 +366,7 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         onPress={onRegister}
         activeOpacity={0.8}
       >
-        <Text style={{
-          color: '#FF6B35',
-          fontSize: 18,
-          fontWeight: 'bold',
-        }}>
+        <Text style={{ color: '#FF6B35', fontSize: 18, fontWeight: 'bold' }}>
           Create Account
         </Text>
       </TouchableOpacity>
@@ -492,6 +477,13 @@ const headerStyle = {
   headerTitleStyle: { fontWeight: 'bold' },
 };
 
+const adminHeaderStyle = {
+  headerShown:      true,
+  headerStyle:      { backgroundColor: '#2C3E50' },
+  headerTintColor:  '#FFFFFF',
+  headerTitleStyle: { fontWeight: 'bold' },
+};
+
 // =============================================
 // AUTH STACK
 // =============================================
@@ -513,14 +505,11 @@ function AuthStack({ initialRoute = 'Login' }) {
 function UserNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
-      {/* ── Tab root ───────────────────────── */}
       <Stack.Screen
         name="UserTabs"
         component={UserTabs}
         options={{ headerShown: false }}
       />
-
-      {/* ── Detail screens ─────────────────── */}
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
@@ -543,12 +532,6 @@ function UserNavigator() {
         component={NotificationsScreen}
         options={{ title: 'Notifications' }}
       />
-
-      {/*
-        ✅ FIX: Favorites screen also registered in stack
-        so navigating to RestaurantDetail from
-        FavoritesScreen works correctly
-      */}
       <Stack.Screen
         name="FavoritesStack"
         component={FavoritesScreen}
@@ -564,14 +547,11 @@ function UserNavigator() {
 function OwnerNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
-      {/* ── Tab root ───────────────────────── */}
       <Stack.Screen
         name="OwnerTabs"
         component={OwnerTabs}
         options={{ headerShown: false }}
       />
-
-      {/* ── Detail screens ─────────────────── */}
       <Stack.Screen
         name="RestaurantSetup"
         component={RestaurantSetupScreen}
@@ -617,27 +597,39 @@ function OwnerNavigator() {
 
 // =============================================
 // ADMIN NAVIGATOR
-// ✅ No default header — AdminDashboard has custom header
+// ✅ ImageDownloadScreen added
 // =============================================
 function AdminNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+
+      {/* ── Main admin dashboard ─────────── */}
       <Stack.Screen
         name="AdminDashboard"
         component={AdminDashboardScreen}
         options={{ headerShown: false }}
       />
+
+      {/* ── Manage restaurants ───────────── */}
       <Stack.Screen
         name="ManageRestaurants"
         component={ManageRestaurantsScreen}
         options={{
-          headerShown:      true,
-          title:            'Manage Restaurants',
-          headerStyle:      { backgroundColor: '#2C3E50' },
-          headerTintColor:  '#FFFFFF',
-          headerTitleStyle: { fontWeight: 'bold' },
+          ...adminHeaderStyle,
+          title: 'Manage Restaurants',
         }}
       />
+
+      {/* ✅ NEW — Image download manager */}
+      <Stack.Screen
+        name="ImageDownload"
+        component={ImageDownloadScreen}
+        options={{
+          ...adminHeaderStyle,
+          title: '🖼️ Food Image Manager',
+        }}
+      />
+
     </Stack.Navigator>
   );
 }
