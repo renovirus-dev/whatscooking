@@ -11,7 +11,6 @@ import {
   Switch,
   Alert,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,53 +18,49 @@ import {
   collection, query, where, onSnapshot,
   getCountFromServer, doc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db }                    from '../../firebase/config';
-import { useAuth }               from '../../hooks/useAuth';
+import { db }                     from '../../firebase/config';
+import { useAuth }                from '../../hooks/useAuth';
 import { PLANS, useSubscription } from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 // ✅ Safe color fallbacks
-const WARNING_COLOR = COLORS.warning  || '#F39C12';
-const INFO_COLOR    = COLORS.info     || '#3498DB';
-const DIVIDER_COLOR = COLORS.divider  || COLORS.border || '#E0E0E0';
+const WARNING_COLOR = COLORS.warning || '#F39C12';
+const INFO_COLOR    = COLORS.info    || '#3498DB';
+const DIVIDER_COLOR = COLORS.divider || COLORS.border || '#E0E0E0';
 
 export default function OwnerDashboardScreen({ navigation }) {
   const insets           = useSafeAreaInsets();
   const { user }         = useAuth();
   const { hasAnalytics } = useSubscription();
 
-  // ✅ isMounted ref — prevents setState after unmount
   const isMounted = useRef(true);
 
-  const [restaurant, setRestaurant] = useState(null);
-  const [stats, setStats]           = useState({
+  const [restaurant, setRestaurant]     = useState(null);
+  const [stats, setStats]               = useState({
     menuItems: 0, reviews: 0, favorites: 0,
   });
-  const [isOpen, setIsOpen]         = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [isOpen, setIsOpen]             = useState(false);
+  const [refreshing, setRefreshing]     = useState(false);
   const [statsLoading, setStatsLoading] = useState(false);
 
-  // ── Mounted lifecycle ─────────────────────
+  // ── Mounted lifecycle ──────────────────────
   useEffect(() => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
-  // ── Firestore listener ────────────────────
+  // ── Firestore listener ─────────────────────
   useEffect(() => {
     if (!user) return;
-
-    let unsubscribe = null;
 
     const q = query(
       collection(db, 'restaurants'),
       where('ownerId', '==', user.uid)
     );
 
-    unsubscribe = onSnapshot(
+    const unsubscribe = onSnapshot(
       q,
       async (snapshot) => {
-        // ✅ Guard all setState calls
         if (!isMounted.current) return;
 
         if (!snapshot.empty) {
@@ -76,7 +71,6 @@ export default function OwnerDashboardScreen({ navigation }) {
           setRestaurant(rest);
           setIsOpen(rest.isCurrentlyOpen || false);
 
-          // ✅ Fetch counts separately
           try {
             if (isMounted.current) setStatsLoading(true);
             const [menuSnap, reviewSnap] = await Promise.all([
@@ -111,13 +105,10 @@ export default function OwnerDashboardScreen({ navigation }) {
       }
     );
 
-    return () => {
-      // ✅ Always unsubscribe on unmount
-      if (unsubscribe) unsubscribe();
-    };
+    return () => unsubscribe();
   }, [user]);
 
-  // ── Toggle open/closed ────────────────────
+  // ── Toggle open/closed ─────────────────────
   const handleToggleOpen = async (value) => {
     if (!restaurant) return;
     if (isMounted.current) setIsOpen(value);
@@ -139,34 +130,69 @@ export default function OwnerDashboardScreen({ navigation }) {
     }, 1000);
   };
 
-  // ── Subscription helpers ──────────────────
+  // ── Subscription helpers ───────────────────
   const currentPlanId    = restaurant?.subscription?.plan || 'free_trial';
   const currentPlan      = PLANS[currentPlanId] || PLANS.free_trial;
   const analyticsEnabled = hasAnalytics(restaurant);
 
+  // ✅ Payment method badge helper
+  const getPaymentMethodLabel = () => {
+    const method = restaurant?.subscription?.paymentMethod;
+    if (method === 'paypal')        return '💳 PayPal';
+    if (method === 'bank_transfer') return '🏦 Bank Transfer';
+    return null;
+  };
+
+  // ✅ Subscription status text + color
   const getSubscriptionStatus = () => {
+    // ── Bank transfer awaiting confirmation ──
+    if (
+      restaurant?.subscription?.status === 'awaiting_confirmation' ||
+      restaurant?.subscription?.paymentMethod === 'bank_transfer' &&
+      restaurant?.subscription?.status === 'pending'
+    ) {
+      return {
+        text:  '⏳ Awaiting Payment Confirmation',
+        color: WARNING_COLOR,
+      };
+    }
+
+    // ── Free trial ───────────────────────────
     if (currentPlanId === 'free_trial') {
       const trialEnd = restaurant?.subscription?.trialEndsAt;
       if (trialEnd) {
         const daysLeft = Math.ceil(
           (new Date(trialEnd) - new Date()) / (1000 * 60 * 60 * 24)
         );
-        if (daysLeft <= 0) return '⚠️ Trial expired';
-        if (daysLeft <= 3) return `⚠️ ${daysLeft} days left`;
-        return `${daysLeft} days remaining`;
+        if (daysLeft <= 0) return { text: '⚠️ Trial expired',          color: COLORS.error   };
+        if (daysLeft <= 3) return { text: `⚠️ ${daysLeft} days left`,  color: WARNING_COLOR  };
+        return               { text: `${daysLeft} days remaining`,      color: COLORS.success };
       }
-      return '14 day trial';
+      return { text: '14 day trial', color: COLORS.textMuted };
     }
+
+    // ── Paid plans ───────────────────────────
     const exp = restaurant?.subscription?.expiresAt;
     if (exp) {
-      return `Renews ${new Date(exp).toLocaleDateString('en-US', {
-        month: 'short', day: 'numeric', year: 'numeric',
-      })}`;
+      const daysLeft = Math.ceil(
+        (new Date(exp) - new Date()) / (1000 * 60 * 60 * 24)
+      );
+      if (daysLeft <= 0)  return { text: '⚠️ Subscription expired',     color: COLORS.error  };
+      if (daysLeft <= 7)  return { text: `⚠️ Expires in ${daysLeft}d`,  color: WARNING_COLOR };
+      return {
+        text: `Renews ${new Date(exp).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric',
+        })}`,
+        color: COLORS.success,
+      };
     }
-    return '✅ Active';
+
+    return { text: '✅ Active', color: COLORS.success };
   };
 
-  // ── Stats cards ───────────────────────────
+  const subStatus = getSubscriptionStatus();
+
+  // ── Stats cards ────────────────────────────
   const STATS = [
     {
       label: 'Menu Items',
@@ -194,7 +220,7 @@ export default function OwnerDashboardScreen({ navigation }) {
     },
   ];
 
-  // ── Quick actions ─────────────────────────
+  // ── Quick actions ──────────────────────────
   const QUICK_ACTIONS = [
     {
       label:   'Add Menu Item',
@@ -214,8 +240,7 @@ export default function OwnerDashboardScreen({ navigation }) {
       label:   'Edit Restaurant',
       icon:    'pencil',
       color:   COLORS.success,
-      onPress: () =>
-        navigation.navigate('RestaurantSetup', { restaurant }),
+      onPress: () => navigation.navigate('RestaurantSetup', { restaurant }),
     },
     {
       label:   'View as Customer',
@@ -230,19 +255,17 @@ export default function OwnerDashboardScreen({ navigation }) {
       label:   'Analytics',
       icon:    'bar-chart',
       color:   INFO_COLOR,
-      onPress: () =>
-        navigation.navigate('Analytics', { restaurant }),
+      onPress: () => navigation.navigate('Analytics', { restaurant }),
     }] : []),
     {
       label:   'Subscription',
       icon:    'diamond',
       color:   WARNING_COLOR,
-      onPress: () =>
-        navigation.navigate('Subscription', { restaurant }),
+      onPress: () => navigation.navigate('Subscription', { restaurant }),
     },
   ];
 
-  // ── No restaurant state ───────────────────
+  // ── No restaurant ──────────────────────────
   if (!restaurant) {
     return (
       <View style={[
@@ -253,9 +276,7 @@ export default function OwnerDashboardScreen({ navigation }) {
         },
       ]}>
         <Text style={{ fontSize: 60 }}>🍽️</Text>
-        <Text style={styles.noRestaurantTitle}>
-          No Restaurant Yet
-        </Text>
+        <Text style={styles.noRestaurantTitle}>No Restaurant Yet</Text>
         <Text style={styles.noRestaurantText}>
           Create your restaurant profile to get started
         </Text>
@@ -272,14 +293,14 @@ export default function OwnerDashboardScreen({ navigation }) {
     );
   }
 
-  // ── Main render ───────────────────────────
+  // ──────────────────────────────────────────
+  // MAIN RENDER
+  // ──────────────────────────────────────────
   return (
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{
-        paddingBottom: insets.bottom + SIZES.xl,
-      }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -289,27 +310,18 @@ export default function OwnerDashboardScreen({ navigation }) {
         />
       }
     >
-
-      {/* ── Header ──────────────────────────── */}
-      <View style={styles.header}>
+      {/* ── Header ────────────────────────── */}
+      <View style={[styles.header, { paddingTop: insets.top + SIZES.md }]}>
         <View style={{ flex: 1 }}>
           <Text style={styles.restaurantName} numberOfLines={1}>
             {restaurant.name}
           </Text>
           <View style={styles.planRow}>
-            <Text style={styles.planEmoji}>
-              {currentPlan.emoji}
-            </Text>
-            <Text style={styles.planName}>
-              {currentPlan.name} Plan
-            </Text>
+            <Text style={styles.planEmoji}>{currentPlan.emoji}</Text>
+            <Text style={styles.planName}>{currentPlan.name} Plan</Text>
             {restaurant.isVerified && (
               <View style={styles.verifiedBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={14}
-                  color="#FFFFFF"
-                />
+                <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
                 <Text style={styles.verifiedText}>Verified</Text>
               </View>
             )}
@@ -336,58 +348,109 @@ export default function OwnerDashboardScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ── Subscription card ───────────────── */}
+      {/* ── Bank Transfer Pending Banner ───── */}
+      {restaurant?.subscription?.status === 'awaiting_confirmation' && (
+        <TouchableOpacity
+          style={styles.pendingBanner}
+          onPress={() => navigation.navigate('Subscription', { restaurant })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="time-outline" size={20} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pendingBannerTitle}>
+              Bank Transfer Pending
+            </Text>
+            <Text style={styles.pendingBannerText}>
+              Send your receipt to renogooden@outlook.com
+              to activate your plan. Tap to view details.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
+      {/* ── Subscription Expired Banner ────── */}
+      {subStatus.color === COLORS.error &&
+       currentPlanId !== 'free_trial' && (
+        <TouchableOpacity
+          style={styles.expiredBanner}
+          onPress={() => navigation.navigate('Subscription', { restaurant })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="warning-outline" size={20} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.expiredBannerTitle}>
+              Subscription Expired
+            </Text>
+            <Text style={styles.expiredBannerText}>
+              Renew now to keep your premium features. Tap to upgrade.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
+      {/* ── Subscription Card ─────────────── */}
       <View style={styles.subscriptionCard}>
         <View style={styles.subscriptionLeft}>
           <View style={[
             styles.subscriptionIconBg,
             { backgroundColor: currentPlan.color + '20' },
           ]}>
-            <Text style={{ fontSize: 26 }}>
-              {currentPlan.emoji}
-            </Text>
+            <Text style={{ fontSize: 26 }}>{currentPlan.emoji}</Text>
           </View>
+
           <View style={{ flex: 1 }}>
             <Text style={styles.subscriptionPlanName}>
               {currentPlan.name} Plan
             </Text>
+
+            {/* Status */}
             <Text style={[
               styles.subscriptionStatus,
-              getSubscriptionStatus().includes('⚠️') && {
-                color: WARNING_COLOR,
-              },
+              { color: subStatus.color },
             ]}>
-              {getSubscriptionStatus()}
+              {subStatus.text}
             </Text>
+
+            {/* Price + Payment method */}
             {currentPlanId !== 'free_trial' && (
-              <Text style={styles.subscriptionPrice}>
-                ${currentPlan.price}/month
-              </Text>
+              <View style={styles.subscriptionMeta}>
+                <Text style={styles.subscriptionPrice}>
+                  ${currentPlan.price}/mo
+                  {'  '}
+                  <Text style={styles.subscriptionPriceJMD}>
+                    (≈ J${currentPlan.priceJMD?.toLocaleString()})
+                  </Text>
+                </Text>
+                {getPaymentMethodLabel() && (
+                  <View style={styles.paymentMethodBadge}>
+                    <Text style={styles.paymentMethodBadgeText}>
+                      {getPaymentMethodLabel()}
+                    </Text>
+                  </View>
+                )}
+              </View>
             )}
           </View>
         </View>
+
         <TouchableOpacity
           style={[
             styles.upgradeBtn,
             currentPlanId === 'premium' && styles.upgradeBtnManage,
           ]}
-          onPress={() =>
-            navigation.navigate('Subscription', { restaurant })
-          }
+          onPress={() => navigation.navigate('Subscription', { restaurant })}
           activeOpacity={0.8}
         >
           <Text style={styles.upgradeBtnText}>
             {currentPlanId === 'premium' ? 'Manage' : 'Upgrade'}
           </Text>
-          <Ionicons
-            name="chevron-forward"
-            size={14}
-            color="#FFFFFF"
-          />
+          <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
-      {/* ── Feature preview (free trial only) ── */}
+      {/* ── Feature Preview (Free Trial) ───── */}
       {currentPlanId === 'free_trial' && (
         <View style={styles.featuresPreview}>
           <Text style={styles.featuresPreviewTitle}>
@@ -401,22 +464,28 @@ export default function OwnerDashboardScreen({ navigation }) {
               { icon: 'infinite',      label: 'Unlimited Menu' },
             ].map((f, i) => (
               <View key={i} style={styles.featureItem}>
-                <Ionicons
-                  name={f.icon}
-                  size={18}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.featureItemLabel}>
-                  {f.label}
-                </Text>
+                <Ionicons name={f.icon} size={18} color={COLORS.primary} />
+                <Text style={styles.featureItemLabel}>{f.label}</Text>
               </View>
             ))}
           </View>
+
+          {/* Payment methods available */}
+          <View style={styles.paymentOptionsRow}>
+            <Text style={styles.paymentOptionsLabel}>Pay with:</Text>
+            <View style={styles.paymentOptionTag}>
+              <Ionicons name="logo-paypal" size={13} color="#003087" />
+              <Text style={styles.paymentOptionTagText}>PayPal</Text>
+            </View>
+            <View style={styles.paymentOptionTag}>
+              <Ionicons name="business-outline" size={13} color={COLORS.primary} />
+              <Text style={styles.paymentOptionTagText}>Scotiabank Transfer</Text>
+            </View>
+          </View>
+
           <TouchableOpacity
             style={styles.seeAllPlansBtn}
-            onPress={() =>
-              navigation.navigate('Subscription', { restaurant })
-            }
+            onPress={() => navigation.navigate('Subscription', { restaurant })}
             activeOpacity={0.7}
           >
             <Text style={styles.seeAllPlansBtnText}>
@@ -426,40 +495,26 @@ export default function OwnerDashboardScreen({ navigation }) {
         </View>
       )}
 
-      {/* ── Analytics — Premium unlocked ──────── */}
+      {/* ── Analytics Card (Premium) ────────── */}
       {analyticsEnabled && (
         <TouchableOpacity
           style={styles.analyticsCard}
-          onPress={() =>
-            navigation.navigate('Analytics', { restaurant })
-          }
+          onPress={() => navigation.navigate('Analytics', { restaurant })}
           activeOpacity={0.85}
         >
           <View style={styles.analyticsCardHeader}>
             <View style={styles.analyticsCardTitle}>
-              <Ionicons
-                name="bar-chart"
-                size={20}
-                color={COLORS.secondary}
-              />
+              <Ionicons name="bar-chart" size={20} color={COLORS.secondary} />
               <Text style={styles.analyticsCardTitleText}>
                 Analytics Overview
               </Text>
               <View style={styles.premiumBadge}>
-                <Text style={styles.premiumBadgeText}>
-                  👑 Premium
-                </Text>
+                <Text style={styles.premiumBadgeText}>👑 Premium</Text>
               </View>
             </View>
             <View style={styles.analyticsViewAll}>
-              <Text style={styles.analyticsViewAllText}>
-                View All
-              </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={COLORS.primary}
-              />
+              <Text style={styles.analyticsViewAllText}>View All</Text>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
             </View>
           </View>
 
@@ -500,31 +555,21 @@ export default function OwnerDashboardScreen({ navigation }) {
               <React.Fragment key={i}>
                 {i > 0 && <View style={styles.analyticsMinDivider} />}
                 <View style={styles.analyticsMiniStat}>
-                  <Ionicons
-                    name={stat.icon}
-                    size={18}
-                    color={stat.color}
-                  />
+                  <Ionicons name={stat.icon} size={18} color={stat.color} />
                   <Text style={[
                     styles.analyticsMiniValue,
                     { color: i === 3 ? COLORS.primary : COLORS.text },
                   ]}>
                     {stat.value}
                   </Text>
-                  <Text style={styles.analyticsMiniLabel}>
-                    {stat.label}
-                  </Text>
+                  <Text style={styles.analyticsMiniLabel}>{stat.label}</Text>
                 </View>
               </React.Fragment>
             ))}
           </View>
 
           <View style={styles.viewerBreakdown}>
-            <Ionicons
-              name="people-outline"
-              size={14}
-              color={COLORS.textMuted}
-            />
+            <Ionicons name="people-outline" size={14} color={COLORS.textMuted} />
             <Text style={styles.viewerBreakdownText}>
               {restaurant?.analytics?.weeklyViews || 0} views this week
               · Tap to see guest vs user breakdown →
@@ -533,26 +578,22 @@ export default function OwnerDashboardScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ── Analytics — Locked (basic + free trial) ── */}
+      {/* ── Analytics Locked (Basic + Free) ─── */}
       {(currentPlanId === 'basic' || currentPlanId === 'free_trial') && (
         <TouchableOpacity
           style={styles.analyticsLockedCard}
-          onPress={() =>
-            navigation.navigate('Subscription', { restaurant })
-          }
+          onPress={() => navigation.navigate('Subscription', { restaurant })}
           activeOpacity={0.85}
         >
           <View style={styles.analyticsLockedMock}>
-            {['Views', 'Calls', 'WhatsApp', 'Conversion'].map(
-              (l, i) => (
-                <View key={i} style={styles.analyticsMockStat}>
-                  <Text style={styles.analyticsMockValue}>
-                    {i === 3 ? '??%' : '???'}
-                  </Text>
-                  <Text style={styles.analyticsMockLabel}>{l}</Text>
-                </View>
-              )
-            )}
+            {['Views', 'Calls', 'WhatsApp', 'Conversion'].map((l, i) => (
+              <View key={i} style={styles.analyticsMockStat}>
+                <Text style={styles.analyticsMockValue}>
+                  {i === 3 ? '??%' : '???'}
+                </Text>
+                <Text style={styles.analyticsMockLabel}>{l}</Text>
+              </View>
+            ))}
           </View>
           <View style={styles.analyticsLockOverlay}>
             <Ionicons name="lock-closed" size={32} color="#FFFFFF" />
@@ -562,7 +603,7 @@ export default function OwnerDashboardScreen({ navigation }) {
             <Text style={styles.analyticsLockDesc}>
               {currentPlanId === 'basic'
                 ? "See who's viewing your restaurant, calling, and ordering. Upgrade to Premium to unlock."
-                : 'Track views, calls and orders from guests and users. Available on the Premium plan.'}
+                : 'Track views, calls and orders. Available on the Premium plan.'}
             </Text>
             <View style={styles.analyticsUpgradeChip}>
               <Text style={styles.analyticsUpgradeChipText}>
@@ -573,7 +614,7 @@ export default function OwnerDashboardScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ── Stats grid ──────────────────────── */}
+      {/* ── Stats Grid ────────────────────── */}
       <Text style={styles.sectionTitle}>Overview</Text>
       <View style={styles.statsGrid}>
         {STATS.map((stat, i) => (
@@ -582,11 +623,7 @@ export default function OwnerDashboardScreen({ navigation }) {
               styles.statIcon,
               { backgroundColor: stat.color + '20' },
             ]}>
-              <Ionicons
-                name={stat.icon}
-                size={24}
-                color={stat.color}
-              />
+              <Ionicons name={stat.icon} size={24} color={stat.color} />
             </View>
             <Text style={styles.statValue}>{stat.value}</Text>
             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -594,7 +631,7 @@ export default function OwnerDashboardScreen({ navigation }) {
         ))}
       </View>
 
-      {/* ── Quick actions ────────────────────── */}
+      {/* ── Quick Actions ─────────────────── */}
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       <View style={styles.actionsGrid}>
         {QUICK_ACTIONS.map((action, i) => (
@@ -608,18 +645,14 @@ export default function OwnerDashboardScreen({ navigation }) {
               styles.actionIcon,
               { backgroundColor: action.color + '20' },
             ]}>
-              <Ionicons
-                name={action.icon}
-                size={28}
-                color={action.color}
-              />
+              <Ionicons name={action.icon} size={28} color={action.color} />
             </View>
             <Text style={styles.actionLabel}>{action.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* ── Locked premium features ──────────── */}
+      {/* ── Locked Premium Features ──────── */}
       {currentPlanId !== 'premium' && (
         <View style={styles.lockedSection}>
           <Text style={styles.sectionTitle}>🔒 Premium Features</Text>
@@ -643,516 +676,609 @@ export default function OwnerDashboardScreen({ navigation }) {
             <TouchableOpacity
               key={i}
               style={styles.lockedFeature}
-              onPress={() =>
-                navigation.navigate('Subscription', { restaurant })
-              }
+              onPress={() => navigation.navigate('Subscription', { restaurant })}
               activeOpacity={0.8}
             >
               <View style={styles.lockedIconBg}>
-                <Ionicons
-                  name={feat.icon}
-                  size={22}
-                  color={COLORS.primary}
-                />
+                <Ionicons name={feat.icon} size={22} color={COLORS.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.lockedTitle}>{feat.title}</Text>
                 <Text style={styles.lockedDesc}>{feat.desc}</Text>
               </View>
               <View style={styles.lockBadge}>
-                <Ionicons
-                  name="lock-closed"
-                  size={14}
-                  color={COLORS.textMuted}
-                />
+                <Ionicons name="lock-closed" size={14} color={COLORS.textMuted} />
               </View>
             </TouchableOpacity>
           ))}
 
+          {/* Upgrade CTA with payment options */}
           <TouchableOpacity
             style={styles.upgradeCTA}
-            onPress={() =>
-              navigation.navigate('Subscription', { restaurant })
-            }
+            onPress={() => navigation.navigate('Subscription', { restaurant })}
             activeOpacity={0.85}
           >
             <Ionicons name="rocket" size={20} color="#FFFFFF" />
-            <Text style={styles.upgradeCTAText}>
-              Upgrade to Premium — $24.99/mo
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.upgradeCTAText}>
+                Upgrade to Premium — $24.99/mo
+              </Text>
+              <Text style={styles.upgradeCTASubtext}>
+                Pay with PayPal or Scotiabank Transfer
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       )}
-
     </ScrollView>
   );
 }
 
+// ──────────────────────────────────────────────
+// STYLES
+// ──────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
 
-  // ── No restaurant ────────────────────────
+  // ── No Restaurant ────────────────────────
   noRestaurant: {
-    flex: 1,
-    alignItems: 'center',
+    flex:           1,
+    alignItems:     'center',
     justifyContent: 'center',
-    padding: SIZES.xl,
+    padding:        SIZES.xl,
     backgroundColor: COLORS.background,
   },
   noRestaurantTitle: {
-    fontSize: FONTS.xxl,
+    fontSize:   FONTS.xxl,
     fontWeight: 'bold',
-    color: COLORS.text,
-    marginTop: SIZES.lg,
+    color:      COLORS.text,
+    marginTop:  SIZES.lg,
   },
   noRestaurantText: {
-    fontSize: FONTS.lg,
-    color: COLORS.textLight,
-    textAlign: 'center',
-    marginTop: SIZES.sm,
+    fontSize:     FONTS.lg,
+    color:        COLORS.textLight,
+    textAlign:    'center',
+    marginTop:    SIZES.sm,
     marginBottom: SIZES.xl,
   },
   createBtn: {
-    backgroundColor: COLORS.primary,
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.xl,
-    paddingVertical: SIZES.md,
-    borderRadius: RADIUS.lg,
+    paddingVertical:   SIZES.md,
+    borderRadius:      RADIUS.lg,
   },
   createBtnText: {
-    color: COLORS.textWhite,
-    fontSize: FONTS.lg,
+    color:      COLORS.textWhite,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
   },
 
   // ── Header ──────────────────────────────
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection:   'row',
+    justifyContent:  'space-between',
+    alignItems:      'center',
     backgroundColor: COLORS.primary,
-    padding: SIZES.lg,
-    paddingTop: SIZES.xl,
+    padding:         SIZES.lg,
   },
   restaurantName: {
-    fontSize: FONTS.xxl,
+    fontSize:   FONTS.xxl,
     fontWeight: 'bold',
-    color: COLORS.textWhite,
+    color:      COLORS.textWhite,
   },
   planRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
+    alignItems:    'center',
+    gap:           6,
+    marginTop:     4,
   },
   planEmoji: { fontSize: 14 },
   planName: {
-    fontSize: FONTS.sm,
-    color: 'rgba(255,255,255,0.9)',
+    fontSize:   FONTS.sm,
+    color:      'rgba(255,255,255,0.9)',
     fontWeight: '600',
   },
   verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   'rgba(255,255,255,0.2)',
     paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: RADIUS.round,
-    gap: 3,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+    gap:               3,
   },
   verifiedText: {
-    fontSize: FONTS.xs,
-    color: '#FFFFFF',
+    fontSize:   FONTS.xs,
+    color:      '#FFFFFF',
     fontWeight: '600',
   },
   openToggle: { alignItems: 'center', gap: 4 },
   openLabel:  { fontSize: FONTS.sm, fontWeight: 'bold' },
 
-  // ── Subscription card ────────────────────
+  // ── Pending Banner ───────────────────────
+  pendingBanner: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    backgroundColor: WARNING_COLOR,
+    margin:          SIZES.md,
+    marginBottom:    0,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+  },
+  pendingBannerTitle: {
+    fontSize:   FONTS.md,
+    fontWeight: 'bold',
+    color:      '#FFFFFF',
+  },
+  pendingBannerText: {
+    fontSize:   FONTS.xs,
+    color:      'rgba(255,255,255,0.9)',
+    lineHeight: 16,
+    marginTop:  2,
+  },
+
+  // ── Expired Banner ───────────────────────
+  expiredBanner: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    backgroundColor: COLORS.error,
+    margin:          SIZES.md,
+    marginBottom:    0,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+  },
+  expiredBannerTitle: {
+    fontSize:   FONTS.md,
+    fontWeight: 'bold',
+    color:      '#FFFFFF',
+  },
+  expiredBannerText: {
+    fontSize:   FONTS.xs,
+    color:      'rgba(255,255,255,0.9)',
+    lineHeight: 16,
+    marginTop:  2,
+  },
+
+  // ── Subscription Card ────────────────────
   subscriptionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
     backgroundColor: COLORS.surface,
-    margin: SIZES.md,
-    padding: SIZES.md,
-    borderRadius: RADIUS.xl,
-    gap: SIZES.md,
+    margin:          SIZES.md,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.xl,
+    gap:             SIZES.md,
     ...SHADOW,
   },
   subscriptionLeft: {
-    flex: 1,
+    flex:          1,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.md,
+    alignItems:    'center',
+    gap:           SIZES.md,
   },
   subscriptionIconBg: {
-    width: 52,
-    height: 52,
-    borderRadius: RADIUS.lg,
+    width:          52,
+    height:         52,
+    borderRadius:   RADIUS.lg,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems:     'center',
   },
   subscriptionPlanName: {
-    fontSize: FONTS.lg,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   subscriptionStatus: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+    fontSize:  FONTS.sm,
     marginTop: 2,
+  },
+  subscriptionMeta: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.sm,
+    marginTop:     4,
+    flexWrap:      'wrap',
   },
   subscriptionPrice: {
-    fontSize: FONTS.sm,
-    color: COLORS.primary,
+    fontSize:   FONTS.sm,
+    color:      COLORS.primary,
     fontWeight: '600',
-    marginTop: 2,
+  },
+  subscriptionPriceJMD: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    fontWeight: 'normal',
+    fontStyle:  'italic',
+  },
+  paymentMethodBadge: {
+    backgroundColor:   COLORS.primary + '15',
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+    borderWidth:       1,
+    borderColor:       COLORS.primary + '30',
+  },
+  paymentMethodBadgeText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
+    fontWeight: '600',
   },
   upgradeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.lg,
-    gap: 4,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.lg,
+    gap:               4,
   },
   upgradeBtnManage: { backgroundColor: COLORS.secondary },
   upgradeBtnText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.sm,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.sm,
     fontWeight: 'bold',
   },
 
-  // ── Feature preview ──────────────────────
+  // ── Feature Preview ──────────────────────
   featuresPreview: {
-    backgroundColor: COLORS.primary + '08',
+    backgroundColor:  COLORS.primary + '08',
     marginHorizontal: SIZES.md,
-    marginBottom: SIZES.md,
-    padding: SIZES.md,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '20',
+    marginBottom:     SIZES.md,
+    padding:          SIZES.md,
+    borderRadius:     RADIUS.xl,
+    borderWidth:      1,
+    borderColor:      COLORS.primary + '20',
   },
   featuresPreviewTitle: {
-    fontSize: FONTS.md,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontSize:     FONTS.md,
+    fontWeight:   'bold',
+    color:        COLORS.text,
     marginBottom: SIZES.sm,
   },
   featuresGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.sm,
-    marginBottom: SIZES.md,
+    flexWrap:      'wrap',
+    gap:           SIZES.sm,
+    marginBottom:  SIZES.sm,
   },
   featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
     paddingHorizontal: SIZES.sm,
-    paddingVertical: SIZES.xs,
-    borderRadius: RADIUS.round,
-    gap: 6,
+    paddingVertical:   SIZES.xs,
+    borderRadius:      RADIUS.round,
+    gap:               6,
     ...SHADOW,
   },
   featureItemLabel: {
-    fontSize: FONTS.sm,
-    color: COLORS.text,
+    fontSize:   FONTS.sm,
+    color:      COLORS.text,
     fontWeight: '500',
+  },
+  paymentOptionsRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.sm,
+    marginBottom:  SIZES.sm,
+    flexWrap:      'wrap',
+  },
+  paymentOptionsLabel: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    fontWeight: '600',
+  },
+  paymentOptionTag: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
+    gap:               4,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
+  },
+  paymentOptionTagText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.text,
+    fontWeight: '600',
   },
   seeAllPlansBtn:     { alignSelf: 'flex-end' },
   seeAllPlansBtnText: {
-    color: COLORS.primary,
+    color:      COLORS.primary,
     fontWeight: 'bold',
-    fontSize: FONTS.sm,
+    fontSize:   FONTS.sm,
   },
 
-  // ── Analytics card (Premium) ─────────────
+  // ── Analytics Card (Premium) ─────────────
   analyticsCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor:  COLORS.surface,
     marginHorizontal: SIZES.md,
-    marginBottom: SIZES.md,
-    borderRadius: RADIUS.xl,
-    padding: SIZES.md,
-    gap: SIZES.sm,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    marginBottom:     SIZES.md,
+    borderRadius:     RADIUS.xl,
+    padding:          SIZES.md,
+    gap:              SIZES.sm,
+    borderWidth:      1,
+    borderColor:      COLORS.border,
     ...SHADOW,
   },
   analyticsCardHeader: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems:     'center',
   },
   analyticsCardTitle: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
+    alignItems:    'center',
+    gap:           SIZES.sm,
   },
   analyticsCardTitleText: {
-    fontSize: FONTS.lg,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   premiumBadge: {
-    backgroundColor: COLORS.primary + '20',
+    backgroundColor:   COLORS.primary + '20',
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 2,
-    borderRadius: RADIUS.round,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '40',
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+    borderWidth:       1,
+    borderColor:       COLORS.primary + '40',
   },
   premiumBadgeText: {
-    fontSize: FONTS.xs,
-    color: COLORS.primary,
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
     fontWeight: '700',
   },
   analyticsViewAll: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
+    alignItems:    'center',
+    gap:           2,
   },
   analyticsViewAllText: {
-    fontSize: FONTS.sm,
-    color: COLORS.primary,
+    fontSize:   FONTS.sm,
+    color:      COLORS.primary,
     fontWeight: '600',
   },
   analyticsMiniGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection:   'row',
+    justifyContent:  'space-between',
+    alignItems:      'center',
     backgroundColor: COLORS.background,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.md,
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
   },
   analyticsMiniStat: {
-    flex: 1,
+    flex:       1,
     alignItems: 'center',
-    gap: 4,
+    gap:        4,
   },
   analyticsMiniValue: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   analyticsMiniLabel: {
     fontSize: FONTS.xs,
-    color: COLORS.textMuted,
+    color:    COLORS.textMuted,
   },
   analyticsMinDivider: {
-    width: 1,
-    height: 40,
+    width:           1,
+    height:          40,
     backgroundColor: COLORS.border,
   },
   viewerBreakdown: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.xs,
-    paddingTop: SIZES.xs,
+    flexDirection:  'row',
+    alignItems:     'center',
+    gap:            SIZES.xs,
+    paddingTop:     SIZES.xs,
     borderTopWidth: 1,
-    // ✅ Safe divider color fallback
     borderTopColor: DIVIDER_COLOR,
   },
   viewerBreakdownText: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-    fontStyle: 'italic',
-    flex: 1,
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    fontStyle:  'italic',
+    flex:       1,
   },
 
-  // ── Analytics locked card ────────────────
+  // ── Analytics Locked ─────────────────────
   analyticsLockedCard: {
     marginHorizontal: SIZES.md,
-    marginBottom: SIZES.md,
-    borderRadius: RADIUS.xl,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    marginBottom:     SIZES.md,
+    borderRadius:     RADIUS.xl,
+    overflow:         'hidden',
+    borderWidth:      1,
+    borderColor:      COLORS.border,
     ...SHADOW,
   },
   analyticsLockedMock: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection:   'row',
+    justifyContent:  'space-around',
     backgroundColor: COLORS.surface,
-    padding: SIZES.lg,
+    padding:         SIZES.lg,
   },
-  analyticsMockStat: {
-    alignItems: 'center',
-    gap: 4,
-  },
+  analyticsMockStat: { alignItems: 'center', gap: 4 },
   analyticsMockValue: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
-    color: COLORS.border,
+    color:      COLORS.border,
   },
   analyticsMockLabel: {
     fontSize: FONTS.xs,
-    color: COLORS.border,
+    color:    COLORS.border,
   },
   analyticsLockOverlay: {
     backgroundColor: 'rgba(44,62,80,0.92)',
-    padding: SIZES.lg,
-    alignItems: 'center',
-    gap: SIZES.sm,
+    padding:         SIZES.lg,
+    alignItems:      'center',
+    gap:             SIZES.sm,
   },
   analyticsLockTitle: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
+    color:      '#FFFFFF',
+    textAlign:  'center',
   },
   analyticsLockDesc: {
-    fontSize: FONTS.sm,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
+    fontSize:   FONTS.sm,
+    color:      'rgba(255,255,255,0.8)',
+    textAlign:  'center',
     lineHeight: 20,
   },
   analyticsUpgradeChip: {
-    backgroundColor: COLORS.primary,
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.lg,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.round,
-    marginTop: SIZES.xs,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.round,
+    marginTop:         SIZES.xs,
   },
   analyticsUpgradeChipText: {
-    color: '#FFFFFF',
+    color:      '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: FONTS.sm,
+    fontSize:   FONTS.sm,
   },
 
-  // ── Stats grid ───────────────────────────
+  // ── Stats Grid ───────────────────────────
   sectionTitle: {
-    fontSize: FONTS.xl,
-    fontWeight: 'bold',
-    color: COLORS.text,
+    fontSize:          FONTS.xl,
+    fontWeight:        'bold',
+    color:             COLORS.text,
     paddingHorizontal: SIZES.md,
-    paddingTop: SIZES.sm,
-    marginBottom: SIZES.sm,
+    paddingTop:        SIZES.sm,
+    marginBottom:      SIZES.sm,
   },
   statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection:     'row',
+    flexWrap:          'wrap',
     paddingHorizontal: SIZES.md,
-    gap: SIZES.md,
-    marginBottom: SIZES.md,
+    gap:               SIZES.md,
+    marginBottom:      SIZES.md,
   },
   statCard: {
-    flex: 1,
-    minWidth: '45%',
+    flex:           1,
+    minWidth:       '45%',
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.md,
-    alignItems: 'center',
+    borderRadius:   RADIUS.lg,
+    padding:        SIZES.md,
+    alignItems:     'center',
     ...SHADOW,
   },
   statIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width:          48,
+    height:         48,
+    borderRadius:   24,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SIZES.sm,
+    alignItems:     'center',
+    marginBottom:   SIZES.sm,
   },
   statValue: {
-    fontSize: FONTS.xxl,
+    fontSize:   FONTS.xxl,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   statLabel: {
     fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+    color:    COLORS.textMuted,
   },
 
-  // ── Quick actions ────────────────────────
+  // ── Quick Actions ────────────────────────
   actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection:     'row',
+    flexWrap:          'wrap',
     paddingHorizontal: SIZES.md,
-    gap: SIZES.md,
-    marginBottom: SIZES.md,
+    gap:               SIZES.md,
+    marginBottom:      SIZES.md,
   },
   actionCard: {
-    flex: 1,
-    minWidth: '45%',
+    flex:            1,
+    minWidth:        '45%',
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.lg,
-    alignItems: 'center',
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.lg,
+    alignItems:      'center',
     ...SHADOW,
   },
   actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: RADIUS.lg,
+    width:          56,
+    height:         56,
+    borderRadius:   RADIUS.lg,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: SIZES.sm,
+    alignItems:     'center',
+    marginBottom:   SIZES.sm,
   },
   actionLabel: {
-    fontSize: FONTS.md,
+    fontSize:   FONTS.md,
     fontWeight: '600',
-    color: COLORS.text,
-    textAlign: 'center',
+    color:      COLORS.text,
+    textAlign:  'center',
   },
 
-  // ── Locked features ──────────────────────
-  lockedSection: {
-    marginHorizontal: SIZES.md,
-  },
+  // ── Locked Features ──────────────────────
+  lockedSection:   { marginHorizontal: SIZES.md },
   lockedFeature: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
     backgroundColor: COLORS.surface,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    marginBottom: SIZES.sm,
-    gap: SIZES.md,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    marginBottom:    SIZES.sm,
+    gap:             SIZES.md,
     ...SHADOW,
   },
   lockedIconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
+    width:           44,
+    height:          44,
+    borderRadius:    RADIUS.md,
     backgroundColor: COLORS.primary + '15',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent:  'center',
+    alignItems:      'center',
   },
   lockedTitle: {
-    fontSize: FONTS.md,
+    fontSize:   FONTS.md,
     fontWeight: '600',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   lockedDesc: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+    fontSize:  FONTS.sm,
+    color:     COLORS.textMuted,
     marginTop: 2,
   },
   lockBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width:           28,
+    height:          28,
+    borderRadius:    14,
     backgroundColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent:  'center',
+    alignItems:      'center',
   },
   upgradeCTA: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
-    marginTop: SIZES.sm,
-    marginBottom: SIZES.md,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    marginTop:       SIZES.sm,
+    marginBottom:    SIZES.md,
     ...SHADOW,
   },
   upgradeCTAText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.md,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.md,
     fontWeight: 'bold',
+  },
+  upgradeCTASubtext: {
+    color:     'rgba(255,255,255,0.8)',
+    fontSize:  FONTS.xs,
+    marginTop: 2,
   },
 });
