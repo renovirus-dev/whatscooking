@@ -15,21 +15,21 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth }           from '../../hooks/useAuth';
+import { useNotifications }  from '../../context/NotificationContext';
+import { useSubscription, PLANS } from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-// ✅ REMOVED unused import:
-// import { useNotifications } from '../../context/NotificationContext';
+
+// ✅ Safe color fallback
+const WARNING_COLOR = COLORS.warning || '#F39C12';
 
 export default function ProfileScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
+  const insets                        = useSafeAreaInsets();
   const { user, userProfile, logout } = useAuth();
+  const { unreadCount }               = useNotifications();
+  const { getCurrentPlan, isPlanExpired } = useSubscription();
   const [signingOut, setSigningOut]   = useState(false);
 
-  // ✅ Get unread count from context for badge
-  // Re-add this now that context is global and safe
-  const { unreadCount } = require('../../context/NotificationContext').useNotifications
-    ? require('../../context/NotificationContext').useNotifications()
-    : { unreadCount: 0 };
-
+  // ── Sign Out ───────────────────────────────
   const handleSignOut = async () => {
     Alert.alert(
       'Sign Out',
@@ -57,6 +57,11 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
+  // ── Subscription helpers (owners only) ────
+  const isOwner      = userProfile?.role === 'restaurant_owner';
+  const isAdmin      = userProfile?.role === 'admin';
+
+  // Loading state
   if (!userProfile) {
     return (
       <View style={[
@@ -71,19 +76,21 @@ export default function ProfileScreen({ navigation }) {
     );
   }
 
+  // ──────────────────────────────────────────
+  // RENDER
+  // ──────────────────────────────────────────
   return (
     <ScrollView
       style={styles.container}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{
-        paddingBottom: insets.bottom + SIZES.xl,
-      }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
     >
-      {/* ── Header ──────────────────────────── */}
+      {/* ── Header ────────────────────────── */}
       <View style={[
         styles.header,
         { paddingTop: insets.top + SIZES.xl },
       ]}>
+        {/* Avatar */}
         <TouchableOpacity
           style={styles.avatarContainer}
           onPress={() => navigation.navigate('EditProfile')}
@@ -106,26 +113,29 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </TouchableOpacity>
 
+        {/* Name */}
         <Text style={styles.displayName}>
           {userProfile?.firstName} {userProfile?.lastName}
         </Text>
 
+        {/* Bio */}
         {userProfile?.bio ? (
           <Text style={styles.bio}>{userProfile.bio}</Text>
         ) : null}
 
+        {/* Email */}
         <Text style={styles.email}>{user?.email}</Text>
 
+        {/* Role Badge */}
         <View style={styles.roleBadge}>
           <Text style={styles.roleText}>
-            {userProfile?.role === 'restaurant_owner'
-              ? '🍴 Restaurant Owner'
-              : userProfile?.role === 'admin'
-              ? '⚡ Admin'
+            {isOwner ? '🍴 Restaurant Owner'
+              : isAdmin ? '⚡ Admin'
               : '👤 Food Lover'}
           </Text>
         </View>
 
+        {/* Dietary Preferences */}
         {userProfile?.dietaryPreferences?.length > 0 && (
           <View style={styles.dietaryRow}>
             {userProfile.dietaryPreferences.slice(0, 3).map((pref, i) => (
@@ -144,7 +154,7 @@ export default function ProfileScreen({ navigation }) {
         )}
       </View>
 
-      {/* ── Stats row ───────────────────────── */}
+      {/* ── Stats Row ─────────────────────── */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>
@@ -168,7 +178,12 @@ export default function ProfileScreen({ navigation }) {
         </View>
       </View>
 
-      {/* ── Account section ─────────────────── */}
+      {/* ── Subscription Card (Owners Only) ── */}
+      {isOwner && (
+        <OwnerSubscriptionCard navigation={navigation} />
+      )}
+
+      {/* ── Account Section ───────────────── */}
       <Text style={styles.sectionLabel}>ACCOUNT</Text>
       <View style={styles.section}>
         <ProfileButton
@@ -188,26 +203,44 @@ export default function ProfileScreen({ navigation }) {
           badge={userProfile?.favoriteRestaurants?.length || null}
           onPress={() => navigation.navigate('Favorites')}
         />
-        {/* ✅ Now safely shows unread badge from global context */}
         <ProfileButton
           icon="notifications-outline"
           label="Notifications"
           badge={unreadCount > 0 ? unreadCount : null}
-          last
+          last={!isOwner}
           onPress={() => navigation.navigate('Notifications')}
         />
+        {/* Owner only — go to their dashboard */}
+        {isOwner && (
+          <ProfileButton
+            icon="diamond-outline"
+            label="Manage Subscription"
+            last
+            onPress={() => navigation.navigate('OwnerDashboard')}
+          />
+        )}
       </View>
 
-      {/* ── Support section ─────────────────── */}
+      {/* ── Support Section ───────────────── */}
       <Text style={styles.sectionLabel}>SUPPORT</Text>
       <View style={styles.section}>
         <ProfileButton
-          icon="help-circle-outline"
-          label="Help & Support"
+          icon="mail-outline"
+          label="Contact Us"
           onPress={() =>
             Alert.alert(
-              'Help',
-              'Contact us at support@whatscooking.app'
+              'Contact Us',
+              'Email us at:\nsupport@whatscooking.app\n\nFor payment issues:\nrenogooden@outlook.com'
+            )
+          }
+        />
+        <ProfileButton
+          icon="help-circle-outline"
+          label="Help & FAQ"
+          onPress={() =>
+            Alert.alert(
+              'Help & Support',
+              'For subscription or payment help,\ncontact: renogooden@outlook.com'
             )
           }
         />
@@ -218,13 +251,13 @@ export default function ProfileScreen({ navigation }) {
           onPress={() =>
             Alert.alert(
               'About',
-              "What's Cooking v1.0.0\nMade with ❤️"
+              "What's Cooking v1.0.0\nMade with ❤️ in Jamaica"
             )
           }
         />
       </View>
 
-      {/* ── Sign out ─────────────────────────── */}
+      {/* ── Sign Out ──────────────────────── */}
       <TouchableOpacity
         style={[
           styles.signOutButton,
@@ -245,12 +278,167 @@ export default function ProfileScreen({ navigation }) {
       </TouchableOpacity>
 
       <Text style={styles.version}>What's Cooking v1.0.0</Text>
-
     </ScrollView>
   );
 }
 
-// ─── Profile Button ───────────────────────────
+// ──────────────────────────────────────────────
+// Owner Subscription Card
+// Shows current plan + quick upgrade button
+// Only visible to restaurant owners
+// ──────────────────────────────────────────────
+function OwnerSubscriptionCard({ navigation }) {
+  const { user }       = useAuth();
+  const [restaurant, setRestaurant] = useState(null);
+  const [loaded, setLoaded]         = useState(false);
+
+  // Lazy load restaurant data
+  React.useEffect(() => {
+    const loadRestaurant = async () => {
+      try {
+        const { db }        = require('../../firebase/config');
+        const { collection, query, where, getDocs } =
+          require('firebase/firestore');
+
+        const q    = query(
+          collection(db, 'restaurants'),
+          where('ownerId', '==', user?.uid)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setRestaurant({ id: snap.docs[0].id, ...snap.docs[0].data() });
+        }
+      } catch (err) {
+        console.error('ProfileScreen restaurant load:', err);
+      } finally {
+        setLoaded(true);
+      }
+    };
+
+    if (user?.uid) loadRestaurant();
+  }, [user?.uid]);
+
+  if (!loaded) return null;
+  if (!restaurant) return null;
+
+  const planId  = restaurant?.subscription?.plan || 'free_trial';
+  const plan    = PLANS[planId] || PLANS.free_trial;
+
+  // Expiry info
+  const expiresAt = restaurant?.subscription?.expiresAt;
+  const daysLeft  = expiresAt
+    ? Math.ceil((new Date(expiresAt) - new Date()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const isExpired  = daysLeft !== null && daysLeft <= 0;
+  const isExpiring = daysLeft !== null && daysLeft > 0 && daysLeft <= 7;
+
+  // Status text
+  const getStatusText = () => {
+    const status = restaurant?.subscription?.status;
+    if (status === 'awaiting_confirmation') return '⏳ Payment Pending';
+    if (isExpired)  return '⚠️ Expired';
+    if (isExpiring) return `⚠️ Expires in ${daysLeft} days`;
+    if (planId === 'free_trial') return 'Free Trial';
+    return '✅ Active';
+  };
+
+  const getStatusColor = () => {
+    const status = restaurant?.subscription?.status;
+    if (status === 'awaiting_confirmation') return WARNING_COLOR;
+    if (isExpired)  return COLORS.error;
+    if (isExpiring) return WARNING_COLOR;
+    return COLORS.success;
+  };
+
+  // Payment method label
+  const payMethod = restaurant?.subscription?.paymentMethod;
+  const getPaymentLabel = () => {
+    if (payMethod === 'paypal')        return '💳 PayPal';
+    if (payMethod === 'bank_transfer') return '🏦 Bank Transfer';
+    return null;
+  };
+
+  return (
+    <>
+      <Text style={styles.sectionLabel}>MY SUBSCRIPTION</Text>
+      <TouchableOpacity
+        style={styles.subscriptionCard}
+        onPress={() => restaurant && navigation.navigate('Subscription', { restaurant })}
+        activeOpacity={0.85}
+      >
+        {/* Plan Icon + Info */}
+        <View style={styles.subCardLeft}>
+          <View style={[
+            styles.subPlanIcon,
+            { backgroundColor: plan.color + '20' },
+          ]}>
+            <Text style={{ fontSize: 28 }}>{plan.emoji}</Text>
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.subPlanName}>{plan.name} Plan</Text>
+            <Text style={[
+              styles.subPlanStatus,
+              { color: getStatusColor() },
+            ]}>
+              {getStatusText()}
+            </Text>
+
+            {/* Price */}
+            {planId !== 'free_trial' && (
+              <Text style={styles.subPlanPrice}>
+                ${plan.price}/mo
+                {'  '}
+                <Text style={styles.subPlanPriceJMD}>
+                  (≈ J${plan.priceJMD?.toLocaleString()})
+                </Text>
+              </Text>
+            )}
+
+            {/* Payment method */}
+            {getPaymentLabel() && (
+              <View style={styles.paymentMethodChip}>
+                <Text style={styles.paymentMethodChipText}>
+                  {getPaymentLabel()}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Upgrade / Manage Button */}
+        <View style={[
+          styles.subActionBtn,
+          planId === 'premium' && { backgroundColor: COLORS.secondary },
+        ]}>
+          <Text style={styles.subActionBtnText}>
+            {planId === 'premium' ? 'Manage' : 'Upgrade'}
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+        </View>
+      </TouchableOpacity>
+
+      {/* Payment Pending Note */}
+      {restaurant?.subscription?.status === 'awaiting_confirmation' && (
+        <View style={styles.pendingNote}>
+          <Ionicons name="time-outline" size={16} color={WARNING_COLOR} />
+          <Text style={styles.pendingNoteText}>
+            Your bank transfer is being verified.{'\n'}
+            Email receipt to{' '}
+            <Text style={styles.pendingNoteEmail}>
+              renogooden@outlook.com
+            </Text>
+          </Text>
+        </View>
+      )}
+    </>
+  );
+}
+
+// ──────────────────────────────────────────────
+// Profile Button Component
+// ──────────────────────────────────────────────
 function ProfileButton({
   icon, label, onPress,
   danger = false, last = false, badge,
@@ -279,205 +467,302 @@ function ProfileButton({
   );
 }
 
+// ──────────────────────────────────────────────
+// STYLES
+// ──────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex:            1,
     backgroundColor: COLORS.background,
   },
   centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex:            1,
+    justifyContent:  'center',
+    alignItems:      'center',
     backgroundColor: COLORS.background,
   },
+
+  // ── Header ──────────────────────────────
   header: {
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    paddingBottom: SIZES.xl,
+    backgroundColor:   COLORS.primary,
+    alignItems:        'center',
+    paddingBottom:     SIZES.xl,
     paddingHorizontal: SIZES.lg,
   },
   avatarContainer: {
-    position: 'relative',
+    position:     'relative',
     marginBottom: SIZES.md,
   },
   avatarImage: {
-    width: 90,
-    height: 90,
+    width:        90,
+    height:       90,
     borderRadius: 45,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderWidth:  3,
+    borderColor:  '#FFFFFF',
   },
   avatarCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width:           90,
+    height:          90,
+    borderRadius:    45,
     backgroundColor: 'rgba(255,255,255,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.5)',
+    justifyContent:  'center',
+    alignItems:      'center',
+    borderWidth:     3,
+    borderColor:     'rgba(255,255,255,0.5)',
   },
   avatarText: {
-    fontSize: 36,
+    fontSize:   36,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color:      '#FFFFFF',
   },
   editAvatarBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
+    position:        'absolute',
+    bottom:          0,
+    right:           0,
     backgroundColor: COLORS.secondary,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    width:           26,
+    height:          26,
+    borderRadius:    13,
+    justifyContent:  'center',
+    alignItems:      'center',
+    borderWidth:     2,
+    borderColor:     '#FFFFFF',
   },
   displayName: {
-    fontSize: FONTS.xxl,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+    fontSize:     FONTS.xxl,
+    fontWeight:   'bold',
+    color:        '#FFFFFF',
     marginBottom: 4,
   },
   bio: {
-    fontSize: FONTS.sm,
-    color: 'rgba(255,255,255,0.8)',
-    textAlign: 'center',
+    fontSize:     FONTS.sm,
+    color:        'rgba(255,255,255,0.8)',
+    textAlign:    'center',
     marginBottom: 4,
   },
   email: {
-    fontSize: FONTS.sm,
-    color: 'rgba(255,255,255,0.85)',
+    fontSize:     FONTS.sm,
+    color:        'rgba(255,255,255,0.85)',
     marginBottom: SIZES.sm,
   },
   roleBadge: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor:   'rgba(255,255,255,0.2)',
     paddingHorizontal: SIZES.md,
-    paddingVertical: 6,
-    borderRadius: RADIUS.round,
+    paddingVertical:   6,
+    borderRadius:      RADIUS.round,
   },
   roleText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.sm,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.sm,
     fontWeight: '600',
   },
   dietaryRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.xs,
-    marginTop: SIZES.sm,
+    flexDirection:  'row',
+    flexWrap:       'wrap',
+    gap:            SIZES.xs,
+    marginTop:      SIZES.sm,
     justifyContent: 'center',
   },
   dietaryChip: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor:   'rgba(255,255,255,0.2)',
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.round,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
   },
   dietaryChipText: {
-    fontSize: FONTS.xs,
-    color: '#FFFFFF',
+    fontSize:   FONTS.xs,
+    color:      '#FFFFFF',
     fontWeight: '500',
   },
+
+  // ── Stats Row ────────────────────────────
   statsRow: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
+    flexDirection:    'row',
+    backgroundColor:  COLORS.surface,
     marginHorizontal: SIZES.md,
-    marginTop: SIZES.md,
-    borderRadius: RADIUS.xl,
-    padding: SIZES.md,
+    marginTop:        SIZES.md,
+    borderRadius:     RADIUS.xl,
+    padding:          SIZES.md,
     ...SHADOW,
   },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
+  statItem:    { flex: 1, alignItems: 'center' },
+  statValue:   { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text },
+  statLabel:   { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
+  statDivider: { width: 1, backgroundColor: COLORS.border },
+
+  // ── Subscription Card ────────────────────
+  subscriptionCard: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    backgroundColor:  COLORS.surface,
+    marginHorizontal: SIZES.md,
+    padding:          SIZES.md,
+    borderRadius:     RADIUS.xl,
+    gap:              SIZES.md,
+    borderWidth:      1,
+    borderColor:      COLORS.border,
+    ...SHADOW,
   },
-  statValue: {
-    fontSize: FONTS.xxl,
+  subCardLeft: {
+    flex:          1,
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.md,
+  },
+  subPlanIcon: {
+    width:          56,
+    height:         56,
+    borderRadius:   RADIUS.lg,
+    justifyContent: 'center',
+    alignItems:     'center',
+  },
+  subPlanName: {
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
-  statLabel: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
+  subPlanStatus: {
+    fontSize:  FONTS.sm,
     marginTop: 2,
+    fontWeight: '500',
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: COLORS.border,
+  subPlanPrice: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
+    fontWeight: '600',
+    marginTop:  2,
   },
+  subPlanPriceJMD: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    fontWeight: 'normal',
+    fontStyle:  'italic',
+  },
+  paymentMethodChip: {
+    backgroundColor:   COLORS.primary + '15',
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+    marginTop:         4,
+    alignSelf:         'flex-start',
+    borderWidth:       1,
+    borderColor:       COLORS.primary + '30',
+  },
+  paymentMethodChipText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
+    fontWeight: '600',
+  },
+  subActionBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.primary,
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.lg,
+    gap:               4,
+  },
+  subActionBtnText: {
+    color:      '#FFFFFF',
+    fontSize:   FONTS.sm,
+    fontWeight: 'bold',
+  },
+
+  // ── Pending Note ─────────────────────────
+  pendingNote: {
+    flexDirection:    'row',
+    alignItems:       'flex-start',
+    backgroundColor:  WARNING_COLOR + '15',
+    marginHorizontal: SIZES.md,
+    marginTop:        SIZES.xs,
+    padding:          SIZES.sm,
+    borderRadius:     RADIUS.md,
+    gap:              SIZES.sm,
+    borderWidth:      1,
+    borderColor:      WARNING_COLOR + '30',
+  },
+  pendingNoteText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.text,
+    flex:       1,
+    lineHeight: 18,
+  },
+  pendingNoteEmail: {
+    fontWeight: 'bold',
+    color:      COLORS.primary,
+  },
+
+  // ── Section Labels ───────────────────────
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-    letterSpacing: 1.2,
-    marginTop: SIZES.lg,
-    marginBottom: SIZES.xs,
+    fontSize:         11,
+    fontWeight:       '700',
+    color:            COLORS.textMuted,
+    letterSpacing:    1.2,
+    marginTop:        SIZES.lg,
+    marginBottom:     SIZES.xs,
     marginHorizontal: SIZES.md,
   },
   section: {
-    backgroundColor: COLORS.surface,
+    backgroundColor:  COLORS.surface,
     marginHorizontal: SIZES.md,
-    borderRadius: RADIUS.lg,
-    overflow: 'hidden',
+    borderRadius:     RADIUS.lg,
+    overflow:         'hidden',
     ...SHADOW,
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
-    paddingVertical: 15,
+    paddingVertical:   15,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.divider,
-    gap: SIZES.sm,
+    borderBottomColor: COLORS.divider || COLORS.border,
+    gap:               SIZES.sm,
   },
-  menuItemLast: {
-    borderBottomWidth: 0,
-  },
+  menuItemLast: { borderBottomWidth: 0 },
   menuLabel: {
-    flex: 1,
+    flex:     1,
     fontSize: FONTS.lg,
-    color: COLORS.text,
+    color:    COLORS.text,
   },
   dangerText: { color: COLORS.error },
   badge: {
-    backgroundColor: COLORS.primary,
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor:   COLORS.primary,
+    minWidth:          20,
+    height:            20,
+    borderRadius:      10,
+    justifyContent:    'center',
+    alignItems:        'center',
     paddingHorizontal: 4,
   },
   badgeText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.xs,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xs,
     fontWeight: 'bold',
   },
+
+  // ── Sign Out ─────────────────────────────
   signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.error,
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'center',
+    backgroundColor:  COLORS.error,
     marginHorizontal: SIZES.md,
-    marginTop: SIZES.lg,
-    paddingVertical: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
+    marginTop:        SIZES.lg,
+    paddingVertical:  SIZES.md,
+    borderRadius:     RADIUS.lg,
+    gap:              SIZES.sm,
     ...SHADOW,
   },
   signOutButtonDisabled: { opacity: 0.7 },
   signOutText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.lg,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
   },
   version: {
     textAlign: 'center',
-    color: COLORS.textMuted,
-    fontSize: FONTS.xs,
+    color:     COLORS.textMuted,
+    fontSize:  FONTS.xs,
     marginTop: SIZES.md,
   },
 });
