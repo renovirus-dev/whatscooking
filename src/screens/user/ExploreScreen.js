@@ -1,31 +1,23 @@
 // ============================================
 // FILE: src/screens/user/ExploreScreen.js
 // ============================================
-import React, { useState, useEffect, useCallback } from 'react';
+import React, {
+  useState, useEffect, useCallback,
+  useMemo, useRef,
+} from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, FlatList, StyleSheet,
+  TouchableOpacity, TextInput, ScrollView,
+  ActivityIndicator, Alert, KeyboardAvoidingView,
+  Platform, RefreshControl,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  collection,
-  query,
-  where,
-  limit,
-  onSnapshot,
+  collection, query, where, limit, onSnapshot,
 } from 'firebase/firestore';
-import * as Location from 'expo-location';
-import { db } from '../../firebase/config';
+import * as Location  from 'expo-location';
+import { db }         from '../../firebase/config';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 import RestaurantCard from '../../components/RestaurantCard';
 
@@ -59,6 +51,7 @@ const RADIUS_OPTIONS = [
   { label: '5km',  value: 5  },
   { label: '10km', value: 10 },
   { label: '20km', value: 20 },
+  { label: '50km', value: 50 },
 ];
 
 // ─── Helpers ─────────────────────────────────
@@ -67,20 +60,19 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   const R    = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
+  const a    =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
     Math.cos((lat2 * Math.PI) / 180) *
-    Math.sin(dLon / 2) *
-    Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return Math.round(
+    6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10
+  ) / 10;
 };
 
 const formatDistance = (km) => {
   if (km === null || km === undefined) return null;
-  if (km < 1) return `${Math.round(km * 1000)}m`;
-  return `${km.toFixed(1)}km`;
+  return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(1)}km`;
 };
 
 const geocodeAddress = async (address) => {
@@ -99,91 +91,143 @@ const geocodeAddress = async (address) => {
   }
 };
 
-// ─── Component ───────────────────────────────
+// ─────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────
 export default function ExploreScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
-  const [restaurants, setRestaurants]                     = useState([]);
-  const [filtered, setFiltered]                           = useState([]);
-  const [loading, setLoading]                             = useState(true);
-  const [error, setError]                                 = useState(null);
-  const [search, setSearch]                               = useState('');
-  const [selectedCuisine, setSelectedCuisine]             = useState(
+  // ── Data State ────────────────────────────
+  const [restaurants, setRestaurants]   = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [error, setError]               = useState(null);
+
+  // ── Filter State ──────────────────────────
+  // ✅ Handle filter param from HomeScreen
+  const initialFilter = route.params?.filter;
+  const [search, setSearch]                       = useState('');
+  const [selectedCuisine, setSelectedCuisine]     = useState(
     route.params?.cuisine || 'all'
   );
-  const [selectedPrice, setSelectedPrice]                 = useState('All');
-  const [selectedSort, setSelectedSort]                   = useState('rating');
-  const [showOpenOnly, setShowOpenOnly]                   = useState(false);
-  const [nearbyActive, setNearbyActive]                   = useState(false);
-  const [userCoords, setUserCoords]                       = useState(null);
-  const [locationLoading, setLocationLoading]             = useState(false);
-  const [selectedRadius, setSelectedRadius]               = useState(10);
-  const [restaurantsWithCoords, setRestaurantsWithCoords] = useState([]);
+  const [selectedPrice, setSelectedPrice]         = useState('All');
+  const [selectedSort, setSelectedSort]           = useState('rating');
+  const [showOpenOnly, setShowOpenOnly]           = useState(
+    initialFilter === 'openNow'
+  );
+  const [showDeliveryOnly, setShowDeliveryOnly]   = useState(
+    initialFilter === 'delivery'
+  );
+  const [showDineInOnly, setShowDineInOnly]       = useState(
+    initialFilter === 'dineIn'
+  );
 
-  // ── Firestore listener ────────────────────
+  // ── Location State ────────────────────────
+  const [nearbyActive, setNearbyActive]     = useState(false);
+  const [userCoords, setUserCoords]         = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [selectedRadius, setSelectedRadius] = useState(10);
+
+  // ── Geocode Cache ─────────────────────────
+  const [geocodedMap, setGeocodedMap]   = useState({});
+  const geocodingRef                    = useRef(false);
+  const [geocoding, setGeocoding]       = useState(false);
+
+  // ─────────────────────────────────────────
+  // FIRESTORE LISTENER
+  // ─────────────────────────────────────────
   useEffect(() => {
     const q = query(
       collection(db, 'restaurants'),
       where('isActive', '==', true),
       limit(100)
     );
+
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setRestaurants(data);
         setLoading(false);
+        setRefreshing(false);
         setError(null);
       },
       (err) => {
         console.error('ExploreScreen query error:', err);
         setError(err.message);
         setLoading(false);
+        setRefreshing(false);
       }
     );
+
     return unsubscribe;
   }, []);
 
-  // ── Geocode all restaurants ───────────────
+  // ─────────────────────────────────────────
+  // GEOCODE MISSING COORDS (CACHED)
+  // ✅ Same approach as HomeScreen
+  // ─────────────────────────────────────────
   useEffect(() => {
-    if (restaurants.length === 0) return;
-    const geocodeAll = async () => {
-      const withCoords = await Promise.all(
-        restaurants.map(async (r) => {
-          if (r.coords?.latitude && r.coords?.longitude) return { ...r };
-          const address = [
-            r.address,
-            r.location?.city    || r.city,
-            r.location?.country || r.country,
-          ].filter(Boolean).join(', ');
-          const coords = await geocodeAddress(address);
-          return { ...r, coords: coords || null };
-        })
-      );
-      setRestaurantsWithCoords(withCoords);
-    };
-    geocodeAll();
+    if (restaurants.length === 0 || geocodingRef.current) return;
+
+    const needsGeocode = restaurants.filter(r =>
+      !r.coords?.latitude && !geocodedMap[r.id]
+    );
+
+    if (needsGeocode.length === 0) return;
+
+    geocodingRef.current = true;
+    setGeocoding(true);
+
+    Promise.all(
+      needsGeocode.map(async (r) => {
+        const address = [
+          r.location?.address,
+          r.location?.city,
+          r.location?.country,
+        ].filter(Boolean).join(', ');
+        const coords = await geocodeAddress(address);
+        return { id: r.id, coords };
+      })
+    ).then(results => {
+      const newMap = { ...geocodedMap };
+      results.forEach(({ id, coords }) => {
+        if (coords) newMap[id] = coords;
+      });
+      setGeocodedMap(newMap);
+      setGeocoding(false);
+      geocodingRef.current = false;
+    });
   }, [restaurants]);
 
-  // ── Near Me toggle ────────────────────────
-  const handleNearbyToggle = async () => {
+  // ─────────────────────────────────────────
+  // GET RESTAURANT COORDS
+  // ─────────────────────────────────────────
+  const getCoords = useCallback((restaurant) => {
+    if (restaurant.coords?.latitude) return restaurant.coords;
+    return geocodedMap[restaurant.id] || null;
+  }, [geocodedMap]);
+
+  // ─────────────────────────────────────────
+  // NEAR ME TOGGLE
+  // ─────────────────────────────────────────
+  const handleNearbyToggle = useCallback(async () => {
     if (nearbyActive) {
       setNearbyActive(false);
       setUserCoords(null);
       if (selectedSort === 'distance') setSelectedSort('rating');
       return;
     }
+
     setLocationLoading(true);
     try {
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           '📍 Location Required',
           'Please allow location access to find restaurants near you.',
           [{ text: 'OK' }]
         );
-        setLocationLoading(false);
         return;
       }
       const location = await Location.getCurrentPositionAsync({
@@ -196,59 +240,101 @@ export default function ExploreScreen({ navigation, route }) {
       setNearbyActive(true);
       setSelectedSort('distance');
     } catch (err) {
-      Alert.alert('Location Error', 'Could not get your location. Please try again.');
       console.error('Location error:', err.message);
+      Alert.alert(
+        'Location Error',
+        'Could not get your location. Please try again.'
+      );
+    } finally {
+      setLocationLoading(false);
     }
-    setLocationLoading(false);
-  };
+  }, [nearbyActive, selectedSort]);
 
-  // ── Apply filters ─────────────────────────
-  const applyFilters = useCallback(() => {
-    let result = nearbyActive && restaurantsWithCoords.length > 0
-      ? [...restaurantsWithCoords]
-      : [...restaurants];
+  // ─────────────────────────────────────────
+  // PULL TO REFRESH
+  // ─────────────────────────────────────────
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 3000);
+  }, []);
 
-    if (userCoords) {
-      result = result.map(r => ({
-        ...r,
-        distance: calculateDistance(
-          userCoords.latitude,
-          userCoords.longitude,
-          r.coords?.latitude,
-          r.coords?.longitude,
-        ),
-      }));
-    }
+  // ─────────────────────────────────────────
+  // RESET ALL FILTERS
+  // ─────────────────────────────────────────
+  const handleReset = useCallback(() => {
+    setSearch('');
+    setSelectedCuisine('all');
+    setSelectedPrice('All');
+    setSelectedSort('rating');
+    setShowOpenOnly(false);
+    setShowDeliveryOnly(false);
+    setShowDineInOnly(false);
+    setNearbyActive(false);
+    setUserCoords(null);
+    setSelectedRadius(10);
+  }, []);
 
+  // ─────────────────────────────────────────
+  // FILTERED + SORTED RESTAURANTS
+  // ✅ All in one useMemo
+  // ─────────────────────────────────────────
+  const filteredRestaurants = useMemo(() => {
+    let result = restaurants.map(r => ({
+      ...r,
+      distance: userCoords
+        ? calculateDistance(
+            userCoords.latitude, userCoords.longitude,
+            getCoords(r)?.latitude, getCoords(r)?.longitude,
+          )
+        : null,
+    }));
+
+    // ── Near Me filter ──────────────────────
     if (nearbyActive && userCoords) {
       result = result.filter(
         r => r.distance !== null && r.distance <= selectedRadius
       );
     }
 
+    // ── Search filter ──────────────────────
     if (search.trim()) {
-      const lower = search.toLowerCase();
+      const q = search.toLowerCase();
       result = result.filter(r =>
-        r.name?.toLowerCase().includes(lower) ||
-        r.location?.city?.toLowerCase().includes(lower) ||
-        r.cuisineTypes?.some(c => c.toLowerCase().includes(lower))
+        r.name?.toLowerCase().includes(q)              ||
+        r.location?.city?.toLowerCase().includes(q)   ||
+        r.cuisineTypes?.some(c => c.toLowerCase().includes(q)) ||
+        r.description?.toLowerCase().includes(q)
       );
     }
 
+    // ── Cuisine filter ─────────────────────
     if (selectedCuisine !== 'all') {
       result = result.filter(r =>
         r.cuisineTypes?.includes(selectedCuisine)
       );
     }
 
+    // ── Price filter ───────────────────────
     if (selectedPrice !== 'All') {
       result = result.filter(r => r.priceRange === selectedPrice);
     }
 
+    // ── Open Now filter ────────────────────
     if (showOpenOnly) {
       result = result.filter(r => r.isCurrentlyOpen);
     }
 
+    // ── Delivery filter ────────────────────
+    if (showDeliveryOnly) {
+      result = result.filter(r => r.hasDelivery);
+    }
+
+    // ── Dine In filter ─────────────────────
+    if (showDineInOnly) {
+      result = result.filter(r => r.hasDineIn);
+    }
+
+    // ── Sort ───────────────────────────────
     if (selectedSort === 'rating') {
       result.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0));
     } else if (selectedSort === 'reviews') {
@@ -261,36 +347,41 @@ export default function ExploreScreen({ navigation, route }) {
       });
     }
 
-    setFiltered(result);
+    return result;
   }, [
-    restaurants, restaurantsWithCoords,
+    restaurants, userCoords, nearbyActive, selectedRadius,
     search, selectedCuisine, selectedPrice,
-    selectedSort, showOpenOnly,
-    nearbyActive, userCoords, selectedRadius,
+    showOpenOnly, showDeliveryOnly, showDineInOnly,
+    selectedSort, getCoords,
   ]);
 
-  useEffect(() => { applyFilters(); }, [applyFilters]);
+  // ─────────────────────────────────────────
+  // ACTIVE FILTER COUNT
+  // ✅ Shows how many filters are active
+  // ─────────────────────────────────────────
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (search.trim())          count++;
+    if (selectedCuisine !== 'all') count++;
+    if (selectedPrice !== 'All')   count++;
+    if (showOpenOnly)            count++;
+    if (showDeliveryOnly)        count++;
+    if (showDineInOnly)          count++;
+    if (nearbyActive)            count++;
+    return count;
+  }, [
+    search, selectedCuisine, selectedPrice,
+    showOpenOnly, showDeliveryOnly, showDineInOnly, nearbyActive,
+  ]);
 
-  const handleReset = () => {
-    setSearch('');
-    setSelectedCuisine('all');
-    setSelectedPrice('All');
-    setShowOpenOnly(false);
-    setSelectedSort('rating');
-    setNearbyActive(false);
-    setUserCoords(null);
-    setSelectedRadius(10);
-  };
-
-  // ── Loading ───────────────────────────────
+  // ─────────────────────────────────────────
+  // LOADING STATE
+  // ─────────────────────────────────────────
   if (loading) {
     return (
       <View style={[
         styles.centered,
-        {
-          paddingTop:    insets.top,
-          paddingBottom: insets.bottom,
-        },
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Finding restaurants...</Text>
@@ -298,44 +389,49 @@ export default function ExploreScreen({ navigation, route }) {
     );
   }
 
-  // ── Error ─────────────────────────────────
+  // ─────────────────────────────────────────
+  // ERROR STATE
+  // ─────────────────────────────────────────
   if (error) {
     return (
       <View style={[
         styles.centered,
-        {
-          paddingTop:    insets.top,
-          paddingBottom: insets.bottom,
-        },
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}>
         <Text style={{ fontSize: 48 }}>⚠️</Text>
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryBtn}
+          onPress={() => {
+            setError(null);
+            setLoading(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.retryBtnText}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // ── Main render ───────────────────────────
+  // ─────────────────────────────────────────
+  // MAIN RENDER
+  // ─────────────────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView so search bar is not
-    // hidden when keyboard opens on Android
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios'
-          ? 0
-          // ✅ Tab bar (~56) + translucent status bar
-          : insets.top + 56
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top + 56}
     >
 
-      {/* ── Search bar ──────────────────────── */}
+      {/* ── Search Bar ──────────────────────── */}
       <View style={styles.searchBar}>
-        <Ionicons name="search" size={20} color={COLORS.textMuted} />
+        <Ionicons name="search-outline" size={20} color={COLORS.textMuted} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search restaurants or cuisines..."
+          placeholder="Search restaurants, cuisines, city..."
           placeholderTextColor={COLORS.textMuted}
           value={search}
           onChangeText={setSearch}
@@ -348,7 +444,7 @@ export default function ExploreScreen({ navigation, route }) {
           </TouchableOpacity>
         )}
 
-        {/* Near Me button */}
+        {/* Near Me */}
         <TouchableOpacity
           style={[
             styles.nearMeBtn,
@@ -361,14 +457,14 @@ export default function ExploreScreen({ navigation, route }) {
           {locationLoading ? (
             <ActivityIndicator
               size="small"
-              color={nearbyActive ? COLORS.textWhite : COLORS.primary}
+              color={nearbyActive ? '#FFFFFF' : COLORS.primary}
             />
           ) : (
             <>
               <Ionicons
-                name="navigate"
+                name="navigate-outline"
                 size={14}
-                color={nearbyActive ? COLORS.textWhite : COLORS.primary}
+                color={nearbyActive ? '#FFFFFF' : COLORS.primary}
               />
               <Text style={[
                 styles.nearMeText,
@@ -381,10 +477,14 @@ export default function ExploreScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Radius selector (nearby only) ───── */}
+      {/* ── Radius Selector (Near Me only) ───── */}
       {nearbyActive && (
         <View style={styles.radiusRow}>
-          <Ionicons name="radio-button-on" size={14} color={COLORS.primary} />
+          <Ionicons
+            name="radio-button-on-outline"
+            size={14}
+            color={COLORS.primary}
+          />
           <Text style={styles.radiusLabel}>Radius:</Text>
           {RADIUS_OPTIONS.map(opt => (
             <TouchableOpacity
@@ -404,10 +504,17 @@ export default function ExploreScreen({ navigation, route }) {
               </Text>
             </TouchableOpacity>
           ))}
+          {geocoding && (
+            <ActivityIndicator
+              size="small"
+              color={COLORS.primary}
+              style={{ marginLeft: 'auto' }}
+            />
+          )}
         </View>
       )}
 
-      {/* ── Cuisine filter ───────────────────── */}
+      {/* ── Cuisine Chips ────────────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -436,7 +543,7 @@ export default function ExploreScreen({ navigation, route }) {
         ))}
       </ScrollView>
 
-      {/* ── Price + Open Now filters ─────────── */}
+      {/* ── Filter Chips ──────────────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -444,6 +551,7 @@ export default function ExploreScreen({ navigation, route }) {
         contentContainerStyle={styles.filterContent}
         nestedScrollEnabled
       >
+        {/* Price Range */}
         {PRICE_RANGES.map(p => (
           <TouchableOpacity
             key={p}
@@ -463,10 +571,11 @@ export default function ExploreScreen({ navigation, route }) {
           </TouchableOpacity>
         ))}
 
+        {/* Open Now */}
         <TouchableOpacity
           style={[
             styles.filterChip,
-            showOpenOnly && styles.filterChipOpen,
+            showOpenOnly && styles.filterChipSuccess,
           ]}
           onPress={() => setShowOpenOnly(v => !v)}
           activeOpacity={0.7}
@@ -478,73 +587,128 @@ export default function ExploreScreen({ navigation, route }) {
             🟢 Open Now
           </Text>
         </TouchableOpacity>
+
+        {/* ✅ Delivery filter */}
+        <TouchableOpacity
+          style={[
+            styles.filterChip,
+            showDeliveryOnly && styles.filterChipActive,
+          ]}
+          onPress={() => setShowDeliveryOnly(v => !v)}
+          activeOpacity={0.7}
+        >
+          <Text style={[
+            styles.filterChipText,
+            showDeliveryOnly && styles.filterChipTextActive,
+          ]}>
+            🛵 Delivery
+          </Text>
+        </TouchableOpacity>
+
+        {/* ✅ Dine In filter */}
+        <TouchableOpacity
+          style={[
+            styles.filterChip,
+            showDineInOnly && styles.filterChipActive,
+          ]}
+          onPress={() => setShowDineInOnly(v => !v)}
+          activeOpacity={0.7}
+        >
+          <Text style={[
+            styles.filterChipText,
+            showDineInOnly && styles.filterChipTextActive,
+          ]}>
+            🪑 Dine In
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* ── Sort row ────────────────────────── */}
+      {/* ── Sort + Reset Row ──────────────────── */}
       <View style={styles.sortRow}>
         <Text style={styles.sortLabel}>Sort:</Text>
-        {SORT_OPTIONS.map(s => (
-          <TouchableOpacity
-            key={s.value}
-            style={[
-              styles.sortChip,
-              selectedSort === s.value && styles.sortChipActive,
-            ]}
-            onPress={() => setSelectedSort(s.value)}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.sortChipText,
-              selectedSort === s.value && styles.sortChipTextActive,
-            ]}>
-              {s.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {SORT_OPTIONS.map(s => {
+          // ✅ Disable "Nearest" if Near Me not active
+          const isDisabled = s.value === 'distance' && !nearbyActive;
+          return (
+            <TouchableOpacity
+              key={s.value}
+              style={[
+                styles.sortChip,
+                selectedSort === s.value && styles.sortChipActive,
+                isDisabled && styles.sortChipDisabled,
+              ]}
+              onPress={() => !isDisabled && setSelectedSort(s.value)}
+              activeOpacity={isDisabled ? 1 : 0.7}
+            >
+              <Text style={[
+                styles.sortChipText,
+                selectedSort === s.value && styles.sortChipTextActive,
+                isDisabled && styles.sortChipTextDisabled,
+              ]}>
+                {s.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
 
-        {(selectedCuisine !== 'all' ||
-          selectedPrice !== 'All' ||
-          showOpenOnly ||
-          nearbyActive ||
-          search.length > 0) && (
+        {/* ✅ Active filter count + Reset */}
+        {activeFilterCount > 0 && (
           <TouchableOpacity
             style={styles.resetChip}
             onPress={handleReset}
             activeOpacity={0.7}
           >
-            <Ionicons name="refresh" size={12} color={COLORS.error} />
-            <Text style={styles.resetChipText}>Reset</Text>
+            <Ionicons name="close-outline" size={12} color={COLORS.error} />
+            <Text style={styles.resetChipText}>
+              Reset ({activeFilterCount})
+            </Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ── Nearby active banner ─────────────── */}
+      {/* ── Near Me Banner ────────────────────── */}
       {nearbyActive && userCoords && (
         <View style={styles.nearbyBanner}>
-          <Ionicons name="navigate" size={14} color={COLORS.primary} />
+          <Ionicons name="navigate-outline" size={14} color={COLORS.primary} />
           <Text style={styles.nearbyBannerText}>
-            Showing restaurants within {selectedRadius}km of your location
+            Within {selectedRadius}km of your location
           </Text>
         </View>
       )}
 
-      {/* ── Results count ────────────────────── */}
-      <Text style={styles.resultsText}>
-        {filtered.length} restaurant
-        {filtered.length !== 1 ? 's' : ''} found
-      </Text>
+      {/* ── Results Count ─────────────────────── */}
+      <View style={styles.resultsRow}>
+        <Text style={styles.resultsText}>
+          {filteredRestaurants.length} restaurant
+          {filteredRestaurants.length !== 1 ? 's' : ''} found
+        </Text>
+        {activeFilterCount > 0 && (
+          <View style={styles.activeFiltersBadge}>
+            <Text style={styles.activeFiltersBadgeText}>
+              {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''} active
+            </Text>
+          </View>
+        )}
+      </View>
 
-      {/* ── Restaurant list ──────────────────── */}
+      {/* ── Restaurant List ───────────────────── */}
       <FlatList
-        data={filtered}
+        data={filteredRestaurants}
         keyExtractor={item => item.id}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.listContent,
-          // ✅ Last card clears Android nav bar
           { paddingBottom: insets.bottom + SIZES.xl },
         ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
         renderItem={({ item }) => (
           <RestaurantCard
             restaurant={item}
@@ -562,11 +726,13 @@ export default function ExploreScreen({ navigation, route }) {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>
-              {nearbyActive ? '📍' : '🔍'}
+              {nearbyActive ? '📍' : search ? '🔍' : '🍽️'}
             </Text>
             <Text style={styles.emptyTitle}>
               {nearbyActive
                 ? `No restaurants within ${selectedRadius}km`
+                : search
+                ? `No results for "${search}"`
                 : 'No restaurants found'}
             </Text>
             <Text style={styles.emptySubtext}>
@@ -574,171 +740,147 @@ export default function ExploreScreen({ navigation, route }) {
                 ? 'Try increasing the search radius'
                 : 'Try adjusting your filters'}
             </Text>
-            <TouchableOpacity
-              style={styles.resetBtn}
-              onPress={handleReset}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.resetBtnText}>Reset All Filters</Text>
-            </TouchableOpacity>
+            <View style={styles.emptyActions}>
+              {nearbyActive && (
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={() =>
+                    setSelectedRadius(prev => Math.min(prev + 10, 50))
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="expand-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.emptyActionText}>Bigger Radius</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.emptyActionBtn,
+                  { backgroundColor: COLORS.secondary },
+                ]}
+                onPress={handleReset}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.emptyActionText}>Reset Filters</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         }
       />
-
     </KeyboardAvoidingView>
   );
 }
 
-// ─── Styles ──────────────────────────────────
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
   centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    flex:            1,
+    justifyContent:  'center',
+    alignItems:      'center',
     backgroundColor: COLORS.background,
-    padding: SIZES.xl,
-    gap: SIZES.sm,
+    padding:         SIZES.xl,
+    gap:             SIZES.sm,
   },
-  loadingText: {
-    fontSize: FONTS.md,
-    color: COLORS.textMuted,
-    marginTop: SIZES.md,
+  loadingText: { fontSize: FONTS.md, color: COLORS.textMuted, marginTop: SIZES.md },
+  errorTitle:  { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text   },
+  errorText:   { fontSize: FONTS.sm, color: COLORS.textMuted, textAlign: 'center' },
+  retryBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               SIZES.sm,
+    backgroundColor:   COLORS.primary,
+    paddingHorizontal: SIZES.xl,
+    paddingVertical:   SIZES.md,
+    borderRadius:      RADIUS.lg,
+    marginTop:         SIZES.md,
   },
-  errorTitle: {
-    fontSize: FONTS.xl,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginTop: SIZES.sm,
-  },
-  errorText: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-  },
+  retryBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
 
-  // ── Search bar ───────────────────────────
+  // ── Search Bar ────────────────────────────
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    margin: SIZES.md,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
+    margin:            SIZES.md,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.xl,
-    gap: SIZES.sm,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.xl,
+    gap:               SIZES.sm,
     ...SHADOW,
   },
   searchInput: {
-    flex: 1,
-    fontSize: FONTS.md,
-    color: COLORS.text,
+    flex:          1,
+    fontSize:      FONTS.md,
+    color:         COLORS.text,
     paddingVertical: SIZES.sm,
   },
 
-  // ── Near Me ──────────────────────────────
+  // ── Near Me ───────────────────────────────
   nearMeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 6,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.primary + '15',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
+    paddingVertical:   6,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.primary + '15',
+    borderWidth:       1,
+    borderColor:       COLORS.primary,
   },
-  nearMeBtnActive: {
-    backgroundColor: COLORS.primary,
-    borderColor:     COLORS.primary,
-  },
-  nearMeText: {
-    fontSize: FONTS.xs,
-    color:    COLORS.primary,
-    fontWeight: '700',
-  },
-  nearMeTextActive: { color: COLORS.textWhite },
+  nearMeBtnActive:  { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  nearMeText:       { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '700' },
+  nearMeTextActive: { color: '#FFFFFF' },
 
-  // ── Radius ───────────────────────────────
+  // ── Radius Row ────────────────────────────
   radiusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
-    paddingBottom: SIZES.sm,
-    gap: SIZES.xs,
-    backgroundColor: COLORS.primary + '08',
-    paddingTop: SIZES.xs,
+    paddingVertical:   SIZES.sm,
+    gap:               SIZES.xs,
+    backgroundColor:   COLORS.primary + '08',
   },
-  radiusLabel: {
-    fontSize: FONTS.xs,
-    color:    COLORS.primary,
-    fontWeight: '600',
-    marginRight: 2,
-  },
+  radiusLabel:      { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '600' },
   radiusChip: {
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.surface,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
-  radiusChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor:     COLORS.primary,
-  },
-  radiusChipText: {
-    fontSize: FONTS.xs,
-    color:    COLORS.text,
-    fontWeight: '600',
-  },
-  radiusChipTextActive: { color: COLORS.textWhite },
+  radiusChipActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  radiusChipText:       { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '600' },
+  radiusChipTextActive: { color: '#FFFFFF' },
 
-  // ── Nearby banner ────────────────────────
-  nearbyBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.xs,
-    paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.xs,
-    backgroundColor: COLORS.primary + '10',
-  },
-  nearbyBannerText: {
-    fontSize: FONTS.xs,
-    color:    COLORS.primary,
-    fontWeight: '500',
-  },
-
-  // ── Cuisine chips ────────────────────────
-  cuisineScroll:  { maxHeight: 60 },
+  // ── Cuisine Chips ─────────────────────────
+  cuisineScroll:  { maxHeight: 56 },
   cuisineContent: {
     paddingHorizontal: SIZES.md,
     gap:               SIZES.sm,
-    paddingBottom:     SIZES.sm,
+    paddingVertical:   SIZES.sm,
+    alignItems:        'center',
   },
   cuisineChip: {
-    flexDirection: 'row',
-    alignItems:    'center',
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
     paddingVertical:   SIZES.sm,
-    borderRadius:  RADIUS.round,
-    backgroundColor: COLORS.surface,
-    gap: 6,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.surface,
+    gap:               6,
     ...SHADOW,
   },
   cuisineChipActive: { backgroundColor: COLORS.primary },
   cuisineEmoji:      { fontSize: 16 },
-  cuisineLabel: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.text,
-    fontWeight: '500',
-  },
-  cuisineLabelActive: { color: '#FFFFFF' },
+  cuisineLabel:      { fontSize: FONTS.sm, color: COLORS.text, fontWeight: '500' },
+  cuisineLabelActive:{ color: '#FFFFFF' },
 
-  // ── Filter chips ─────────────────────────
+  // ── Filter Chips ──────────────────────────
   filterScroll:  { maxHeight: 44 },
   filterContent: {
     paddingHorizontal: SIZES.md,
@@ -753,22 +895,12 @@ const styles = StyleSheet.create({
     borderWidth:       1,
     borderColor:       COLORS.border,
   },
-  filterChipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor:     COLORS.primary,
-  },
-  filterChipOpen: {
-    backgroundColor: COLORS.success,
-    borderColor:     COLORS.success,
-  },
-  filterChipText: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.text,
-    fontWeight: '500',
-  },
+  filterChipActive:  { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterChipSuccess: { backgroundColor: COLORS.success,  borderColor: COLORS.success  },
+  filterChipText:       { fontSize: FONTS.sm, color: COLORS.text, fontWeight: '500' },
   filterChipTextActive: { color: '#FFFFFF' },
 
-  // ── Sort row ─────────────────────────────
+  // ── Sort Row ──────────────────────────────
   sortRow: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -777,11 +909,7 @@ const styles = StyleSheet.create({
     gap:               SIZES.sm,
     flexWrap:          'wrap',
   },
-  sortLabel: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.textMuted,
-    fontWeight: '600',
-  },
+  sortLabel: { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '600' },
   sortChip: {
     paddingHorizontal: SIZES.sm,
     paddingVertical:   4,
@@ -790,59 +918,76 @@ const styles = StyleSheet.create({
     borderWidth:       1,
     borderColor:       COLORS.border,
   },
-  sortChipActive: {
-    backgroundColor: COLORS.secondary,
-    borderColor:     COLORS.secondary,
-  },
-  sortChipText: {
-    fontSize: FONTS.xs,
-    color:    COLORS.text,
-  },
-  sortChipTextActive: {
-    color:      '#FFFFFF',
-    fontWeight: '600',
-  },
+  sortChipActive:   { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary },
+  sortChipDisabled: { opacity: 0.4 },
+  sortChipText:         { fontSize: FONTS.xs, color: COLORS.text },
+  sortChipTextActive:   { color: '#FFFFFF', fontWeight: '600' },
+  sortChipTextDisabled: { color: COLORS.textMuted },
   resetChip: {
-    flexDirection: 'row',
-    alignItems:    'center',
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.sm,
     paddingVertical:   4,
-    borderRadius:  RADIUS.round,
-    backgroundColor: COLORS.error + '15',
-    borderWidth:   1,
-    borderColor:   COLORS.error + '40',
-    gap: 4,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.error + '15',
+    borderWidth:       1,
+    borderColor:       COLORS.error + '40',
+    gap:               4,
+    marginLeft:        'auto',
   },
-  resetChipText: {
+  resetChipText: { fontSize: FONTS.xs, color: COLORS.error, fontWeight: '600' },
+
+  // ── Near Me Banner ────────────────────────
+  nearbyBanner: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               SIZES.xs,
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.xs,
+    backgroundColor:   COLORS.primary + '10',
+  },
+  nearbyBannerText: {
     fontSize:   FONTS.xs,
-    color:      COLORS.error,
+    color:      COLORS.primary,
+    fontWeight: '500',
+  },
+
+  // ── Results Row ───────────────────────────
+  resultsRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.xs,
+    gap:               SIZES.sm,
+  },
+  resultsText: {
+    fontSize: FONTS.sm,
+    color:    COLORS.textMuted,
+  },
+  activeFiltersBadge: {
+    backgroundColor:   COLORS.primary + '15',
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+  },
+  activeFiltersBadgeText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
     fontWeight: '600',
   },
 
-  // ── Results count ────────────────────────
-  resultsText: {
-    fontSize:          FONTS.sm,
-    color:             COLORS.textMuted,
-    paddingHorizontal: SIZES.md,
-    marginBottom:      SIZES.xs,
-  },
+  // ── List ──────────────────────────────────
+  listContent: { padding: SIZES.md, gap: SIZES.md, flexGrow: 1 },
+  card:        { marginBottom: 0 },
 
-  // ── List ─────────────────────────────────
-  // ✅ paddingBottom set dynamically via insets
-  listContent: {
-    padding:  SIZES.md,
-    gap:      SIZES.md,
-    flexGrow: 1,
-  },
-  card: { marginBottom: 0 },
-
-  // ── Empty state ──────────────────────────
+  // ── Empty State ───────────────────────────
   emptyState: {
     alignItems:      'center',
-    paddingVertical: SIZES.xxl * 2,
+    paddingVertical: SIZES.xxl,
+    paddingHorizontal: SIZES.xl,
     gap:             SIZES.sm,
   },
-  emptyEmoji: { fontSize: 60 },
+  emptyEmoji:   { fontSize: 60 },
   emptyTitle: {
     fontSize:   FONTS.xl,
     fontWeight: 'bold',
@@ -850,20 +995,16 @@ const styles = StyleSheet.create({
     marginTop:  SIZES.md,
     textAlign:  'center',
   },
-  emptySubtext: {
-    fontSize: FONTS.md,
-    color:    COLORS.textMuted,
-  },
-  resetBtn: {
+  emptySubtext: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center' },
+  emptyActions: { flexDirection: 'row', gap: SIZES.sm, marginTop: SIZES.md },
+  emptyActionBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               SIZES.xs,
     backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.lg,
     paddingVertical:   SIZES.sm,
-    borderRadius:      RADIUS.lg,
-    marginTop:         SIZES.lg,
+    borderRadius:      RADIUS.round,
   },
-  resetBtnText: {
-    color:      '#FFFFFF',
-    fontWeight: '600',
-    fontSize:   FONTS.md,
-  },
+  emptyActionText: { color: '#FFFFFF', fontWeight: '700', fontSize: FONTS.sm },
 });
