@@ -1,113 +1,171 @@
 // ============================================
 // FILE: src/screens/auth/RegisterScreen.js
 // ============================================
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, Alert, KeyboardAvoidingView,
+  Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth }           from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
+// ─── Firebase Auth Error Map ──────────────────
+const getAuthError = (error) => {
+  const code = error?.code || error || '';
+  const map  = {
+    'auth/email-already-in-use':    'An account with this email already exists.',
+    'auth/invalid-email':           'Please enter a valid email address.',
+    'auth/operation-not-allowed':   'Registration is currently disabled.',
+    'auth/weak-password':           'Password is too weak. Use at least 6 characters.',
+    'auth/network-request-failed':  'Network error. Check your internet connection.',
+    'auth/too-many-requests':       'Too many attempts. Please try again later.',
+  };
+  return map[code] || error?.message || 'Registration failed. Please try again.';
+};
+
+// ─── Email Validation ─────────────────────────
+const isValidEmail = (email) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+};
+
+// ─────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────
 export default function RegisterScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
+  const insets       = useSafeAreaInsets();
   const { register } = useAuth();
 
-  // ✅ Refs for focus chain — so "next" key on keyboard
-  // jumps to the next input field
+  // ── Refs ──────────────────────────────────
   const lastNameRef        = useRef(null);
   const emailRef           = useRef(null);
   const phoneRef           = useRef(null);
   const passwordRef        = useRef(null);
   const confirmPasswordRef = useRef(null);
 
+  // ── Form State ────────────────────────────
   const [form, setForm] = useState({
     firstName:       '',
     lastName:        '',
     email:           '',
+    phone:           '',
     password:        '',
     confirmPassword: '',
-    phone:           '',
-    role:            'user',
+    // ✅ 'customer' matches rest of app (userProfile.role)
+    role:            'customer',
   });
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading]           = useState(false);
+  const [showPassword, setShowPassword]               = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading]                         = useState(false);
 
-  const updateForm = (field, value) => {
+  // ─────────────────────────────────────────
+  // FORM HELPERS
+  // ─────────────────────────────────────────
+  const updateForm = useCallback((field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const handleRegister = async () => {
+  // ─────────────────────────────────────────
+  // PASSWORD STRENGTH
+  // ✅ Checks length AND complexity
+  // ─────────────────────────────────────────
+  const passwordStrength = useMemo(() => {
+    const p = form.password;
+    if (!p) return null;
+
+    let score = 0;
+    if (p.length >= 6)               score++;
+    if (p.length >= 10)              score++;
+    if (/[A-Z]/.test(p))            score++;
+    if (/[0-9]/.test(p))            score++;
+    if (/[^A-Za-z0-9]/.test(p))    score++;
+
+    if (p.length < 6) return { label: 'Too short', color: COLORS.error,   width: '10%' };
+    if (score <= 2)   return { label: 'Weak',      color: '#E74C3C',      width: '30%' };
+    if (score === 3)  return { label: 'Fair',      color: '#F39C12',      width: '55%' };
+    if (score === 4)  return { label: 'Good',      color: COLORS.success, width: '78%' };
+    return              { label: 'Strong',         color: '#27AE60',      width: '100%'};
+  }, [form.password]);
+
+  // ─────────────────────────────────────────
+  // PASSWORD MATCH
+  // ─────────────────────────────────────────
+  const passwordMatch = useMemo(() => {
+    if (!form.confirmPassword) return null;
+    return form.password === form.confirmPassword;
+  }, [form.password, form.confirmPassword]);
+
+  // ─────────────────────────────────────────
+  // REGISTER HANDLER
+  // ─────────────────────────────────────────
+  const handleRegister = useCallback(async () => {
     const {
       firstName, lastName, email,
-      password, confirmPassword, role,
+      password, confirmPassword, phone, role,
     } = form;
 
+    // ── Validation ────────────────────────
     if (!firstName.trim()) {
-      Alert.alert('Error', 'Please enter your first name');
+      Alert.alert('Required', 'Please enter your first name');
       return;
     }
     if (!lastName.trim()) {
-      Alert.alert('Error', 'Please enter your last name');
+      Alert.alert('Required', 'Please enter your last name');
       return;
     }
     if (!email.trim()) {
-      Alert.alert('Error', 'Please enter your email');
+      Alert.alert('Required', 'Please enter your email address');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
     if (!password) {
-      Alert.alert('Error', 'Please enter a password');
+      Alert.alert('Required', 'Please create a password');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert(
+        'Weak Password',
+        'Password must be at least 6 characters'
+      );
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      Alert.alert('Password Mismatch', 'Passwords do not match');
       return;
     }
 
     setLoading(true);
-    const result = await register(
-      email.trim().toLowerCase(),
-      password,
-      firstName.trim(),
-      lastName.trim(),
-      role,
-    );
-    setLoading(false);
+    try {
+      const result = await register(
+        email.trim().toLowerCase(),
+        password,
+        firstName.trim(),
+        lastName.trim(),
+        role,
+        phone.trim() || '',
+      );
 
-    if (!result.success) {
-      Alert.alert('Registration Failed', result.error);
+      if (!result.success) {
+        Alert.alert('Registration Failed', getAuthError(result.error));
+      }
+      // ✅ Navigation handled automatically by auth state change
+    } catch (err) {
+      Alert.alert('Error', getAuthError(err));
+    } finally {
+      setLoading(false);
     }
-    // Auth state change handles navigation automatically
-  };
+  }, [form, register]);
 
-  // ── Password strength indicator ──────────
-  const getPasswordStrength = () => {
-    const p = form.password;
-    if (!p) return null;
-    if (p.length < 6)  return { label: 'Too short', color: COLORS.error   };
-    if (p.length < 8)  return { label: 'Weak',      color: '#FFA500'      };
-    if (p.length < 12) return { label: 'Good',      color: COLORS.success };
-    return               { label: 'Strong',          color: '#27AE60'      };
-  };
-  const strength = getPasswordStrength();
-
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView outermost
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -117,17 +175,25 @@ export default function RegisterScreen({ navigation }) {
         contentContainerStyle={[
           styles.content,
           {
-            // ✅ Top: clears translucent status bar
-            paddingTop: insets.top + SIZES.lg,
-            // ✅ Bottom: clears Android nav bar
+            paddingTop:    insets.top    + SIZES.lg,
             paddingBottom: insets.bottom + SIZES.xl,
           },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Header ── */}
+
+        {/* ── Header ────────────────────────── */}
         <View style={styles.headerSection}>
+          {/* ✅ Back button */}
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+          </TouchableOpacity>
+
           <Text style={styles.logo}>🍳</Text>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>
@@ -135,15 +201,10 @@ export default function RegisterScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* ── Name row ── */}
+        {/* ── Name Row ──────────────────────── */}
         <View style={styles.nameRow}>
-          {/* First name */}
           <View style={[styles.inputContainer, { flex: 1 }]}>
-            <Ionicons
-              name="person-outline"
-              size={18}
-              color={COLORS.textMuted}
-            />
+            <Ionicons name="person-outline" size={18} color={COLORS.textMuted} />
             <TextInput
               style={styles.input}
               placeholder="First Name"
@@ -153,12 +214,10 @@ export default function RegisterScreen({ navigation }) {
               autoCapitalize="words"
               autoCorrect={false}
               returnKeyType="next"
-              // ✅ Jump to last name on "next"
               onSubmitEditing={() => lastNameRef.current?.focus()}
             />
           </View>
 
-          {/* Last name */}
           <View style={[styles.inputContainer, { flex: 1 }]}>
             <TextInput
               ref={lastNameRef}
@@ -175,13 +234,13 @@ export default function RegisterScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── Email ── */}
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="mail-outline"
-            size={18}
-            color={COLORS.textMuted}
-          />
+        {/* ── Email ─────────────────────────── */}
+        <View style={[
+          styles.inputContainer,
+          form.email.length > 0 && !isValidEmail(form.email) &&
+            styles.inputContainerError,
+        ]}>
+          <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
           <TextInput
             ref={emailRef}
             style={styles.input}
@@ -196,15 +255,26 @@ export default function RegisterScreen({ navigation }) {
             returnKeyType="next"
             onSubmitEditing={() => phoneRef.current?.focus()}
           />
+          {/* ✅ Email validation indicator */}
+          {form.email.length > 0 && (
+            <Ionicons
+              name={isValidEmail(form.email) ? 'checkmark-circle' : 'close-circle'}
+              size={18}
+              color={isValidEmail(form.email) ? COLORS.success : COLORS.error}
+            />
+          )}
         </View>
 
-        {/* ── Phone ── */}
+        {/* ✅ Email error hint */}
+        {form.email.length > 0 && !isValidEmail(form.email) && (
+          <Text style={styles.inputError}>
+            Please enter a valid email address
+          </Text>
+        )}
+
+        {/* ── Phone ─────────────────────────── */}
         <View style={styles.inputContainer}>
-          <Ionicons
-            name="call-outline"
-            size={18}
-            color={COLORS.textMuted}
-          />
+          <Ionicons name="call-outline" size={18} color={COLORS.textMuted} />
           <TextInput
             ref={phoneRef}
             style={styles.input}
@@ -218,38 +288,38 @@ export default function RegisterScreen({ navigation }) {
           />
         </View>
 
-        {/* ── Role selection ── */}
+        {/* ── Role Selection ────────────────── */}
         <View style={styles.roleSection}>
           <Text style={styles.roleTitle}>I am a:</Text>
           <View style={styles.roleButtons}>
 
-            {/* Food Lover */}
+            {/* Food Lover / Customer */}
             <TouchableOpacity
               style={[
                 styles.roleBtn,
-                form.role === 'user' && styles.roleBtnActive,
+                form.role === 'customer' && styles.roleBtnActive,
               ]}
-              onPress={() => updateForm('role', 'user')}
+              onPress={() => updateForm('role', 'customer')}
               activeOpacity={0.8}
             >
+              {form.role === 'customer' && (
+                <View style={styles.roleCheck}>
+                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                </View>
+              )}
               <Text style={styles.roleEmoji}>👤</Text>
               <Text style={[
                 styles.roleBtnLabel,
-                form.role === 'user' && styles.roleBtnLabelActive,
+                form.role === 'customer' && styles.roleBtnLabelActive,
               ]}>
                 Food Lover
               </Text>
               <Text style={[
                 styles.roleBtnDesc,
-                form.role === 'user' && styles.roleBtnDescActive,
+                form.role === 'customer' && styles.roleBtnDescActive,
               ]}>
-                Browse menus
+                Browse & discover menus
               </Text>
-              {form.role === 'user' && (
-                <View style={styles.roleCheck}>
-                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                </View>
-              )}
             </TouchableOpacity>
 
             {/* Restaurant Owner */}
@@ -261,6 +331,11 @@ export default function RegisterScreen({ navigation }) {
               onPress={() => updateForm('role', 'restaurant_owner')}
               activeOpacity={0.8}
             >
+              {form.role === 'restaurant_owner' && (
+                <View style={styles.roleCheck}>
+                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                </View>
+              )}
               <Text style={styles.roleEmoji}>🍽️</Text>
               <Text style={[
                 styles.roleBtnLabel,
@@ -272,29 +347,43 @@ export default function RegisterScreen({ navigation }) {
                 styles.roleBtnDesc,
                 form.role === 'restaurant_owner' && styles.roleBtnDescActive,
               ]}>
-                Manage menus
+                List & manage your menu
               </Text>
-              {form.role === 'restaurant_owner' && (
-                <View style={styles.roleCheck}>
-                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                </View>
-              )}
             </TouchableOpacity>
-
           </View>
+
+          {/* ✅ Owner benefits shown when selected */}
+          {form.role === 'restaurant_owner' && (
+            <View style={styles.ownerBenefits}>
+              <Text style={styles.ownerBenefitsTitle}>
+                🎉 What you get as an Owner:
+              </Text>
+              {[
+                '14-day free trial',
+                'Unlimited menu items',
+                'Daily menu publishing',
+                'Customer reviews & analytics',
+              ].map((benefit, i) => (
+                <View key={i} style={styles.ownerBenefit}>
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={14}
+                    color={COLORS.success}
+                  />
+                  <Text style={styles.ownerBenefitText}>{benefit}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
-        {/* ── Password ── */}
+        {/* ── Password ──────────────────────── */}
         <View style={styles.inputContainer}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={18}
-            color={COLORS.textMuted}
-          />
+          <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
           <TextInput
             ref={passwordRef}
             style={styles.input}
-            placeholder="Password (min 6 characters)"
+            placeholder="Create password (min 6 characters)"
             placeholderTextColor={COLORS.textMuted}
             value={form.password}
             onChangeText={v => updateForm('password', v)}
@@ -305,7 +394,7 @@ export default function RegisterScreen({ navigation }) {
             onSubmitEditing={() => confirmPasswordRef.current?.focus()}
           />
           <TouchableOpacity
-            onPress={() => setShowPassword(!showPassword)}
+            onPress={() => setShowPassword(v => !v)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons
@@ -316,34 +405,41 @@ export default function RegisterScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ✅ Password strength indicator */}
-        {strength && (
+        {/* ✅ Password Strength Bar */}
+        {passwordStrength && (
           <View style={styles.strengthRow}>
             <View style={styles.strengthBarBg}>
               <View style={[
                 styles.strengthBarFill,
                 {
-                  backgroundColor: strength.color,
-                  width: form.password.length >= 12 ? '100%'
-                       : form.password.length >= 8  ? '66%'
-                       : form.password.length >= 6  ? '33%'
-                       : '15%',
+                  backgroundColor: passwordStrength.color,
+                  width:           passwordStrength.width,
                 },
               ]} />
             </View>
-            <Text style={[styles.strengthLabel, { color: strength.color }]}>
-              {strength.label}
+            <Text style={[
+              styles.strengthLabel,
+              { color: passwordStrength.color },
+            ]}>
+              {passwordStrength.label}
             </Text>
           </View>
         )}
 
-        {/* ── Confirm password ── */}
-        <View style={styles.inputContainer}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={18}
-            color={COLORS.textMuted}
-          />
+        {/* ✅ Password tips */}
+        {form.password.length > 0 && form.password.length < 10 && (
+          <Text style={styles.passwordTip}>
+            💡 Add uppercase, numbers or symbols for a stronger password
+          </Text>
+        )}
+
+        {/* ── Confirm Password ──────────────── */}
+        <View style={[
+          styles.inputContainer,
+          passwordMatch === false && styles.inputContainerError,
+          passwordMatch === true  && styles.inputContainerSuccess,
+        ]}>
+          <Ionicons name="lock-closed-outline" size={18} color={COLORS.textMuted} />
           <TextInput
             ref={confirmPasswordRef}
             style={styles.input}
@@ -351,31 +447,42 @@ export default function RegisterScreen({ navigation }) {
             placeholderTextColor={COLORS.textMuted}
             value={form.confirmPassword}
             onChangeText={v => updateForm('confirmPassword', v)}
-            secureTextEntry={!showPassword}
+            secureTextEntry={!showConfirmPassword}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="done"
             onSubmitEditing={handleRegister}
           />
-          {/* ✅ Password match indicator */}
-          {form.confirmPassword.length > 0 && (
+          {/* ✅ Separate show/hide for confirm */}
+          <TouchableOpacity
+            onPress={() => setShowConfirmPassword(v => !v)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Ionicons
-              name={
-                form.password === form.confirmPassword
-                  ? 'checkmark-circle'
-                  : 'close-circle'
-              }
+              name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
               size={18}
-              color={
-                form.password === form.confirmPassword
-                  ? COLORS.success
-                  : COLORS.error
-              }
+              color={COLORS.textMuted}
+            />
+          </TouchableOpacity>
+          {/* Match indicator */}
+          {passwordMatch !== null && (
+            <Ionicons
+              name={passwordMatch ? 'checkmark-circle' : 'close-circle'}
+              size={18}
+              color={passwordMatch ? COLORS.success : COLORS.error}
             />
           )}
         </View>
 
-        {/* ── Create account button ── */}
+        {/* Password match hint */}
+        {passwordMatch === false && (
+          <Text style={styles.inputError}>Passwords do not match</Text>
+        )}
+        {passwordMatch === true && (
+          <Text style={styles.inputSuccess}>Passwords match ✓</Text>
+        )}
+
+        {/* ── Create Account Button ─────────── */}
         <TouchableOpacity
           style={[
             styles.registerBtn,
@@ -389,31 +496,43 @@ export default function RegisterScreen({ navigation }) {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
-              <Ionicons
-                name="person-add-outline"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.registerBtnText}>
-                Create Account
-              </Text>
+              <Ionicons name="person-add-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.registerBtnText}>Create Account</Text>
             </>
           )}
         </TouchableOpacity>
 
-        {/* ── Terms notice ── */}
+        {/* ── Terms Notice ──────────────────── */}
         <Text style={styles.termsText}>
           By creating an account you agree to our{' '}
-          <Text style={styles.termsLink}>Terms of Service</Text>
+          <Text
+            style={styles.termsLink}
+            onPress={() =>
+              Alert.alert(
+                '📄 Terms of Service',
+                "By using What's Cooking, you agree to use the app responsibly and respect other users and restaurant owners."
+              )
+            }
+          >
+            Terms of Service
+          </Text>
           {' '}and{' '}
-          <Text style={styles.termsLink}>Privacy Policy</Text>
+          <Text
+            style={styles.termsLink}
+            onPress={() =>
+              Alert.alert(
+                '🔒 Privacy Policy',
+                "We collect only the data needed to provide our service. We never sell your personal information."
+              )
+            }
+          >
+            Privacy Policy
+          </Text>
         </Text>
 
-        {/* ── Login link ── */}
+        {/* ── Sign In Link ──────────────────── */}
         <View style={styles.loginRow}>
-          <Text style={styles.loginLabel}>
-            Already have an account?
-          </Text>
+          <Text style={styles.loginLabel}>Already have an account?</Text>
           <TouchableOpacity
             onPress={() => navigation.navigate('Login')}
             activeOpacity={0.7}
@@ -427,200 +546,227 @@ export default function RegisterScreen({ navigation }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-
-  // ✅ No hardcoded paddingTop/Bottom here
-  // — set dynamically from insets in contentContainerStyle
+  container: { flex: 1, backgroundColor: COLORS.background },
   content: {
-    flexGrow: 1,
+    flexGrow:          1,
     paddingHorizontal: SIZES.lg,
-    gap: SIZES.md,
+    gap:               SIZES.md,
   },
 
-  // ── Header ─────────────────────────────
+  // ── Header ────────────────────────────────
   headerSection: {
-    alignItems: 'center',
-    paddingVertical: SIZES.lg,
+    alignItems:     'center',
+    paddingVertical: SIZES.md,
+    position:        'relative',
   },
-  logo: {
-    fontSize: 50,
+  backBtn: {
+    position: 'absolute',
+    left:     0,
+    top:      SIZES.md,
+    padding:  SIZES.xs,
   },
+  logo:     { fontSize: 50 },
   title: {
-    fontSize: FONTS.title,
+    fontSize:   FONTS.title || FONTS.xxl,
     fontWeight: 'bold',
-    color: COLORS.primary,
-    marginTop: SIZES.sm,
+    color:      COLORS.primary,
+    marginTop:  SIZES.sm,
   },
   subtitle: {
-    fontSize: FONTS.md,
-    color: COLORS.textLight,
+    fontSize:  FONTS.md,
+    color:     COLORS.textLight,
     marginTop: SIZES.xs,
   },
 
-  // ── Name row ───────────────────────────
-  nameRow: {
-    flexDirection: 'row',
-    gap: SIZES.sm,
-  },
-
-  // ── Inputs ─────────────────────────────
+  // ── Inputs ────────────────────────────────
+  nameRow: { flexDirection: 'row', gap: SIZES.sm },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
+    borderRadius:      RADIUS.lg,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-    gap: SIZES.sm,
+    paddingVertical:   SIZES.md,
+    gap:               SIZES.sm,
+    borderWidth:       1,
+    borderColor:       'transparent',
     ...SHADOW,
   },
-  input: {
-    flex: 1,
-    fontSize: FONTS.lg,
-    color: COLORS.text,
+  inputContainerError: {
+    borderColor:     COLORS.error + '60',
+    backgroundColor: COLORS.error + '05',
+  },
+  inputContainerSuccess: {
+    borderColor:     COLORS.success + '60',
+    backgroundColor: COLORS.success + '05',
+  },
+  input: { flex: 1, fontSize: FONTS.lg, color: COLORS.text },
+
+  // ── Validation Messages ───────────────────
+  inputError: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.error,
+    fontWeight: '500',
+    marginTop:  -SIZES.xs,
+    marginLeft: SIZES.xs,
+  },
+  inputSuccess: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.success,
+    fontWeight: '500',
+    marginTop:  -SIZES.xs,
+    marginLeft: SIZES.xs,
   },
 
-  // ── Password strength ──────────────────
+  // ── Password Strength ─────────────────────
   strengthRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
-    // ✅ Negative marginTop pulls it closer to the password field
-    marginTop: -SIZES.xs,
+    alignItems:    'center',
+    gap:           SIZES.sm,
+    marginTop:     -SIZES.xs,
   },
   strengthBarBg: {
-    flex: 1,
-    height: 4,
+    flex:            1,
+    height:          4,
     backgroundColor: COLORS.border,
-    borderRadius: 2,
-    overflow: 'hidden',
+    borderRadius:    2,
+    overflow:        'hidden',
   },
   strengthBarFill: {
-    height: '100%',
+    height:       '100%',
     borderRadius: 2,
   },
   strengthLabel: {
-    fontSize: FONTS.xs,
+    fontSize:   FONTS.xs,
     fontWeight: '600',
-    minWidth: 52,
-    textAlign: 'right',
+    minWidth:   50,
+    textAlign:  'right',
+  },
+  passwordTip: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    marginTop:  -SIZES.xs,
+    marginLeft: SIZES.xs,
   },
 
-  // ── Role selection ─────────────────────
-  roleSection: {
-    gap: SIZES.sm,
-  },
+  // ── Role Selection ────────────────────────
+  roleSection: { gap: SIZES.sm },
   roleTitle: {
-    fontSize: FONTS.lg,
+    fontSize:   FONTS.lg,
     fontWeight: '600',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
-  roleButtons: {
-    flexDirection: 'row',
-    gap: SIZES.md,
-  },
+  roleButtons: { flexDirection: 'row', gap: SIZES.md },
   roleBtn: {
-    flex: 1,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
+    flex:            1,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
     backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    position: 'relative',
+    alignItems:      'center',
+    borderWidth:     2,
+    borderColor:     COLORS.border,
+    position:        'relative',
+    gap:             4,
     ...SHADOW,
   },
   roleBtnActive: {
-    borderColor: COLORS.primary,
+    borderColor:     COLORS.primary,
     backgroundColor: COLORS.primary + '10',
   },
-  roleEmoji: {
-    fontSize: 28,
-    marginBottom: SIZES.xs,
-  },
+  roleEmoji:        { fontSize: 28 },
   roleBtnLabel: {
-    fontSize: FONTS.md,
+    fontSize:   FONTS.md,
     fontWeight: 'bold',
-    color: COLORS.text,
-    textAlign: 'center',
+    color:      COLORS.text,
+    textAlign:  'center',
   },
-  roleBtnLabelActive: {
-    color: COLORS.primary,
-  },
+  roleBtnLabelActive: { color: COLORS.primary },
   roleBtnDesc: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
-    marginTop: 2,
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
     textAlign: 'center',
   },
-  roleBtnDescActive: {
-    color: COLORS.primary,
-  },
+  roleBtnDescActive: { color: COLORS.primary },
   roleCheck: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
+    position:        'absolute',
+    top:             8,
+    right:           8,
     backgroundColor: COLORS.primary,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           20,
+    height:          20,
+    borderRadius:    10,
+    justifyContent:  'center',
+    alignItems:      'center',
   },
 
-  // ── Register button ────────────────────
-  registerBtn: {
+  // ── Owner Benefits ────────────────────────
+  ownerBenefits: {
+    backgroundColor: COLORS.success + '10',
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
+    borderWidth:     1,
+    borderColor:     COLORS.success + '30',
+    gap:             SIZES.xs,
+  },
+  ownerBenefitsTitle: {
+    fontSize:     FONTS.sm,
+    fontWeight:   '700',
+    color:        COLORS.text,
+    marginBottom: 4,
+  },
+  ownerBenefit: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems:    'center',
+    gap:           SIZES.xs,
+  },
+  ownerBenefitText: {
+    fontSize: FONTS.sm,
+    color:    COLORS.textLight,
+  },
+
+  // ── Register Button ───────────────────────
+  registerBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
-    marginTop: SIZES.sm,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    marginTop:       SIZES.sm,
     ...SHADOW,
   },
-  registerBtnDisabled: {
-    opacity: 0.7,
-  },
+  registerBtnDisabled: { opacity: 0.7 },
   registerBtnText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.xl,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
   },
 
-  // ── Terms ──────────────────────────────
+  // ── Terms ─────────────────────────────────
   termsText: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
-    textAlign: 'center',
+    fontSize:   FONTS.sm,
+    color:      COLORS.textMuted,
+    textAlign:  'center',
     lineHeight: 20,
   },
-  termsLink: {
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
+  termsLink: { color: COLORS.primary, fontWeight: '600' },
 
-  // ── Login link ─────────────────────────
+  // ── Sign In Link ──────────────────────────
   loginRow: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    // ✅ Extra bottom breathing room — main padding
-    // is handled by insets on contentContainerStyle
-    paddingBottom: SIZES.md,
+    alignItems:     'center',
+    paddingBottom:  SIZES.md,
   },
-  loginLabel: {
-    color: COLORS.textLight,
-    fontSize: FONTS.md,
-  },
+  loginLabel: { color: COLORS.textLight, fontSize: FONTS.md },
   loginLink: {
-    color: COLORS.primary,
-    fontSize: FONTS.md,
+    color:      COLORS.primary,
+    fontSize:   FONTS.md,
     fontWeight: 'bold',
   },
 });
