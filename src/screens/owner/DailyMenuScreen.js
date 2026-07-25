@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/screens/owner/DailyMenuScreen.js
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,34 +14,65 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  collection,
-  query,
-  where,
-  onSnapshot,
+  collection, query, where, onSnapshot,
 } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import { db }      from '../../firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { useMenu } from '../../hooks/useMenu';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { getImageSource }  from '../../utils/localFoodImages';
+import { getThumbUrl }     from '../../utils/uploadToCloudinary';
 
-export default function DailyMenuScreen() {
-  const insets = useSafeAreaInsets();
+// ─── Category Labels ──────────────────────────
+const CATEGORY_LABELS = {
+  appetizer:   '🥗 Appetizers',
+  soup:        '🍲 Soups',
+  salad:       '🥙 Salads',
+  main_course: '🍽️ Main Course',
+  side_dish:   '🍟 Side Dishes',
+  dessert:     '🧁 Desserts',
+  beverage:    '🥤 Beverages',
+  breakfast:   '🍳 Breakfast',
+  combo_meal:  '🎁 Combo Meals',
+  snack:       '🍿 Snacks',
+  other:       '🍴 Other',
+};
+
+// ✅ Get image source - handles Cloudinary, Firebase, local
+const getMenuItemImage = (item) => {
+  if (item?.cloudinaryUrl) {
+    return { uri: getThumbUrl(item.cloudinaryUrl, 100, 100) };
+  }
+  if (item?.imageUrl && item.imageUrl.startsWith('http')) {
+    return { uri: item.imageUrl };
+  }
+  return getImageSource(item);
+};
+
+const MAX_CHEF_MESSAGE = 200;
+
+export default function DailyMenuScreen({ navigation }) {
+  const insets   = useSafeAreaInsets();
   const { user } = useAuth();
 
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [selectedIds, setSelectedIds]   = useState([]);
-  const [chefMessage, setChefMessage]   = useState('');
-  const [saving, setSaving]             = useState(false);
-  const [published, setPublished]       = useState(false);
+  // ── State ─────────────────────────────────
+  const [restaurantId, setRestaurantId]   = useState(null);
+  const [selectedIds, setSelectedIds]     = useState([]);
+  const [specialIds, setSpecialIds]       = useState([]);
+  const [chefMessage, setChefMessage]     = useState('');
+  const [saving, setSaving]               = useState(false);
+  const [published, setPublished]         = useState(false);
+  const [menuLoading, setMenuLoading]     = useState(false);
+  const [activeCategory, setActiveCategory] = useState('all');
 
-  const { menuItems, setDailyMenu, getTodaysMenu } =
-    useMenu(restaurantId);
+  const { menuItems, setDailyMenu, getTodaysMenu } = useMenu(restaurantId);
 
-  // ── Get restaurant ID ────────────────────
+  // ── Get restaurant ID ─────────────────────
   useEffect(() => {
     if (!user) return;
     const q = query(
@@ -50,56 +81,146 @@ export default function DailyMenuScreen() {
     );
     const unsub = onSnapshot(q, snap => {
       if (!snap.empty) {
-        setRestaurantId(snap.docs[0].id);
+        const id = snap.docs[0].id;
+        setRestaurantId(id);
+        // ✅ Reset state when restaurant changes
+        setSelectedIds([]);
+        setSpecialIds([]);
+        setChefMessage('');
+        setPublished(false);
       }
     });
     return unsub;
   }, [user]);
 
-  // ── Load today's menu when ready ─────────
+  // ─────────────────────────────────────────
+  // LOAD TODAY'S MENU
+  // ✅ Wrapped in useCallback
+  // ─────────────────────────────────────────
+  const loadTodaysMenu = useCallback(async () => {
+    if (!restaurantId || menuItems.length === 0) return;
+    setMenuLoading(true);
+    try {
+      const todaysMenu = await getTodaysMenu();
+      if (todaysMenu) {
+        setSelectedIds(todaysMenu.availableItemIds || []);
+        setSpecialIds(todaysMenu.specials          || []);
+        setChefMessage(todaysMenu.chefMessage      || '');
+        setPublished(true);
+      } else {
+        // ✅ Default: all available items selected
+        setSelectedIds(
+          menuItems
+            .filter(i => i.isAvailable)
+            .map(i => i.id)
+        );
+        setSpecialIds([]);
+        setPublished(false);
+      }
+    } catch (err) {
+      console.error('loadTodaysMenu error:', err);
+    } finally {
+      setMenuLoading(false);
+    }
+  }, [restaurantId, menuItems, getTodaysMenu]);
+
+  // Load today's menu when ready
   useEffect(() => {
     if (restaurantId && menuItems.length > 0) {
       loadTodaysMenu();
     }
   }, [restaurantId, menuItems.length]);
 
-  const loadTodaysMenu = async () => {
-    const todaysMenu = await getTodaysMenu();
-    if (todaysMenu) {
-      setSelectedIds(todaysMenu.availableItemIds || []);
-      setChefMessage(todaysMenu.chefMessage || '');
-      setPublished(true);
-    } else {
-      setSelectedIds(menuItems.map(i => i.id));
-    }
-  };
+  // ─────────────────────────────────────────
+  // CATEGORIES
+  // ─────────────────────────────────────────
+  const categories = useMemo(() => {
+    const cats = ['all', ...new Set(menuItems.map(i => i.category || 'other'))];
+    return cats;
+  }, [menuItems]);
 
-  const toggleItem = (id) => {
+  // ─────────────────────────────────────────
+  // FILTERED ITEMS BY CATEGORY
+  // ─────────────────────────────────────────
+  const filteredItems = useMemo(() => {
+    if (activeCategory === 'all') return menuItems;
+    return menuItems.filter(i => (i.category || 'other') === activeCategory);
+  }, [menuItems, activeCategory]);
+
+  // ─────────────────────────────────────────
+  // TOGGLE HANDLERS
+  // ─────────────────────────────────────────
+  const toggleItem = useCallback((id) => {
     setSelectedIds(prev =>
-      prev.includes(id)
-        ? prev.filter(i => i !== id)
-        : [...prev, id]
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
-  };
+  }, []);
 
-  const selectAll   = () => setSelectedIds(menuItems.map(i => i.id));
-  const deselectAll = () => setSelectedIds([]);
+  // ✅ Toggle special - must be selected first
+  const toggleSpecial = useCallback((id) => {
+    if (!selectedIds.includes(id)) {
+      // Auto-select if not already selected
+      setSelectedIds(prev => [...prev, id]);
+    }
+    setSpecialIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  }, [selectedIds]);
 
-  const handlePublish = async () => {
+  const selectAll   = useCallback(() => {
+    setSelectedIds(menuItems.map(i => i.id));
+  }, [menuItems]);
+
+  const deselectAll = useCallback(() => {
+    setSelectedIds([]);
+    setSpecialIds([]); // ✅ Clear specials too
+  }, []);
+
+  const selectAvailableOnly = useCallback(() => {
+    setSelectedIds(menuItems.filter(i => i.isAvailable).map(i => i.id));
+  }, [menuItems]);
+
+  // ─────────────────────────────────────────
+  // PUBLISH
+  // ✅ Now passes specials too
+  // ─────────────────────────────────────────
+  const handlePublish = useCallback(async () => {
+    if (selectedIds.length === 0) {
+      Alert.alert(
+        'No Items Selected',
+        'Please select at least one menu item to publish.'
+      );
+      return;
+    }
+
     setSaving(true);
-    const result = await setDailyMenu(selectedIds, [], chefMessage);
+    const result = await setDailyMenu(
+      selectedIds,
+      specialIds,  // ✅ Was always [] before
+      chefMessage.trim()
+    );
     setSaving(false);
 
     if (result.success) {
       setPublished(true);
       Alert.alert(
         '✅ Menu Published!',
-        `${selectedIds.length} items are now visible to customers today.`
+        `${selectedIds.length} items published for today.\n` +
+        (specialIds.length > 0
+          ? `⭐ ${specialIds.length} specials highlighted.`
+          : '')
       );
     } else {
-      Alert.alert('Error', result.error);
+      Alert.alert('Error', result.error || 'Failed to publish menu');
     }
-  };
+  }, [selectedIds, specialIds, chefMessage, setDailyMenu]);
+
+  // ─────────────────────────────────────────
+  // STATS
+  // ─────────────────────────────────────────
+  const selectedCount = selectedIds.length;
+  const specialCount  = specialIds.length;
+  const totalCount    = menuItems.length;
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -107,19 +228,16 @@ export default function DailyMenuScreen() {
     day:     'numeric',
   });
 
-  // ── Publish bar height ───────────────────
-  // ✅ Dynamically sized so it always clears the Android nav bar
-  const PUBLISH_BAR_HEIGHT = 72 + insets.bottom;
+  const PUBLISH_BAR_HEIGHT = 80 + insets.bottom;
 
-  // ── Empty states ─────────────────────────
+  // ─────────────────────────────────────────
+  // EMPTY STATES
+  // ─────────────────────────────────────────
   if (!restaurantId) {
     return (
       <View style={[
         styles.centered,
-        {
-          paddingTop:    insets.top,
-          paddingBottom: insets.bottom,
-        },
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}>
         <Text style={styles.centeredEmoji}>🍽️</Text>
         <Text style={styles.centeredTitle}>No Restaurant Found</Text>
@@ -134,37 +252,37 @@ export default function DailyMenuScreen() {
     return (
       <View style={[
         styles.centered,
-        {
-          paddingTop:    insets.top,
-          paddingBottom: insets.bottom,
-        },
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}>
         <Text style={styles.centeredEmoji}>📋</Text>
         <Text style={styles.centeredTitle}>No Menu Items</Text>
         <Text style={styles.centeredText}>
           Add menu items first from the Menu tab
         </Text>
+        <TouchableOpacity
+          style={styles.addItemsBtn}
+          onPress={() => navigation?.navigate('ManageMenu')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.addItemsBtnText}>Add Menu Items</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
+  // ─────────────────────────────────────────
+  // MAIN RENDER
+  // ─────────────────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView so chef message input
-    // is not hidden when keyboard opens
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios'
-          ? 0
-          // ✅ Android: offset = status bar (insets.top)
-          // + tab bar height (approximate 56px)
-          : insets.top + 56
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top + 56}
     >
       {/* ── Header ──────────────────────────── */}
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>📅 Today's Menu</Text>
           <Text style={styles.headerDate}>{today}</Text>
         </View>
@@ -176,117 +294,229 @@ export default function DailyMenuScreen() {
         )}
       </View>
 
-      {/* ── Stats bar ───────────────────────── */}
-      <View style={styles.statsBar}>
-        <Text style={styles.statsText}>
-          {selectedIds.length} of {menuItems.length} items selected
-        </Text>
-        <View style={styles.statsActions}>
-          <TouchableOpacity onPress={selectAll} style={styles.statsBtn}>
-            <Text style={styles.statsBtnText}>Select All</Text>
-          </TouchableOpacity>
-          <Text style={styles.statsDot}>•</Text>
-          <TouchableOpacity onPress={deselectAll} style={styles.statsBtn}>
-            <Text style={[styles.statsBtnText, { color: COLORS.error }]}>
-              Clear
-            </Text>
-          </TouchableOpacity>
+      {/* ── Loading today's menu ─────────────── */}
+      {menuLoading ? (
+        <View style={styles.menuLoading}>
+          <ActivityIndicator size="small" color={COLORS.primary} />
+          <Text style={styles.menuLoadingText}>
+            Loading today's menu...
+          </Text>
         </View>
-      </View>
-
-      {/* ── Chef message ────────────────────── */}
-      <View style={styles.messageBox}>
-        <Text style={styles.messageLabel}>
-          👨‍🍳 Chef's Message (optional)
-        </Text>
-        <TextInput
-          style={styles.messageInput}
-          placeholder="e.g. Try our special today! Limited quantity available..."
-          placeholderTextColor={COLORS.textMuted}
-          value={chefMessage}
-          onChangeText={setChefMessage}
-          multiline
-          numberOfLines={2}
-          textAlignVertical="top"
-          returnKeyType="done"
-        />
-      </View>
-
-      {/* ── Menu items list ──────────────────── */}
-      <FlatList
-        data={menuItems}
-        keyExtractor={item => item.id}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.list,
-          {
-            // ✅ Bottom padding = publish bar height + nav bar inset
-            // so the last list item is never hidden behind the
-            // fixed publish bar or the Android nav bar
-            paddingBottom: PUBLISH_BAR_HEIGHT + SIZES.md,
-          },
-        ]}
-        renderItem={({ item }) => {
-          const isSelected = selectedIds.includes(item.id);
-          return (
-            <TouchableOpacity
-              style={[
-                styles.itemRow,
-                isSelected && styles.itemRowSelected,
-              ]}
-              onPress={() => toggleItem(item.id)}
-              activeOpacity={0.7}
-            >
-              {/* Checkbox */}
-              <View style={[
-                styles.checkbox,
-                isSelected && styles.checkboxActive,
-              ]}>
-                {isSelected && (
-                  <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-                )}
-              </View>
-
-              {/* Food image */}
-              <Image
-                source={{
-                  uri: item.imageUrl ||
-                    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=100',
-                }}
-                style={styles.itemImage}
-              />
-
-              {/* Info */}
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <Text style={styles.itemCategory}>
-                  {item.category?.replace(/_/g, ' ')}
+      ) : (
+        <>
+          {/* ── Stats Bar ──────────────────────── */}
+          <View style={styles.statsBar}>
+            <View style={styles.statsLeft}>
+              <Text style={styles.statsText}>
+                <Text style={{ color: COLORS.primary, fontWeight: 'bold' }}>
+                  {selectedCount}
                 </Text>
-              </View>
-
-              {/* Price */}
-              <Text style={styles.itemPrice}>
-                ${item.price?.toFixed(2)}
+                /{totalCount} items
               </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
+              {specialCount > 0 && (
+                <View style={styles.specialCountBadge}>
+                  <Text style={styles.specialCountText}>
+                    ⭐ {specialCount} special{specialCount !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+              )}
+            </View>
 
-      {/* ── Publish bar — fixed at bottom ────── */}
-      {/*
-        ✅ paddingBottom uses insets.bottom so the bar
-        always sits above the Android nav bar, not behind it.
-        This is the KEY fix for this screen.
-      */}
+            <View style={styles.statsActions}>
+              <TouchableOpacity
+                onPress={selectAll}
+                style={styles.statsBtn}
+              >
+                <Text style={styles.statsBtnText}>All</Text>
+              </TouchableOpacity>
+              <Text style={styles.statsDot}>·</Text>
+              <TouchableOpacity
+                onPress={selectAvailableOnly}
+                style={styles.statsBtn}
+              >
+                <Text style={styles.statsBtnText}>Available</Text>
+              </TouchableOpacity>
+              <Text style={styles.statsDot}>·</Text>
+              <TouchableOpacity
+                onPress={deselectAll}
+                style={styles.statsBtn}
+              >
+                <Text style={[styles.statsBtnText, { color: COLORS.error }]}>
+                  Clear
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ── Chef Message ────────────────────── */}
+          <View style={styles.messageBox}>
+            <View style={styles.messageLabelRow}>
+              <Text style={styles.messageLabel}>
+                👨‍🍳 Chef's Message
+              </Text>
+              <Text style={[
+                styles.charCount,
+                chefMessage.length > MAX_CHEF_MESSAGE * 0.9 && {
+                  color: COLORS.error,
+                },
+              ]}>
+                {chefMessage.length}/{MAX_CHEF_MESSAGE}
+              </Text>
+            </View>
+            <TextInput
+              style={styles.messageInput}
+              placeholder="e.g. Try our special today! Limited quantity..."
+              placeholderTextColor={COLORS.textMuted}
+              value={chefMessage}
+              onChangeText={v => setChefMessage(v.slice(0, MAX_CHEF_MESSAGE))}
+              multiline
+              numberOfLines={2}
+              textAlignVertical="top"
+              returnKeyType="done"
+              maxLength={MAX_CHEF_MESSAGE}
+            />
+          </View>
+
+          {/* ── Category Filter ──────────────────── */}
+          {categories.length > 2 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryScroll}
+              contentContainerStyle={styles.categoryScrollContent}
+            >
+              {categories.map(cat => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.categoryTab,
+                    activeCategory === cat && styles.categoryTabActive,
+                  ]}
+                  onPress={() => setActiveCategory(cat)}
+                >
+                  <Text style={[
+                    styles.categoryTabText,
+                    activeCategory === cat && styles.categoryTabTextActive,
+                  ]}>
+                    {cat === 'all'
+                      ? `All (${menuItems.length})`
+                      : `${CATEGORY_LABELS[cat] || cat} (${
+                          menuItems.filter(i =>
+                            (i.category || 'other') === cat
+                          ).length
+                        })`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* ── Menu Items List ─────────────────── */}
+          <FlatList
+            data={filteredItems}
+            keyExtractor={item => item.id}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={[
+              styles.list,
+              { paddingBottom: PUBLISH_BAR_HEIGHT + SIZES.md },
+            ]}
+            renderItem={({ item }) => {
+              const isSelected = selectedIds.includes(item.id);
+              const isSpecial  = specialIds.includes(item.id);
+
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.itemRow,
+                    isSelected && styles.itemRowSelected,
+                    isSpecial  && styles.itemRowSpecial,
+                    !item.isAvailable && styles.itemRowUnavailable,
+                  ]}
+                  onPress={() => toggleItem(item.id)}
+                  activeOpacity={0.7}
+                >
+                  {/* Checkbox */}
+                  <View style={[
+                    styles.checkbox,
+                    isSelected && styles.checkboxActive,
+                  ]}>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    )}
+                  </View>
+
+                  {/* ✅ Image with Cloudinary optimization */}
+                  <Image
+                    source={getMenuItemImage(item)}
+                    style={styles.itemImage}
+                    resizeMode="cover"
+                  />
+
+                  {/* Info */}
+                  <View style={styles.itemInfo}>
+                    <View style={styles.itemNameRow}>
+                      <Text style={styles.itemName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      {isSpecial && (
+                        <Text style={styles.specialLabel}>⭐ Special</Text>
+                      )}
+                    </View>
+                    <Text style={styles.itemCategory}>
+                      {CATEGORY_LABELS[item.category] ||
+                        item.category?.replace(/_/g, ' ')}
+                    </Text>
+                    {!item.isAvailable && (
+                      <Text style={styles.unavailableLabel}>
+                        ⚠️ Marked unavailable
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Price + Special toggle */}
+                  <View style={styles.itemRight}>
+                    <Text style={styles.itemPrice}>
+                      ${item.price?.toFixed(2)}
+                    </Text>
+                    {/* ✅ Star button to mark as special */}
+                    <TouchableOpacity
+                      style={[
+                        styles.starBtn,
+                        isSpecial && styles.starBtnActive,
+                      ]}
+                      onPress={() => toggleSpecial(item.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons
+                        name={isSpecial ? 'star' : 'star-outline'}
+                        size={18}
+                        color={isSpecial ? '#FFD700' : COLORS.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </>
+      )}
+
+      {/* ── Publish Bar ─────────────────────── */}
       <View style={[
         styles.publishBar,
         { paddingBottom: insets.bottom + SIZES.sm },
       ]}>
         <View style={styles.publishInfo}>
-          <Text style={styles.publishCount}>{selectedIds.length} items</Text>
-          <Text style={styles.publishSubtext}>will be shown today</Text>
+          <Text style={styles.publishCount}>
+            {selectedCount} item{selectedCount !== 1 ? 's' : ''}
+          </Text>
+          <Text style={styles.publishSubtext}>
+            {specialCount > 0
+              ? `${specialCount} special${specialCount !== 1 ? 's' : ''} · `
+              : ''}
+            will show today
+          </Text>
         </View>
 
         <TouchableOpacity
@@ -296,12 +526,13 @@ export default function DailyMenuScreen() {
           ]}
           onPress={handlePublish}
           disabled={saving}
+          activeOpacity={0.8}
         >
           {saving ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <>
-              <Ionicons name="cloud-upload" size={18} color="#FFFFFF" />
+              <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
               <Text style={styles.publishBtnText}>
                 {published ? 'Update Menu' : 'Publish Menu'}
               </Text>
@@ -309,241 +540,299 @@ export default function DailyMenuScreen() {
           )}
         </TouchableOpacity>
       </View>
-
     </KeyboardAvoidingView>
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
 
-  // ── Empty / loading states ───────────────
+  // ── Empty States ──────────────────────────
   centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SIZES.xl,
+    flex:            1,
+    justifyContent:  'center',
+    alignItems:      'center',
+    padding:         SIZES.xl,
     backgroundColor: COLORS.background,
+    gap:             SIZES.sm,
   },
-  centeredEmoji: {
-    fontSize: 60,
-    marginBottom: SIZES.md,
-  },
+  centeredEmoji: { fontSize: 60 },
   centeredTitle: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: SIZES.sm,
+    color:      COLORS.text,
+    textAlign:  'center',
   },
   centeredText: {
-    fontSize: FONTS.md,
-    color: COLORS.textMuted,
+    fontSize:  FONTS.md,
+    color:     COLORS.textMuted,
     textAlign: 'center',
   },
+  addItemsBtn: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               SIZES.xs,
+    backgroundColor:   COLORS.primary,
+    paddingHorizontal: SIZES.xl,
+    paddingVertical:   SIZES.md,
+    borderRadius:      RADIUS.lg,
+    marginTop:         SIZES.md,
+  },
+  addItemsBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
 
-  // ── Header ──────────────────────────────
+  // ── Header ────────────────────────────────
   header: {
     backgroundColor: COLORS.primary,
-    padding: SIZES.lg,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    padding:         SIZES.lg,
+    flexDirection:   'row',
+    justifyContent:  'space-between',
+    alignItems:      'center',
   },
   headerTitle: {
-    fontSize: FONTS.xxl,
+    fontSize:   FONTS.xxl,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color:      '#FFFFFF',
   },
   headerDate: {
-    fontSize: FONTS.sm,
-    color: 'rgba(255,255,255,0.8)',
+    fontSize:  FONTS.sm,
+    color:     'rgba(255,255,255,0.8)',
     marginTop: 2,
   },
   publishedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.success,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.success,
     paddingHorizontal: SIZES.md,
-    paddingVertical: 6,
-    borderRadius: RADIUS.round,
-    gap: 4,
+    paddingVertical:   6,
+    borderRadius:      RADIUS.round,
+    gap:               4,
   },
   publishedText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.sm,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.sm,
     fontWeight: '600',
   },
 
-  // ── Stats bar ───────────────────────────
+  // ── Loading ───────────────────────────────
+  menuLoading: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'center',
+    padding:        SIZES.lg,
+    gap:            SIZES.sm,
+  },
+  menuLoadingText: { fontSize: FONTS.md, color: COLORS.textMuted },
+
+  // ── Stats Bar ─────────────────────────────
   statsBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
+    paddingVertical:   SIZES.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  statsText: {
-    fontSize: FONTS.md,
-    color: COLORS.text,
-    fontWeight: '600',
+  statsLeft: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.sm,
+  },
+  statsText: { fontSize: FONTS.md, color: COLORS.text, fontWeight: '600' },
+  specialCountBadge: {
+    backgroundColor:   '#FFD700' + '20',
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+    borderWidth:       1,
+    borderColor:       '#FFD700' + '40',
+  },
+  specialCountText: {
+    fontSize:   FONTS.xs,
+    color:      '#B8860B',
+    fontWeight: '700',
   },
   statsActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
+    alignItems:    'center',
+    gap:           SIZES.xs,
   },
-  statsBtn: {
-    paddingHorizontal: SIZES.sm,
-    // ✅ Larger tap target
-    paddingVertical: SIZES.xs,
-  },
-  statsBtnText: {
-    fontSize: FONTS.sm,
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  statsDot: {
-    color: COLORS.textMuted,
-  },
+  statsBtn:     { paddingHorizontal: SIZES.xs, paddingVertical: SIZES.xs },
+  statsBtnText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '600' },
+  statsDot:     { color: COLORS.textMuted, fontSize: FONTS.sm },
 
-  // ── Chef message ────────────────────────
+  // ── Chef Message ──────────────────────────
   messageBox: {
-    backgroundColor: COLORS.surface,
-    padding: SIZES.md,
-    gap: SIZES.xs,
+    backgroundColor:   COLORS.surface,
+    padding:           SIZES.md,
+    gap:               SIZES.xs,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  messageLabel: {
-    fontSize: FONTS.md,
-    fontWeight: '600',
-    color: COLORS.text,
+  messageLabelRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
   },
+  messageLabel: { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
+  charCount:    { fontSize: FONTS.xs, color: COLORS.textMuted              },
   messageInput: {
-    backgroundColor: COLORS.background,
-    borderRadius: RADIUS.md,
-    padding: SIZES.md,
-    fontSize: FONTS.md,
-    color: COLORS.text,
-    height: 60,
+    backgroundColor:   COLORS.background,
+    borderRadius:      RADIUS.md,
+    padding:           SIZES.md,
+    fontSize:          FONTS.md,
+    color:             COLORS.text,
+    height:            60,
     textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
 
-  // ── List ────────────────────────────────
-  list: {
-    padding: SIZES.md,
-    gap: SIZES.sm,
-    // ✅ paddingBottom set dynamically in contentContainerStyle
-    // using PUBLISH_BAR_HEIGHT + insets — do not hardcode here
+  // ── Category Filter ───────────────────────
+  categoryScroll:        { maxHeight: 44, backgroundColor: COLORS.surface },
+  categoryScrollContent: {
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   SIZES.sm,
+    gap:               SIZES.sm,
+    alignItems:        'center',
   },
+  categoryTab: {
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   6,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.background,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
+  },
+  categoryTabActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  categoryTabText:       { fontSize: FONTS.xs, color: COLORS.textMuted, fontWeight: '500' },
+  categoryTabTextActive: { color: '#FFFFFF', fontWeight: '600'                            },
 
-  // ── Item row ────────────────────────────
+  // ── List ──────────────────────────────────
+  list: { padding: SIZES.md, gap: SIZES.sm },
+
+  // ── Item Row ──────────────────────────────
   itemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
     backgroundColor: COLORS.surface,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.md,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.md,
+    borderWidth:     2,
+    borderColor:     'transparent',
     ...SHADOW,
   },
-  itemRowSelected: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primary + '08',
-  },
+  itemRowSelected:    { borderColor: COLORS.primary, backgroundColor: COLORS.primary + '08' },
+  itemRowSpecial:     { borderColor: '#FFD700',      backgroundColor: '#FFD700' + '05'      },
+  itemRowUnavailable: { opacity: 0.6                                                         },
+
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           24,
+    height:          24,
+    borderRadius:    6,
+    borderWidth:     2,
+    borderColor:     COLORS.border,
+    justifyContent:  'center',
+    alignItems:      'center',
   },
   checkboxActive: {
     backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  itemImage: {
-    width: 50,
-    height: 50,
-    borderRadius: RADIUS.md,
-  },
-  itemInfo: {
-    flex: 1,
-  },
-  itemName: {
-    fontSize: FONTS.md,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  itemCategory: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-    textTransform: 'capitalize',
-    marginTop: 2,
-  },
-  itemPrice: {
-    fontSize: FONTS.lg,
-    fontWeight: 'bold',
-    color: COLORS.primary,
+    borderColor:     COLORS.primary,
   },
 
-  // ── Publish bar ─────────────────────────
-  publishBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+  itemImage: {
+    width:        50,
+    height:       50,
+    borderRadius: RADIUS.md,
+  },
+
+  itemInfo: { flex: 1 },
+  itemNameRow: {
     flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.xs,
+    flexWrap:      'wrap',
+  },
+  itemName: {
+    fontSize:   FONTS.md,
+    fontWeight: '600',
+    color:      COLORS.text,
+    flexShrink: 1,
+  },
+  specialLabel: {
+    fontSize:   FONTS.xs,
+    color:      '#B8860B',
+    fontWeight: '700',
+  },
+  itemCategory: {
+    fontSize:        FONTS.xs,
+    color:           COLORS.textMuted,
+    textTransform:   'capitalize',
+    marginTop:       2,
+  },
+  unavailableLabel: {
+    fontSize:  FONTS.xs,
+    color:     COLORS.error,
+    marginTop: 2,
+  },
+
+  itemRight: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
+    gap:        SIZES.xs,
+  },
+  itemPrice: {
+    fontSize:   FONTS.lg,
+    fontWeight: 'bold',
+    color:      COLORS.primary,
+  },
+  starBtn: {
+    padding:         4,
+    backgroundColor: COLORS.border,
+    borderRadius:    RADIUS.sm,
+  },
+  starBtnActive: { backgroundColor: '#FFD700' + '20' },
+
+  // ── Publish Bar ───────────────────────────
+  publishBar: {
+    position:          'absolute',
+    bottom:            0,
+    left:              0,
+    right:             0,
+    flexDirection:     'row',
+    alignItems:        'center',
+    justifyContent:    'space-between',
+    backgroundColor:   COLORS.surface,
     paddingHorizontal: SIZES.md,
-    paddingTop: SIZES.md,
-    // ✅ paddingBottom set dynamically via insets
-    // in the JSX — do NOT hardcode here
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    paddingTop:        SIZES.md,
+    borderTopWidth:    1,
+    borderTopColor:    COLORS.border,
     ...SHADOW,
   },
-  publishInfo: {
-    gap: 2,
-  },
+  publishInfo:    { gap: 2 },
   publishCount: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color:      COLORS.primary,
   },
-  publishSubtext: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-  },
+  publishSubtext: { fontSize: FONTS.xs, color: COLORS.textMuted },
   publishBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.primary,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.lg,
-    paddingVertical: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
+    paddingVertical:   SIZES.md,
+    borderRadius:      RADIUS.lg,
+    gap:               SIZES.sm,
   },
-  publishBtnDisabled: {
-    opacity: 0.7,
-  },
+  publishBtnDisabled: { opacity: 0.7 },
   publishBtnText: {
-    color: '#FFFFFF',
+    color:      '#FFFFFF',
     fontWeight: 'bold',
-    fontSize: FONTS.lg,
+    fontSize:   FONTS.lg,
   },
 });
