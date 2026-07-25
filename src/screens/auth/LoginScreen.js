@@ -1,105 +1,172 @@
 // ============================================
 // FILE: src/screens/auth/LoginScreen.js
 // ============================================
-import React, { useState } from 'react';
+import React, {
+  useState, useRef, useCallback,
+} from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, Alert, KeyboardAvoidingView,
+  Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth }           from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
+// ✅ Safe fallback for FONTS.title
+const TITLE_SIZE = FONTS.title || FONTS.xxl || 28;
+
+// ─── Firebase Auth Error Map ──────────────────
+const getAuthError = (error) => {
+  const code = error?.code || error || '';
+  const map  = {
+    'auth/user-not-found':         'No account found with this email address.',
+    'auth/wrong-password':         'Incorrect password. Please try again.',
+    'auth/invalid-email':          'Please enter a valid email address.',
+    'auth/user-disabled':          'This account has been disabled.',
+    'auth/too-many-requests':      'Too many failed attempts. Please try again later.',
+    'auth/network-request-failed': 'Network error. Check your internet connection.',
+    'auth/invalid-credential':     'Incorrect email or password. Please try again.',
+    'auth/operation-not-allowed':  'Sign in is currently unavailable.',
+  };
+  return map[code] || 'Sign in failed. Please check your credentials.';
+};
+
+// ─── Email Validation ─────────────────────────
+const isValidEmail = (email) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+// ─────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────
 export default function LoginScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
-  const { login, forgotPassword } = useAuth();
+  const insets                        = useSafeAreaInsets();
+  const { login, forgotPassword }     = useAuth();
 
-  const [email, setEmail]             = useState('');
-  const [password, setPassword]       = useState('');
+  // ── Refs ──────────────────────────────────
+  const passwordRef = useRef(null);
+
+  // ── State ─────────────────────────────────
+  const [email, setEmail]               = useState('');
+  const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading]         = useState(false);
+  const [loading, setLoading]           = useState(false);
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-    setLoading(true);
-    const result = await login(email.trim().toLowerCase(), password);
-    setLoading(false);
-    if (!result.success) {
-      Alert.alert('Login Failed', result.error);
-    }
-    // Navigation happens automatically via auth state change
-  };
-
-  const handleForgotPassword = async () => {
+  // ─────────────────────────────────────────
+  // LOGIN HANDLER
+  // ─────────────────────────────────────────
+  const handleLogin = useCallback(async () => {
+    // ── Validation ────────────────────────
     if (!email.trim()) {
-      Alert.alert('Info', 'Enter your email address first');
+      Alert.alert('Required', 'Please enter your email address');
       return;
     }
-    const result = await forgotPassword(email.trim());
-    if (result.success) {
-      Alert.alert(
-        'Email Sent ✅',
-        'Check your email for password reset instructions'
-      );
-    } else {
-      Alert.alert('Error', result.error);
+    if (!isValidEmail(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
     }
-  };
+    if (!password.trim()) {
+      Alert.alert('Required', 'Please enter your password');
+      return;
+    }
 
+    setLoading(true);
+    try {
+      const result = await login(email.trim().toLowerCase(), password);
+      if (!result.success) {
+        Alert.alert('Sign In Failed', getAuthError(result.error));
+      }
+      // ✅ Navigation handled automatically by auth state change
+    } catch (err) {
+      Alert.alert('Sign In Failed', getAuthError(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [email, password, login]);
+
+  // ─────────────────────────────────────────
+  // FORGOT PASSWORD HANDLER
+  // ─────────────────────────────────────────
+  const handleForgotPassword = useCallback(async () => {
+    if (!email.trim()) {
+      Alert.alert(
+        'Email Required',
+        'Please enter your email address first, then tap Forgot Password.'
+      );
+      return;
+    }
+    if (!isValidEmail(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    try {
+      const result = await forgotPassword(email.trim().toLowerCase());
+      if (result.success) {
+        Alert.alert(
+          '📧 Email Sent',
+          `Password reset instructions sent to:\n${email.trim().toLowerCase()}\n\nCheck your inbox (and spam folder).`
+        );
+      } else {
+        Alert.alert('Error', getAuthError(result.error));
+      }
+    } catch (err) {
+      Alert.alert('Error', getAuthError(err));
+    }
+  }, [email, forgotPassword]);
+
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView — outermost wrapper
-    // 'padding' on iOS pushes content up
-    // 'height' on Android shrinks the view so inputs stay visible
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      // ✅ On Android with translucent status bar,
-      // offset by insets.top so keyboard aligns correctly
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
       <ScrollView
         contentContainerStyle={[
           styles.content,
           {
-            // ✅ Top padding respects status bar
-            paddingTop: insets.top + SIZES.lg,
-            // ✅ Bottom padding clears Android nav bar
-            // and gives breathing room above keyboard
+            paddingTop:    insets.top    + SIZES.lg,
             paddingBottom: insets.bottom + SIZES.xl,
           },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Header ── */}
+
+        {/* ── Back Button ───────────────────── */}
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+        </TouchableOpacity>
+
+        {/* ── Header ────────────────────────── */}
         <View style={styles.header}>
           <Text style={styles.logo}>🍳</Text>
-          <Text style={styles.title}>What's Cooking</Text>
+          <Text style={styles.title}>Welcome Back!</Text>
           <Text style={styles.subtitle}>Sign in to your account</Text>
         </View>
 
-        {/* ── Form ── */}
+        {/* ── Form ──────────────────────────── */}
         <View style={styles.form}>
 
-          {/* Email input */}
-          <View style={styles.inputContainer}>
+          {/* Email */}
+          <View style={[
+            styles.inputContainer,
+            email.length > 0 && !isValidEmail(email) &&
+              styles.inputContainerError,
+          ]}>
             <Ionicons
               name="mail-outline"
               size={20}
               color={COLORS.textMuted}
-              style={styles.inputIcon}
             />
             <TextInput
               style={styles.input}
@@ -112,18 +179,37 @@ export default function LoginScreen({ navigation }) {
               autoComplete="email"
               autoCorrect={false}
               returnKeyType="next"
+              // ✅ Focus password on next
+              onSubmitEditing={() => passwordRef.current?.focus()}
             />
+            {/* ✅ Email validation indicator */}
+            {email.length > 0 && (
+              <Ionicons
+                name={isValidEmail(email)
+                  ? 'checkmark-circle'
+                  : 'close-circle'}
+                size={18}
+                color={isValidEmail(email) ? COLORS.success : COLORS.error}
+              />
+            )}
           </View>
 
-          {/* Password input */}
+          {/* Email error hint */}
+          {email.length > 0 && !isValidEmail(email) && (
+            <Text style={styles.inputError}>
+              Please enter a valid email address
+            </Text>
+          )}
+
+          {/* Password */}
           <View style={styles.inputContainer}>
             <Ionicons
               name="lock-closed-outline"
               size={20}
               color={COLORS.textMuted}
-              style={styles.inputIcon}
             />
             <TextInput
+              ref={passwordRef}
               style={styles.input}
               placeholder="Password"
               placeholderTextColor={COLORS.textMuted}
@@ -137,18 +223,19 @@ export default function LoginScreen({ navigation }) {
               onSubmitEditing={handleLogin}
             />
             <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
+              onPress={() => setShowPassword(v => !v)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
             >
               <Ionicons
-                name={showPassword ? 'eye-off' : 'eye'}
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                 size={20}
                 color={COLORS.textMuted}
               />
             </TouchableOpacity>
           </View>
 
-          {/* Forgot password */}
+          {/* Forgot Password */}
           <TouchableOpacity
             style={styles.forgotBtn}
             onPress={handleForgotPassword}
@@ -157,7 +244,7 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.forgotText}>Forgot Password?</Text>
           </TouchableOpacity>
 
-          {/* Sign in button */}
+          {/* Sign In Button */}
           <TouchableOpacity
             style={[
               styles.loginBtn,
@@ -168,13 +255,37 @@ export default function LoginScreen({ navigation }) {
             activeOpacity={0.8}
           >
             {loading ? (
-              <ActivityIndicator color={COLORS.textWhite} />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.loginText}>Sign In</Text>
+              <>
+                <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.loginText}>Sign In</Text>
+              </>
             )}
           </TouchableOpacity>
 
-          {/* Register link */}
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* ✅ Browse as Guest */}
+          <TouchableOpacity
+            style={styles.guestBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="compass-outline"
+              size={20}
+              color={COLORS.primary}
+            />
+            <Text style={styles.guestBtnText}>Browse as Guest</Text>
+          </TouchableOpacity>
+
+          {/* Register Link */}
           <View style={styles.registerRow}>
             <Text style={styles.registerLabel}>
               Don't have an account?
@@ -193,112 +304,151 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-
-  // ✅ flexGrow: 1 ensures content centres vertically
-  // when there is empty space (short content on tall screens)
+  container: { flex: 1, backgroundColor: COLORS.background },
   content: {
-    flexGrow: 1,
+    flexGrow:          1,
     paddingHorizontal: SIZES.lg,
-    justifyContent: 'center',
-    // paddingTop and paddingBottom set dynamically via insets
+    justifyContent:    'center',
   },
 
-  // ── Header ─────────────────────────────
+  // ── Back Button ───────────────────────────
+  backBtn: {
+    position: 'absolute',
+    top:      SIZES.lg,
+    left:     SIZES.lg,
+    padding:  SIZES.xs,
+    zIndex:   10,
+  },
+
+  // ── Header ────────────────────────────────
   header: {
-    alignItems: 'center',
+    alignItems:   'center',
     marginBottom: SIZES.xxl,
   },
-  logo: {
-    fontSize: 60,
-  },
+  logo: { fontSize: 60 },
   title: {
-    fontSize: FONTS.title,
+    fontSize:   TITLE_SIZE,
     fontWeight: 'bold',
-    color: COLORS.primary,
-    marginTop: SIZES.sm,
+    color:      COLORS.primary,
+    marginTop:  SIZES.sm,
   },
   subtitle: {
-    fontSize: FONTS.lg,
-    color: COLORS.textLight,
+    fontSize:  FONTS.lg,
+    color:     COLORS.textLight,
     marginTop: SIZES.xs,
   },
 
-  // ── Form ───────────────────────────────
-  form: {
-    gap: SIZES.md,
-  },
+  // ── Form ──────────────────────────────────
+  form: { gap: SIZES.md },
 
-  // ── Inputs ─────────────────────────────
+  // ── Inputs ────────────────────────────────
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
+    borderRadius:      RADIUS.lg,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
+    paddingVertical:   SIZES.md,
+    gap:               SIZES.sm,
+    borderWidth:       1,
+    borderColor:       'transparent',
     ...SHADOW,
   },
-  inputIcon: {
-    marginRight: SIZES.sm,
+  inputContainerError: {
+    borderColor:     COLORS.error + '60',
+    backgroundColor: COLORS.error + '05',
   },
-  input: {
-    flex: 1,
-    fontSize: FONTS.lg,
-    color: COLORS.text,
+  input: { flex: 1, fontSize: FONTS.lg, color: COLORS.text },
+
+  // ── Validation ────────────────────────────
+  inputError: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.error,
+    fontWeight: '500',
+    marginTop:  -SIZES.xs,
+    marginLeft: SIZES.xs,
   },
 
-  // ── Forgot password ────────────────────
+  // ── Forgot Password ───────────────────────
   forgotBtn: {
-    alignSelf: 'flex-end',
-    paddingVertical: SIZES.xs,   // ✅ Larger tap area
+    alignSelf:         'flex-end',
+    paddingVertical:   SIZES.xs,
     paddingHorizontal: SIZES.xs,
   },
   forgotText: {
-    color: COLORS.primary,
-    fontSize: FONTS.md,
+    color:      COLORS.primary,
+    fontSize:   FONTS.md,
     fontWeight: '600',
   },
 
-  // ── Sign in button ─────────────────────
+  // ── Login Button ──────────────────────────
   loginBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    marginTop: SIZES.sm,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    marginTop:       SIZES.sm,
     ...SHADOW,
   },
-  loginBtnDisabled: {
-    opacity: 0.7,
-  },
+  loginBtnDisabled: { opacity: 0.7 },
   loginText: {
-    color: COLORS.textWhite,
-    fontSize: FONTS.xl,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
   },
 
-  // ── Register row ───────────────────────
-  registerRow: {
+  // ── Divider ───────────────────────────────
+  divider: {
     flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.md,
+  },
+  dividerLine: {
+    flex:            1,
+    height:          1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    fontSize: FONTS.sm,
+    color:    COLORS.textMuted,
+  },
+
+  // ── Guest Button ──────────────────────────
+  guestBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: COLORS.primary + '10',
+    paddingVertical: SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    borderWidth:     1.5,
+    borderColor:     COLORS.primary + '30',
+  },
+  guestBtnText: {
+    color:      COLORS.primary,
+    fontSize:   FONTS.lg,
+    fontWeight: '600',
+  },
+
+  // ── Register Row ──────────────────────────
+  registerRow: {
+    flexDirection:  'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: SIZES.md,
-    // ✅ Extra bottom padding so this last element
-    // is never hidden behind the Android nav bar
-    paddingBottom: SIZES.md,
+    alignItems:     'center',
+    paddingBottom:  SIZES.md,
   },
-  registerLabel: {
-    color: COLORS.textLight,
-    fontSize: FONTS.md,
-  },
+  registerLabel: { color: COLORS.textLight, fontSize: FONTS.md },
   registerLink: {
-    color: COLORS.primary,
-    fontSize: FONTS.md,
+    color:      COLORS.primary,
+    fontSize:   FONTS.md,
     fontWeight: 'bold',
   },
 });
