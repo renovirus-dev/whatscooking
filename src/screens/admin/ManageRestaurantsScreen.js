@@ -1,141 +1,170 @@
 // ============================================
 // FILE: src/screens/admin/ManageRestaurantsScreen.js
 // ============================================
-import React, { useState, useEffect, useRef } from 'react';
+import React, {
+  useState, useEffect, useRef,
+  useCallback, useMemo,
+} from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  TextInput,
-  ActivityIndicator,
-  RefreshControl,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, FlatList, TouchableOpacity,
+  StyleSheet, Alert, TextInput,
+  ActivityIndicator, RefreshControl,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  collection,
-  onSnapshot,
-  doc,
-  updateDoc,
-  orderBy,
-  query,
-  serverTimestamp,
+  collection, onSnapshot, doc,
+  updateDoc, orderBy, query, serverTimestamp,
 } from 'firebase/firestore';
 import { db }    from '../../firebase/config';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
-// ✅ Safe color fallbacks
-// Prevents crash if these don't exist in your theme file
+// ─── Safe Color Fallbacks ─────────────────────
 const WARNING_COLOR = COLORS.warning || '#F39C12';
 const INFO_COLOR    = COLORS.info    || '#3498DB';
+const DIVIDER_COLOR = COLORS.divider || COLORS.border || '#E0E0E0';
 
-export default function ManageRestaurantsScreen() {
+// ─── Plan Config ──────────────────────────────
+const PLAN_CONFIG = {
+  free_trial: { label: '🆓 Trial',   color: COLORS.textMuted },
+  basic:      { label: '⭐ Basic',   color: INFO_COLOR       },
+  premium:    { label: '👑 Premium', color: COLORS.primary   },
+};
+
+// ─────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────
+export default function ManageRestaurantsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
-  // ✅ isMounted ref — prevents setState after unmount
   const isMounted = useRef(true);
-
-  const [restaurants, setRestaurants]       = useState([]);
-  const [filtered, setFiltered]             = useState([]);
-  const [search, setSearch]                 = useState('');
-  const [loading, setLoading]               = useState(true);
-  const [refreshing, setRefreshing]         = useState(false);
-  const [filterStatus, setFilterStatus]     = useState('all');
-  const [togglingId, setTogglingId]         = useState(null);
-
-  // ── Mounted lifecycle ─────────────────────
   useEffect(() => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
-  // ── Firestore listener ────────────────────
+  // ── State ─────────────────────────────────
+  const [restaurants, setRestaurants]   = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [search, setSearch]             = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [togglingId, setTogglingId]     = useState(null);
+
+  // ─────────────────────────────────────────
+  // FIRESTORE LISTENER
+  // ─────────────────────────────────────────
   useEffect(() => {
-    let unsubscribe = null;
+    const q = query(
+      collection(db, 'restaurants'),
+      orderBy('createdAt', 'desc')
+    );
 
-    try {
-      const q = query(
-        collection(db, 'restaurants'),
-        orderBy('createdAt', 'desc')
-      );
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        if (!isMounted.current) return;
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setRestaurants(data);
+        setLoading(false);
+        setRefreshing(false); // ✅ Reset refreshing when data arrives
+      },
+      (err) => {
+        if (!isMounted.current) return;
+        console.error('ManageRestaurants listener error:', err);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    );
 
-      unsubscribe = onSnapshot(
-        q,
-        (snap) => {
-          // ✅ Guard — only setState if still mounted
-          if (!isMounted.current) return;
-
-          const data = snap.docs.map(d => ({
-            id: d.id,
-            ...d.data(),
-          }));
-          setRestaurants(data);
-          setLoading(false);
-          setRefreshing(false);
-        },
-        (err) => {
-          if (!isMounted.current) return;
-          console.error('ManageRestaurants listener error:', err);
-          setLoading(false);
-          setRefreshing(false);
-        }
-      );
-    } catch (err) {
-      console.error('ManageRestaurants setup error:', err);
-      if (isMounted.current) setLoading(false);
-    }
-
-    return () => {
-      // ✅ Always unsubscribe on unmount
-      if (unsubscribe) unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
-  // ── Apply filters ─────────────────────────
-  useEffect(() => {
-    applyFilter();
-  }, [restaurants, search, filterStatus]);
+  // ─────────────────────────────────────────
+  // FILTER COUNTS
+  // ✅ Memoized counts for each tab
+  // ─────────────────────────────────────────
+  const filterCounts = useMemo(() => ({
+    all:      restaurants.length,
+    active:   restaurants.filter(r => r.isActive && r.isApproved).length,
+    inactive: restaurants.filter(r => !r.isActive).length,
+    pending:  restaurants.filter(r => !r.isApproved).length,
+    verified: restaurants.filter(r => r.isVerified).length,
+    trial:    restaurants.filter(r =>
+                (r.subscription?.plan || 'free_trial') === 'free_trial'
+              ).length,
+    premium:  restaurants.filter(r =>
+                r.subscription?.plan === 'premium'
+              ).length,
+  }), [restaurants]);
 
-  const applyFilter = () => {
+  // ─────────────────────────────────────────
+  // FILTER TABS
+  // ─────────────────────────────────────────
+  const FILTERS = useMemo(() => [
+    { key: 'all',      label: 'All',        count: filterCounts.all      },
+    { key: 'pending',  label: '⏳ Pending',  count: filterCounts.pending  },
+    { key: 'active',   label: '✅ Active',   count: filterCounts.active   },
+    { key: 'inactive', label: '❌ Inactive', count: filterCounts.inactive },
+    { key: 'verified', label: '✓ Verified',  count: filterCounts.verified },
+    { key: 'trial',    label: '🆓 Trial',    count: filterCounts.trial    },
+    { key: 'premium',  label: '👑 Premium',  count: filterCounts.premium  },
+  ], [filterCounts]);
+
+  // ─────────────────────────────────────────
+  // FILTERED RESTAURANTS
+  // ✅ All in useMemo - no useEffect + setState
+  // ─────────────────────────────────────────
+  const filteredRestaurants = useMemo(() => {
     let result = [...restaurants];
 
+    // ── Status filter ──────────────────────
+    switch (filterStatus) {
+      case 'active':
+        result = result.filter(r => r.isActive && r.isApproved);
+        break;
+      case 'inactive':
+        result = result.filter(r => !r.isActive);
+        break;
+      case 'pending':
+        result = result.filter(r => !r.isApproved);
+        break;
+      case 'verified':
+        result = result.filter(r => r.isVerified);
+        break;
+      case 'trial':
+        result = result.filter(r =>
+          (r.subscription?.plan || 'free_trial') === 'free_trial'
+        );
+        break;
+      case 'premium':
+        result = result.filter(r => r.subscription?.plan === 'premium');
+        break;
+    }
+
+    // ── Search filter ──────────────────────
     if (search.trim()) {
-      const lower = search.toLowerCase();
+      const q = search.toLowerCase();
       result = result.filter(r =>
-        r.name?.toLowerCase().includes(lower) ||
-        r.location?.city?.toLowerCase().includes(lower)
+        r.name?.toLowerCase().includes(q)            ||
+        r.location?.city?.toLowerCase().includes(q) ||
+        r.cuisineTypes?.some(c => c.toLowerCase().includes(q))
       );
     }
 
-    if (filterStatus === 'active') {
-      result = result.filter(r => r.isActive);
-    } else if (filterStatus === 'inactive') {
-      result = result.filter(r => !r.isActive);
-    } else if (filterStatus === 'verified') {
-      result = result.filter(r => r.isVerified);
-    } else if (filterStatus === 'trial') {
-      result = result.filter(
-        r => r.subscription?.plan === 'free_trial'
-      );
-    }
+    return result;
+  }, [restaurants, filterStatus, search]);
 
-    if (isMounted.current) {
-      setFiltered(result);
-    }
-  };
-
-  // ── Toggle active ─────────────────────────
-  const toggleActive = (id, currentState, name) => {
+  // ─────────────────────────────────────────
+  // TOGGLE ACTIVE
+  // ✅ Optimistic update
+  // ─────────────────────────────────────────
+  const toggleActive = useCallback((item) => {
+    const { id, isActive, name } = item;
     Alert.alert(
-      currentState
-        ? `Deactivate "${name}"?`
-        : `Activate "${name}"?`,
-      currentState
+      isActive ? `Deactivate "${name}"?` : `Activate "${name}"?`,
+      isActive
         ? 'This restaurant will be hidden from users.'
         : 'This restaurant will be visible to users.',
       [
@@ -143,13 +172,25 @@ export default function ManageRestaurantsScreen() {
         {
           text: 'Confirm',
           onPress: async () => {
+            setTogglingId(id);
+            // ✅ Optimistic update
+            setRestaurants(prev =>
+              prev.map(r =>
+                r.id === id ? { ...r, isActive: !isActive } : r
+              )
+            );
             try {
-              if (isMounted.current) setTogglingId(id);
               await updateDoc(doc(db, 'restaurants', id), {
-                isActive:  !currentState,
+                isActive:  !isActive,
                 updatedAt: serverTimestamp(),
               });
             } catch (err) {
+              // ✅ Revert on error
+              setRestaurants(prev =>
+                prev.map(r =>
+                  r.id === id ? { ...r, isActive: isActive } : r
+                )
+              );
               Alert.alert('Error', 'Could not update restaurant');
             } finally {
               if (isMounted.current) setTogglingId(null);
@@ -158,53 +199,114 @@ export default function ManageRestaurantsScreen() {
         },
       ]
     );
-  };
+  }, []);
 
-  // ── Toggle verified ───────────────────────
-  const toggleVerified = async (id, currentState) => {
+  // ─────────────────────────────────────────
+  // APPROVE RESTAURANT
+  // ─────────────────────────────────────────
+  const approveRestaurant = useCallback((item) => {
+    Alert.alert(
+      '✅ Approve Restaurant',
+      `Approve "${item.name}"? It will become visible to customers.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve',
+          onPress: async () => {
+            setTogglingId(item.id);
+            setRestaurants(prev =>
+              prev.map(r =>
+                r.id === item.id
+                  ? { ...r, isApproved: true, isActive: true }
+                  : r
+              )
+            );
+            try {
+              await updateDoc(doc(db, 'restaurants', item.id), {
+                isApproved: true,
+                isActive:   true,
+                updatedAt:  serverTimestamp(),
+              });
+              Alert.alert('✅ Approved', `${item.name} is now live!`);
+            } catch (err) {
+              setRestaurants(prev =>
+                prev.map(r =>
+                  r.id === item.id
+                    ? { ...r, isApproved: false, isActive: false }
+                    : r
+                )
+              );
+              Alert.alert('Error', 'Could not approve restaurant');
+            } finally {
+              if (isMounted.current) setTogglingId(null);
+            }
+          },
+        },
+      ]
+    );
+  }, []);
+
+  // ─────────────────────────────────────────
+  // TOGGLE VERIFIED
+  // ✅ Optimistic update
+  // ─────────────────────────────────────────
+  const toggleVerified = useCallback(async (item) => {
+    const { id, isVerified } = item;
+    setTogglingId(id);
+    setRestaurants(prev =>
+      prev.map(r =>
+        r.id === id ? { ...r, isVerified: !isVerified } : r
+      )
+    );
     try {
-      if (isMounted.current) setTogglingId(id);
       await updateDoc(doc(db, 'restaurants', id), {
-        isVerified: !currentState,
+        isVerified: !isVerified,
         updatedAt:  serverTimestamp(),
       });
-      if (isMounted.current) {
-        Alert.alert(
-          'Done',
-          currentState
-            ? 'Restaurant unverified'
-            : 'Restaurant verified ✅'
-        );
-      }
     } catch (err) {
-      if (isMounted.current) {
-        Alert.alert('Error', 'Could not update restaurant');
-      }
+      setRestaurants(prev =>
+        prev.map(r =>
+          r.id === id ? { ...r, isVerified: isVerified } : r
+        )
+      );
+      Alert.alert('Error', 'Could not update restaurant');
     } finally {
       if (isMounted.current) setTogglingId(null);
     }
-  };
+  }, []);
 
-  const FILTERS = [
-    { key: 'all',      label: 'All'         },
-    { key: 'active',   label: '✅ Active'   },
-    { key: 'inactive', label: '❌ Inactive' },
-    { key: 'verified', label: '✓ Verified'  },
-    { key: 'trial',    label: '🆓 Trial'    },
-  ];
+  // ─────────────────────────────────────────
+  // PULL TO REFRESH
+  // Firestore listener resets refreshing automatically
+  // ─────────────────────────────────────────
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Safety timeout in case listener doesn't fire
+    setTimeout(() => {
+      if (isMounted.current) setRefreshing(false);
+    }, 3000);
+  }, []);
 
-  // ── Render card ───────────────────────────
-  const renderItem = ({ item }) => {
+  // ─────────────────────────────────────────
+  // RENDER CARD
+  // ─────────────────────────────────────────
+  const renderItem = useCallback(({ item }) => {
     const isToggling = togglingId === item.id;
+    const planId     = item.subscription?.plan || 'free_trial';
+    const plan       = PLAN_CONFIG[planId] || PLAN_CONFIG.free_trial;
 
     return (
-      <View style={styles.card}>
+      <View style={[
+        styles.card,
+        !item.isApproved && styles.cardPending,
+      ]}>
 
-        {/* Card Header */}
+        {/* ── Card Header ─────────────────── */}
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
+            {/* Name + verified badge */}
             <View style={styles.nameRow}>
-              <Text style={styles.restaurantName}>
+              <Text style={styles.restaurantName} numberOfLines={1}>
                 {item.name}
               </Text>
               {item.isVerified && (
@@ -216,61 +318,119 @@ export default function ManageRestaurantsScreen() {
                   />
                 </View>
               )}
+              {!item.isApproved && (
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingBadgeText}>Pending</Text>
+                </View>
+              )}
             </View>
+
+            {/* Location */}
             <Text style={styles.restaurantLocation}>
-              📍 {item.location?.city || 'No city'},{' '}
-              {item.location?.country || ''}
+              📍 {[
+                item.location?.city,
+                item.location?.country,
+              ].filter(Boolean).join(', ') || 'No location'}
             </Text>
+
+            {/* Cuisine types */}
+            {item.cuisineTypes?.length > 0 && (
+              <Text style={styles.restaurantCuisine} numberOfLines={1}>
+                🍽️ {item.cuisineTypes.join(', ')}
+              </Text>
+            )}
+
+            {/* Owner ID */}
             <Text style={styles.restaurantOwner}>
-              👤 Owner ID: {item.ownerId?.slice(0, 8)}...
+              👤 {item.ownerId?.slice(0, 12)}...
             </Text>
           </View>
 
-          {/* Status badge */}
-          <View style={[
-            styles.statusBadge,
-            {
-              backgroundColor: item.isActive
-                ? COLORS.success
-                : COLORS.error,
-            },
-          ]}>
-            <Text style={styles.statusText}>
-              {item.isActive ? 'Active' : 'Inactive'}
-            </Text>
+          {/* Status + Plan badges */}
+          <View style={styles.badgeColumn}>
+            <View style={[
+              styles.statusBadge,
+              { backgroundColor: item.isActive ? COLORS.success : COLORS.error },
+            ]}>
+              <Text style={styles.statusText}>
+                {item.isActive ? 'Active' : 'Inactive'}
+              </Text>
+            </View>
+            <View style={[
+              styles.planBadge,
+              { backgroundColor: plan.color + '20' },
+            ]}>
+              <Text style={[styles.planBadgeText, { color: plan.color }]}>
+                {plan.label}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Info Row */}
+        {/* ── Info Row ────────────────────── */}
         <View style={styles.infoRow}>
           <View style={styles.infoItem}>
-            <Ionicons name="star" size={14} color={WARNING_COLOR} />
+            <Ionicons name="star-outline" size={14} color={WARNING_COLOR} />
             <Text style={styles.infoText}>
               {item.averageRating?.toFixed(1) || '0.0'}
             </Text>
           </View>
           <View style={styles.infoItem}>
-            <Ionicons name="heart" size={14} color={COLORS.error} />
+            <Ionicons name="heart-outline" size={14} color={COLORS.error} />
             <Text style={styles.infoText}>
               {item.totalFavorites || 0}
             </Text>
           </View>
           <View style={styles.infoItem}>
-            <Ionicons name="card" size={14} color={COLORS.primary} />
-            <Text style={styles.infoText}>
-              {item.subscription?.plan || 'free_trial'}
-            </Text>
-          </View>
-          <View style={styles.infoItem}>
-            <Ionicons name="chatbubble" size={14} color={INFO_COLOR} />
+            <Ionicons name="chatbubble-outline" size={14} color={INFO_COLOR} />
             <Text style={styles.infoText}>
               {item.totalReviews || 0} reviews
             </Text>
           </View>
+          <View style={styles.infoItem}>
+            <Ionicons
+              name={item.isCurrentlyOpen ? 'time' : 'time-outline'}
+              size={14}
+              color={item.isCurrentlyOpen ? COLORS.success : COLORS.textMuted}
+            />
+            <Text style={[
+              styles.infoText,
+              { color: item.isCurrentlyOpen ? COLORS.success : COLORS.textMuted },
+            ]}>
+              {item.isCurrentlyOpen ? 'Open' : 'Closed'}
+            </Text>
+          </View>
         </View>
 
-        {/* Actions */}
+        {/* ── Actions ─────────────────────── */}
         <View style={styles.cardActions}>
+
+          {/* ✅ Approve button (only if pending) */}
+          {!item.isApproved && (
+            <TouchableOpacity
+              style={[
+                styles.actionBtn,
+                styles.actionBtnApprove,
+                isToggling && { opacity: 0.6 },
+              ]}
+              onPress={() => approveRestaurant(item)}
+              disabled={isToggling}
+              activeOpacity={0.7}
+            >
+              {isToggling ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.actionBtnTextWhite}>Approve</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Activate / Deactivate */}
           <TouchableOpacity
@@ -283,13 +443,10 @@ export default function ManageRestaurantsScreen() {
                 borderColor: item.isActive
                   ? COLORS.error   + '40'
                   : COLORS.success + '40',
-                // ✅ Dim while toggling
-                opacity: isToggling ? 0.6 : 1,
               },
+              isToggling && { opacity: 0.6 },
             ]}
-            onPress={() =>
-              toggleActive(item.id, item.isActive, item.name)
-            }
+            onPress={() => toggleActive(item)}
             disabled={isToggling}
             activeOpacity={0.7}
           >
@@ -309,13 +466,9 @@ export default function ManageRestaurantsScreen() {
                 />
                 <Text style={[
                   styles.actionBtnText,
-                  {
-                    color: item.isActive
-                      ? COLORS.error
-                      : COLORS.success,
-                  },
+                  { color: item.isActive ? COLORS.error : COLORS.success },
                 ]}>
-                  {item.isActive ? 'Deactivate' : 'Activate'}
+                  {item.isActive ? 'Disable' : 'Enable'}
                 </Text>
               </>
             )}
@@ -332,12 +485,10 @@ export default function ManageRestaurantsScreen() {
                 borderColor: item.isVerified
                   ? WARNING_COLOR + '40'
                   : INFO_COLOR    + '40',
-                opacity: isToggling ? 0.6 : 1,
               },
+              isToggling && { opacity: 0.6 },
             ]}
-            onPress={() =>
-              toggleVerified(item.id, item.isVerified)
-            }
+            onPress={() => toggleVerified(item)}
             disabled={isToggling}
             activeOpacity={0.7}
           >
@@ -357,11 +508,7 @@ export default function ManageRestaurantsScreen() {
                 />
                 <Text style={[
                   styles.actionBtnText,
-                  {
-                    color: item.isVerified
-                      ? WARNING_COLOR
-                      : INFO_COLOR,
-                  },
+                  { color: item.isVerified ? WARNING_COLOR : INFO_COLOR },
                 ]}>
                   {item.isVerified ? 'Unverify' : 'Verify'}
                 </Text>
@@ -372,25 +519,37 @@ export default function ManageRestaurantsScreen() {
         </View>
       </View>
     );
-  };
+  }, [togglingId, toggleActive, toggleVerified, approveRestaurant]);
 
-  // ── Main render ───────────────────────────
+  // ─────────────────────────────────────────
+  // LOADING STATE
+  // ─────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.loadingBox}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading restaurants...</Text>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────
+  // MAIN RENDER
+  // ─────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios' ? 0 : insets.top
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
     >
       <View style={styles.container}>
 
-        {/* Search bar */}
+        {/* ── Search Bar ──────────────────── */}
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={COLORS.textMuted} />
+          <Ionicons name="search-outline" size={20} color={COLORS.textMuted} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search restaurants..."
+            placeholder="Search by name, city, cuisine..."
             placeholderTextColor={COLORS.textMuted}
             value={search}
             onChangeText={setSearch}
@@ -402,29 +561,26 @@ export default function ManageRestaurantsScreen() {
               onPress={() => setSearch('')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons
-                name="close-circle"
-                size={20}
-                color={COLORS.textMuted}
-              />
+              <Ionicons name="close-circle" size={20} color={COLORS.textMuted} />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Filter tabs */}
-        <FlatList
+        {/* ── Filter Tabs ─────────────────── */}
+        <ScrollView
           horizontal
-          data={FILTERS}
-          keyExtractor={f => f.key}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterList}
-          renderItem={({ item: f }) => (
+        >
+          {FILTERS.map(f => (
             <TouchableOpacity
+              key={f.key}
               style={[
                 styles.filterTab,
                 filterStatus === f.key && styles.filterTabActive,
               ]}
               onPress={() => setFilterStatus(f.key)}
+              activeOpacity={0.7}
             >
               <Text style={[
                 styles.filterTabText,
@@ -432,265 +588,315 @@ export default function ManageRestaurantsScreen() {
               ]}>
                 {f.label}
               </Text>
+              {/* ✅ Count badge on each tab */}
+              {f.count > 0 && (
+                <View style={[
+                  styles.filterTabBadge,
+                  filterStatus === f.key && {
+                    backgroundColor: 'rgba(255,255,255,0.3)',
+                  },
+                ]}>
+                  <Text style={[
+                    styles.filterTabBadgeText,
+                    filterStatus === f.key && { color: '#FFFFFF' },
+                  ]}>
+                    {f.count}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* ── Results Count ───────────────── */}
+        <View style={styles.resultsRow}>
+          <Text style={styles.countText}>
+            {filteredRestaurants.length} restaurant
+            {filteredRestaurants.length !== 1 ? 's' : ''}
+            {search ? ` matching "${search}"` : ''}
+          </Text>
+          {(search || filterStatus !== 'all') && (
+            <TouchableOpacity
+              onPress={() => {
+                setSearch('');
+                setFilterStatus('all');
+              }}
+            >
+              <Text style={styles.clearText}>Clear</Text>
             </TouchableOpacity>
           )}
+        </View>
+
+        {/* ── Restaurant List ─────────────── */}
+        <FlatList
+          data={filteredRestaurants}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: insets.bottom + SIZES.xl },
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[COLORS.primary]}
+              tintColor={COLORS.primary}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={{ fontSize: 50 }}>🏪</Text>
+              <Text style={styles.emptyTitle}>No restaurants found</Text>
+              {(search || filterStatus !== 'all') && (
+                <TouchableOpacity
+                  style={styles.clearFilterBtn}
+                  onPress={() => {
+                    setSearch('');
+                    setFilterStatus('all');
+                  }}
+                >
+                  <Text style={styles.clearFilterText}>
+                    Clear Filters
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
         />
-
-        {/* Result count */}
-        <Text style={styles.countText}>
-          {filtered.length} restaurant
-          {filtered.length !== 1 ? 's' : ''}
-        </Text>
-
-        {/* Restaurant list */}
-        {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>
-              Loading restaurants...
-            </Text>
-          </View>
-        ) : (
-          <FlatList
-            data={filtered}
-            keyExtractor={item => item.id}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={[
-              styles.list,
-              { paddingBottom: insets.bottom + SIZES.xl },
-            ]}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => {
-                  if (isMounted.current) setRefreshing(true);
-                }}
-                colors={[COLORS.primary]}
-                tintColor={COLORS.primary}
-              />
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Text style={{ fontSize: 50 }}>🏪</Text>
-                <Text style={styles.emptyText}>
-                  No restaurants found
-                </Text>
-                {search.length > 0 && (
-                  <TouchableOpacity
-                    style={styles.clearSearchBtn}
-                    onPress={() => setSearch('')}
-                  >
-                    <Text style={styles.clearSearchText}>
-                      Clear search
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            }
-          />
-        )}
       </View>
     </KeyboardAvoidingView>
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
 
-  // ── Search bar ──────────────────────────
+  // ── Loading ───────────────────────────────
+  loadingBox: {
+    flex:           1,
+    justifyContent: 'center',
+    alignItems:     'center',
+    gap:            SIZES.sm,
+  },
+  loadingText: { fontSize: FONTS.md, color: COLORS.textMuted },
+
+  // ── Search Bar ────────────────────────────
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    margin: SIZES.md,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
+    margin:            SIZES.md,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-    borderRadius: RADIUS.xl,
-    gap: SIZES.sm,
+    paddingVertical:   SIZES.md,
+    borderRadius:      RADIUS.xl,
+    gap:               SIZES.sm,
     ...SHADOW,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: FONTS.md,
-    color: COLORS.text,
-  },
+  searchInput: { flex: 1, fontSize: FONTS.md, color: COLORS.text },
 
-  // ── Filter tabs ─────────────────────────
+  // ── Filter Tabs ───────────────────────────
   filterList: {
     paddingHorizontal: SIZES.md,
-    gap: SIZES.sm,
-    marginBottom: SIZES.sm,
+    gap:               SIZES.sm,
+    paddingBottom:     SIZES.sm,
+    alignItems:        'center',
   },
   filterTab: {
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
-    paddingVertical: 6,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   6,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.surface,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
+    gap:               6,
   },
   filterTabActive: {
     backgroundColor: COLORS.secondary,
     borderColor:     COLORS.secondary,
   },
-  filterTabText: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.text,
-    fontWeight: '500',
+  filterTabText:       { fontSize: FONTS.sm, color: COLORS.text, fontWeight: '500' },
+  filterTabTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  filterTabBadge: {
+    backgroundColor:   COLORS.border,
+    paddingHorizontal: 6,
+    paddingVertical:   1,
+    borderRadius:      8,
+    minWidth:          18,
+    alignItems:        'center',
   },
-  filterTabTextActive: {
-    color:      '#FFFFFF',
-    fontWeight: '600',
+  filterTabBadgeText: {
+    fontSize:   9,
+    fontWeight: 'bold',
+    color:      COLORS.textMuted,
   },
 
-  // ── Count label ─────────────────────────
-  countText: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+  // ── Results Row ───────────────────────────
+  resultsRow: {
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
-    marginBottom: SIZES.xs,
+    paddingVertical:   SIZES.xs,
+    marginBottom:      SIZES.xs,
   },
+  countText: { fontSize: FONTS.sm, color: COLORS.textMuted },
+  clearText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '600' },
 
-  // ── Loading ─────────────────────────────
-  loadingBox: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: SIZES.sm,
-  },
-  loadingText: {
-    fontSize: FONTS.md,
-    color: COLORS.textMuted,
-  },
+  // ── List ──────────────────────────────────
+  list: { padding: SIZES.md, gap: SIZES.md },
 
-  // ── List ────────────────────────────────
-  list: {
-    padding: SIZES.md,
-    gap: SIZES.md,
-  },
-
-  // ── Card ────────────────────────────────
+  // ── Card ──────────────────────────────────
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.md,
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
+    borderWidth:     1,
+    borderColor:     COLORS.border,
     ...SHADOW,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SIZES.sm,
+  cardPending: {
+    borderColor:     WARNING_COLOR + '50',
+    backgroundColor: WARNING_COLOR + '05',
   },
+  cardHeader: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'flex-start',
+    marginBottom:   SIZES.sm,
+    gap:            SIZES.sm,
+  },
+
+  // ── Name Row ──────────────────────────────
   nameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.xs,
+    alignItems:    'center',
+    gap:           SIZES.xs,
+    flexWrap:      'wrap',
+    marginBottom:  2,
   },
   restaurantName: {
-    fontSize: FONTS.lg,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
+    flexShrink: 1,
   },
   verifiedBadge: {
     backgroundColor: INFO_COLOR,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           20,
+    height:          20,
+    borderRadius:    10,
+    justifyContent:  'center',
+    alignItems:      'center',
+  },
+  pendingBadge: {
+    backgroundColor:   WARNING_COLOR + '20',
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+    borderWidth:       1,
+    borderColor:       WARNING_COLOR + '40',
+  },
+  pendingBadgeText: {
+    fontSize:   FONTS.xs,
+    color:      WARNING_COLOR,
+    fontWeight: '700',
   },
   restaurantLocation: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+    fontSize:  FONTS.sm,
+    color:     COLORS.textMuted,
     marginTop: 2,
+  },
+  restaurantCuisine: {
+    fontSize:      FONTS.xs,
+    color:         COLORS.textMuted,
+    marginTop:     2,
+    textTransform: 'capitalize',
   },
   restaurantOwner: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
     marginTop: 2,
   },
+
+  // ── Badge Column ──────────────────────────
+  badgeColumn: { gap: SIZES.xs, alignItems: 'flex-end' },
   statusBadge: {
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.round,
+    paddingVertical:   4,
+    borderRadius:      RADIUS.round,
   },
-  statusText: {
-    color:      '#FFFFFF',
-    fontSize:   FONTS.xs,
-    fontWeight: 'bold',
+  statusText: { color: '#FFFFFF', fontSize: FONTS.xs, fontWeight: 'bold' },
+  planBadge: {
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
   },
+  planBadgeText: { fontSize: FONTS.xs, fontWeight: '700' },
 
-  // ── Info row ────────────────────────────
+  // ── Info Row ──────────────────────────────
   infoRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderTopWidth: 1,
+    flexDirection:     'row',
+    flexWrap:          'wrap',
+    gap:               SIZES.md,
+    paddingVertical:   SIZES.sm,
+    borderTopWidth:    1,
     borderBottomWidth: 1,
-    borderColor: COLORS.divider,
-    marginBottom: SIZES.sm,
+    borderColor:       DIVIDER_COLOR,
+    marginBottom:      SIZES.sm,
   },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
+  infoItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   infoText: {
-    fontSize: FONTS.sm,
-    color: COLORS.textLight,
+    fontSize:      FONTS.sm,
+    color:         COLORS.textLight,
     textTransform: 'capitalize',
   },
 
-  // ── Card actions ────────────────────────
-  cardActions: {
-    flexDirection: 'row',
-    gap: SIZES.sm,
-  },
+  // ── Card Actions ──────────────────────────
+  cardActions: { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap' },
   actionBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flex:           1,
+    flexDirection:  'row',
+    alignItems:     'center',
     justifyContent: 'center',
-    padding: SIZES.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    gap: 4,
-    // ✅ Minimum height for comfortable tap
-    minHeight: 40,
+    padding:        SIZES.sm,
+    borderRadius:   RADIUS.md,
+    borderWidth:    1,
+    gap:            4,
+    minHeight:      40,
+    minWidth:       80,
   },
-  actionBtnText: {
+  actionBtnApprove: {
+    backgroundColor: COLORS.success,
+    borderColor:     COLORS.success,
+  },
+  actionBtnText:      { fontSize: FONTS.sm, fontWeight: '600' },
+  actionBtnTextWhite: {
     fontSize:   FONTS.sm,
-    fontWeight: '600',
+    fontWeight: '700',
+    color:      '#FFFFFF',
   },
 
-  // ── Empty state ─────────────────────────
+  // ── Empty State ───────────────────────────
   emptyState: {
-    alignItems: 'center',
-    paddingVertical: SIZES.xxl * 2,
-    gap: SIZES.sm,
+    alignItems:      'center',
+    paddingVertical: SIZES.xxl,
+    gap:             SIZES.sm,
   },
-  emptyText: {
-    fontSize: FONTS.xl,
-    color: COLORS.textMuted,
-    marginTop: SIZES.md,
-  },
-  clearSearchBtn: {
-    backgroundColor: COLORS.primary,
+  emptyTitle: { fontSize: FONTS.xl, color: COLORS.textMuted, marginTop: SIZES.md },
+  clearFilterBtn: {
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: SIZES.lg,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.lg,
-    marginTop: SIZES.sm,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.lg,
+    marginTop:         SIZES.sm,
   },
-  clearSearchText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: FONTS.sm,
-  },
+  clearFilterText: { color: '#FFFFFF', fontWeight: '600', fontSize: FONTS.sm },
 });
