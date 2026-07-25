@@ -18,12 +18,15 @@ import {
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker      from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useMenu }           from '../../hooks/useMenu';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-// ✅ Use local images — no internet needed, no Unsplash blocking
-import {
-  getLocalFoodImage,
-} from '../../utils/localFoodImages';
+import { getLocalFoodImage } from '../../utils/localFoodImages';
+import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
+import { getThumbUrl }       from '../../utils/uploadToCloudinary';
+
+// ─── Cloudinary Upload ────────────────────────
+const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 const CATEGORIES = [
   { id: 'appetizer',   label: '🥗 Appetizer'  },
@@ -51,12 +54,14 @@ export default function AddMenuItemScreen({ route, navigation }) {
   const { restaurantId, item: existingItem } = route.params || {};
   const { addMenuItem, updateMenuItem }       = useMenu(restaurantId);
 
+  // ── Refs ──────────────────────────────────
   const descriptionRef = useRef(null);
   const priceRef       = useRef(null);
   const prepTimeRef    = useRef(null);
   const servingSizeRef = useRef(null);
   const tagsRef        = useRef(null);
 
+  // ── Form State ────────────────────────────
   const [form, setForm] = useState({
     name:            existingItem?.name                        || '',
     description:     existingItem?.description                 || '',
@@ -68,49 +73,125 @@ export default function AddMenuItemScreen({ route, navigation }) {
     tags:            existingItem?.tags?.join(', ')            || '',
   });
 
-  // ── Image state ───────────────────────────
+  // ── Image State ───────────────────────────
   const [newImageUri, setNewImageUri]         = useState(null);
   const [existingImageUrl]                    = useState(
-    existingItem?.imageUrl || existingItem?.autoImageUrl || null
+    existingItem?.imageUrl || existingItem?.cloudinaryUrl || null
   );
   const [useCustomImage, setUseCustomImage]   = useState(
-    !!(existingItem?.imageUrl || existingItem?.autoImageUrl)
+    !!(existingItem?.imageUrl || existingItem?.cloudinaryUrl)
   );
   const [regenerateCount, setRegenerateCount] = useState(0);
-  const [loading, setLoading]                 = useState(false);
 
-  // ✅ Get local image — works offline, no URLs
+  // ── Upload State ──────────────────────────
+  const [uploading, setUploading]   = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [loading, setLoading]       = useState(false);
+
+  // ─────────────────────────────────────────
+  // IMAGE HELPERS
+  // ─────────────────────────────────────────
+
   const getAutoImage = useCallback(() => {
-    // Returns a require() number — works without internet
     return getLocalFoodImage(form.name, form.category);
   }, [form.name, form.category]);
-
-  // ✅ Display image source
-  // Priority: new picked > existing Firebase URL > local image
-  const getDisplaySource = useCallback(() => {
-    if (isShowingNewPhoto) {
-      // Local file picked from gallery
-      return { uri: newImageUri };
-    }
-    if (isShowingExistingPhoto && existingImageUrl) {
-      // Firebase Storage URL from previous upload
-      return { uri: existingImageUrl };
-    }
-    // ✅ Local bundled image — no internet needed
-    return getAutoImage();
-  }, [
-    newImageUri,
-    existingImageUrl,
-    useCustomImage,
-    form.name,
-    form.category,
-  ]);
 
   const isShowingNewPhoto      = useCustomImage && !!newImageUri;
   const isShowingExistingPhoto = useCustomImage && !newImageUri && !!existingImageUrl;
   const isShowingAutoPhoto     = !useCustomImage;
 
-  // ── Form handlers ─────────────────────────
+  const getDisplaySource = useCallback(() => {
+    if (isShowingNewPhoto)      return { uri: newImageUri };
+    if (isShowingExistingPhoto) {
+      // ✅ Use Cloudinary thumb transform for faster loading
+      return { uri: getThumbUrl(existingImageUrl, 400, 300) };
+    }
+    return getAutoImage();
+  }, [
+    newImageUri,
+    existingImageUrl,
+    isShowingNewPhoto,
+    isShowingExistingPhoto,
+    getAutoImage,
+  ]);
+
+  // ─────────────────────────────────────────
+  // CLOUDINARY UPLOAD
+  // ─────────────────────────────────────────
+
+  /**
+   * Compress → upload to Cloudinary → return secure_url
+   */
+  const uploadImageToCloudinary = async (imageUri) => {
+    try {
+      setUploading(true);
+      setUploadProgress(0);
+
+      // ── Step 1: Compress image ─────────────
+      const compressed = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 1200 } }],
+        {
+          compress: 0.8,
+          format:   ImageManipulator.SaveFormat.JPEG,
+        }
+      );
+
+      setUploadProgress(25);
+
+      // ── Step 2: Build form data ────────────
+      const formData = new FormData();
+      formData.append('file', {
+        uri:  compressed.uri,
+        type: 'image/jpeg',
+        name: `menu_item_${Date.now()}.jpg`,
+      });
+      formData.append('upload_preset', uploadPreset);
+      // ✅ Upload to whats_cooking/menu_items/
+      formData.append('folder', folders.menuItems);
+
+      setUploadProgress(50);
+
+      // ── Step 3: Upload to Cloudinary ───────
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+        {
+          method:  'POST',
+          body:    formData,
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }
+      );
+
+      setUploadProgress(85);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Upload failed');
+      }
+
+      const data = await response.json();
+      setUploadProgress(100);
+
+      return {
+        success:   true,
+        url:       data.secure_url,   // ← save to Firestore
+        publicId:  data.public_id,    // ← save for future deletion
+        width:     data.width,
+        height:    data.height,
+      };
+    } catch (err) {
+      console.error('Cloudinary upload error:', err);
+      return { success: false, error: err.message };
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  // ─────────────────────────────────────────
+  // FORM HANDLERS
+  // ─────────────────────────────────────────
+
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -125,10 +206,12 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }));
   };
 
-  // ── Image handlers ────────────────────────
+  // ─────────────────────────────────────────
+  // IMAGE HANDLERS
+  // ─────────────────────────────────────────
+
   const pickImage = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Please allow photo library access');
       return;
@@ -137,7 +220,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
       mediaTypes:    ['images'],
       allowsEditing: true,
       aspect:        [4, 3],
-      quality:       0.8,
+      quality:       1, // we compress in uploadImageToCloudinary
     });
     if (!result.canceled) {
       setNewImageUri(result.assets[0].uri);
@@ -145,8 +228,36 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ✅ Cycle auto image — just re-render
-  // Local images change instantly with no loading
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow camera access');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect:        [4, 3],
+      quality:       1,
+    });
+    if (!result.canceled) {
+      setNewImageUri(result.assets[0].uri);
+      setUseCustomImage(true);
+    }
+  };
+
+  // ✅ Show action sheet: camera or library
+  const handlePickImage = () => {
+    Alert.alert(
+      '📷 Add Photo',
+      'Choose image source',
+      [
+        { text: '📷 Take Photo',          onPress: takePhoto   },
+        { text: '🖼️ Choose from Library', onPress: pickImage   },
+        { text: 'Cancel', style: 'cancel'                      },
+      ]
+    );
+  };
+
   const handleRegenerateImage = useCallback(() => {
     setUseCustomImage(false);
     setNewImageUri(null);
@@ -159,8 +270,30 @@ export default function AddMenuItemScreen({ route, navigation }) {
     setRegenerateCount(prev => prev + 1);
   };
 
-  // ── Save handler ──────────────────────────
+  // ─────────────────────────────────────────
+  // SCAN MENU PAGE
+  // Navigate to scanner with this item's context
+  // ─────────────────────────────────────────
+
+  const handleScanMenuItem = () => {
+    navigation.navigate('MenuScanner', {
+      restaurantId,
+      // Pre-fill form if user scans a single item
+      onScanComplete: (scannedData) => {
+        if (scannedData?.name)        updateForm('name',        scannedData.name);
+        if (scannedData?.price)       updateForm('price',       scannedData.price.toString());
+        if (scannedData?.description) updateForm('description', scannedData.description);
+        if (scannedData?.category)    updateForm('category',    scannedData.category);
+      },
+    });
+  };
+
+  // ─────────────────────────────────────────
+  // SAVE HANDLER
+  // ─────────────────────────────────────────
+
   const handleSave = async () => {
+    // ── Validation ────────────────────────
     if (!form.name.trim()) {
       Alert.alert('Error', 'Item name is required');
       return;
@@ -176,9 +309,46 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
     setLoading(true);
 
-    // ✅ For auto images — save the dish name and category
-    // so we can regenerate the local image anytime
-    // No URL needed — image comes from local assets
+    try {
+      // ── Step 1: Upload image if new one picked ──
+      let cloudinaryUrl = null;
+      let cloudinaryPublicId = null;
+
+      if (isShowingNewPhoto && newImageUri) {
+        const uploadResult = await uploadImageToCloudinary(newImageUri);
+        if (!uploadResult.success) {
+          Alert.alert(
+            '⚠️ Image Upload Failed',
+            `${uploadResult.error}\n\nSave without image?`,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
+              {
+                text: 'Save Anyway',
+                onPress: async () => await saveMenuItem(null, null),
+              },
+            ]
+          );
+          return;
+        }
+        cloudinaryUrl      = uploadResult.url;
+        cloudinaryPublicId = uploadResult.publicId;
+      }
+
+      // Keep existing Cloudinary URL if no new image
+      if (isShowingExistingPhoto && existingImageUrl) {
+        cloudinaryUrl      = existingImageUrl;
+        cloudinaryPublicId = existingItem?.cloudinaryPublicId || null;
+      }
+
+      await saveMenuItem(cloudinaryUrl, cloudinaryPublicId);
+    } catch (err) {
+      Alert.alert('Error', err.message);
+      setLoading(false);
+    }
+  };
+
+  const saveMenuItem = async (cloudinaryUrl, cloudinaryPublicId) => {
+    // ── Build data object ──────────────────
     const data = {
       name:            form.name.trim(),
       description:     form.description.trim(),
@@ -191,30 +361,24 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .split(',')
                          .map(t => t.trim())
                          .filter(Boolean),
-      // ✅ For local images — store null for imageUrl
-      // getLocalFoodImage(name, category) regenerates from name
-      autoImageUrl: null,
-      imageUrl:     isShowingExistingPhoto ? existingImageUrl : null,
+
+      // ✅ Cloudinary fields (replaces Firebase Storage)
+      imageUrl:            cloudinaryUrl      || null,
+      cloudinaryUrl:       cloudinaryUrl      || null,
+      cloudinaryPublicId:  cloudinaryPublicId || null,
+
+      // ✅ Keep auto image fallback data
+      // so getLocalFoodImage(name, category) still works
+      autoImageUrl:   null,
+      imageName:      form.name.trim(),
+      imageCategory:  form.category,
     };
 
     let result;
-    try {
-      if (existingItem) {
-        result = await updateMenuItem(
-          existingItem.id,
-          data,
-          // ✅ Only upload if user picked a NEW photo
-          isShowingNewPhoto ? newImageUri : null
-        );
-      } else {
-        result = await addMenuItem(
-          data,
-          // ✅ Only upload if user picked a photo
-          newImageUri || null
-        );
-      }
-    } catch (err) {
-      result = { success: false, error: err.message };
+    if (existingItem) {
+      result = await updateMenuItem(existingItem.id, data);
+    } else {
+      result = await addMenuItem(data);
     }
 
     setLoading(false);
@@ -230,38 +394,54 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ✅ Compute display source once
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
+
   const displaySource = getDisplaySource();
+  const isUploading   = uploading || loading;
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios' ? 0 : insets.top + 56
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top + 56}
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{
-          paddingBottom: insets.bottom + SIZES.xl,
-        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
       >
 
-        {/* ── Image Section ───────────────── */}
+        {/* ── Scan Banner ─────────────────── */}
+        <TouchableOpacity
+          style={styles.scanBanner}
+          onPress={handleScanMenuItem}
+          activeOpacity={0.85}
+        >
+          <View style={styles.scanBannerIcon}>
+            <Ionicons name="scan-outline" size={24} color={COLORS.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.scanBannerTitle}>
+              📷 Scan from Menu Page
+            </Text>
+            <Text style={styles.scanBannerSub}>
+              Point camera at your menu to auto-fill this form
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
+
+        {/* ── Image Section ────────────────── */}
         <View style={styles.imageSection}>
 
           <TouchableOpacity
             style={styles.imagePicker}
-            onPress={pickImage}
+            onPress={handlePickImage}
             activeOpacity={0.85}
+            disabled={isUploading}
           >
-            {/*
-              ✅ source works with both:
-              - require() number (local image)
-              - { uri: string } (Firebase URL or local file)
-            */}
             <Image
               key={`${form.name}-${form.category}-${regenerateCount}`}
               source={displaySource}
@@ -269,90 +449,117 @@ export default function AddMenuItemScreen({ route, navigation }) {
               resizeMode="cover"
             />
 
-            <View style={styles.imageOverlay}>
-              <Ionicons name="camera" size={24} color="#FFFFFF" />
-              <Text style={styles.imageOverlayText}>
-                Tap to change photo
-              </Text>
-            </View>
-
-            {isShowingNewPhoto && (
-              <View style={[styles.badge, styles.badgeNew]}>
-                <Ionicons name="camera" size={12} color="#FFFFFF" />
-                <Text style={styles.badgeText}>New Photo</Text>
-              </View>
-            )}
-            {isShowingExistingPhoto && (
-              <View style={[styles.badge, styles.badgeExisting]}>
-                <Ionicons name="image" size={12} color="#FFFFFF" />
-                <Text style={styles.badgeText}>Current Photo</Text>
-              </View>
-            )}
-            {isShowingAutoPhoto && (
-              <View style={[styles.badge, styles.badgeAuto]}>
-                <Ionicons name="sparkles" size={12} color="#FFFFFF" />
-                <Text style={styles.badgeText}>
-                  {form.name.trim() ? 'Auto' : 'Category'}
+            {/* Upload Progress Overlay */}
+            {uploading && (
+              <View style={styles.uploadOverlay}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
+                <Text style={styles.uploadProgressText}>
+                  Uploading {uploadProgress}%
                 </Text>
+                {/* Progress Bar */}
+                <View style={styles.progressBarBg}>
+                  <View style={[
+                    styles.progressBarFill,
+                    { width: `${uploadProgress}%` },
+                  ]} />
+                </View>
               </View>
+            )}
+
+            {/* Camera Overlay (when not uploading) */}
+            {!uploading && (
+              <View style={styles.imageOverlay}>
+                <Ionicons name="camera" size={24} color="#FFFFFF" />
+                <Text style={styles.imageOverlayText}>Tap to change photo</Text>
+              </View>
+            )}
+
+            {/* Status Badge */}
+            {!uploading && (
+              <>
+                {isShowingNewPhoto && (
+                  <View style={[styles.badge, styles.badgeNew]}>
+                    <Ionicons name="camera" size={12} color="#FFFFFF" />
+                    <Text style={styles.badgeText}>New Photo</Text>
+                  </View>
+                )}
+                {isShowingExistingPhoto && (
+                  <View style={[styles.badge, styles.badgeExisting]}>
+                    <Ionicons name="cloud-done-outline" size={12} color="#FFFFFF" />
+                    <Text style={styles.badgeText}>Cloudinary</Text>
+                  </View>
+                )}
+                {isShowingAutoPhoto && (
+                  <View style={[styles.badge, styles.badgeAuto]}>
+                    <Ionicons name="sparkles" size={12} color="#FFFFFF" />
+                    <Text style={styles.badgeText}>
+                      {form.name.trim() ? 'Auto' : 'Category'}
+                    </Text>
+                  </View>
+                )}
+              </>
             )}
           </TouchableOpacity>
 
-          {/* Action buttons */}
+          {/* Image Action Buttons */}
           <View style={styles.imageActions}>
+            <TouchableOpacity
+              style={styles.imageActionBtn}
+              onPress={handlePickImage}
+              disabled={isUploading}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="camera-outline" size={16} color={COLORS.primary} />
+              <Text style={styles.imageActionText}>Upload Photo</Text>
+            </TouchableOpacity>
 
-            {/* ✅ Regenerate — instant, no loading needed */}
             <TouchableOpacity
               style={styles.imageActionBtn}
               onPress={handleRegenerateImage}
+              disabled={isUploading}
               activeOpacity={0.7}
             >
-              <Ionicons name="refresh" size={16} color={COLORS.primary} />
+              <Ionicons name="refresh-outline" size={16} color={COLORS.primary} />
               <Text style={styles.imageActionText}>Auto Image</Text>
             </TouchableOpacity>
 
             {(isShowingNewPhoto || isShowingExistingPhoto) && (
               <TouchableOpacity
-                style={[
-                  styles.imageActionBtn,
-                  styles.imageActionBtnDanger,
-                ]}
+                style={[styles.imageActionBtn, styles.imageActionBtnDanger]}
                 onPress={handleRemoveCustomImage}
+                disabled={isUploading}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name="trash-outline"
-                  size={16}
-                  color={COLORS.error}
-                />
-                <Text style={[
-                  styles.imageActionText,
-                  { color: COLORS.error },
-                ]}>
-                  {isShowingNewPhoto ? 'Remove New' : 'Remove Photo'}
+                <Ionicons name="trash-outline" size={16} color={COLORS.error} />
+                <Text style={[styles.imageActionText, { color: COLORS.error }]}>
+                  Remove
                 </Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Hint text */}
+          {/* Hint */}
           <Text style={styles.imageHint}>
-            {isShowingNewPhoto
-              ? '📷 New photo selected — tap Save to apply'
+            {uploading
+              ? `⬆️ Uploading to Cloudinary... ${uploadProgress}%`
+              : isShowingNewPhoto
+              ? '📷 New photo selected — will upload to Cloudinary on save'
               : isShowingExistingPhoto
-              ? '🖼️ Current saved photo — tap 🔄 for auto or tap image to change'
+              ? '☁️ Saved on Cloudinary — tap 🔄 for auto or tap image to change'
               : form.name.trim()
               ? `🤖 Auto image for "${form.name.trim()}" — tap 🔄 for different`
-              : `🍽️ Showing ${form.category.replace(/_/g, ' ')} photo — type a name for specific image`}
+              : `🍽️ Showing ${form.category.replace(/_/g, ' ')} — type a name for specific image`}
           </Text>
         </View>
 
-        {/* ── Form ────────────────────────── */}
+        {/* ── Form ─────────────────────────── */}
         <View style={styles.form}>
 
           {/* Item Name */}
           <View style={styles.field}>
-            <Text style={styles.label}>Item Name *</Text>
+            <Text style={styles.label}>
+              Item Name <Text style={{ color: COLORS.error }}>*</Text>
+            </Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Jerk Chicken, Fried Fish..."
@@ -371,7 +578,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
             <TextInput
               ref={descriptionRef}
               style={[styles.input, styles.textarea]}
-              placeholder="Describe the dish..."
+              placeholder="Describe the dish, ingredients, cooking style..."
               placeholderTextColor={COLORS.textMuted}
               value={form.description}
               onChangeText={v => updateForm('description', v)}
@@ -386,7 +593,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
           {/* Price + Prep Time */}
           <View style={styles.row}>
             <View style={[styles.field, { flex: 1 }]}>
-              <Text style={styles.label}>Price ($) *</Text>
+              <Text style={styles.label}>
+                Price ($) <Text style={{ color: COLORS.error }}>*</Text>
+              </Text>
               <TextInput
                 ref={priceRef}
                 style={styles.input}
@@ -432,7 +641,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
           {/* Category */}
           <View style={styles.field}>
-            <Text style={styles.label}>Category *</Text>
+            <Text style={styles.label}>
+              Category <Text style={{ color: COLORS.error }}>*</Text>
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -489,7 +700,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
           <View style={styles.field}>
             <Text style={styles.label}>Tags</Text>
             <Text style={styles.fieldHint}>
-              Comma separated e.g. popular, chef-special
+              Comma separated e.g. popular, chef-special, new
             </Text>
             <TextInput
               ref={tagsRef}
@@ -503,22 +714,38 @@ export default function AddMenuItemScreen({ route, navigation }) {
             />
           </View>
 
-          {/* Save Button */}
+          {/* ── Upload Status Card ───────────── */}
+          {isShowingNewPhoto && !uploading && (
+            <View style={styles.uploadStatusCard}>
+              <Ionicons name="cloud-upload-outline" size={20} color={COLORS.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.uploadStatusTitle}>
+                  Ready to Upload
+                </Text>
+                <Text style={styles.uploadStatusSub}>
+                  Photo will be uploaded to Cloudinary when you save
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* ── Save Button ─────────────────── */}
           <TouchableOpacity
-            style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, isUploading && styles.saveBtnDisabled]}
             onPress={handleSave}
-            disabled={loading}
+            disabled={isUploading}
             activeOpacity={0.8}
           >
-            {loading ? (
-              <ActivityIndicator color={COLORS.textWhite} />
+            {isUploading ? (
+              <View style={styles.saveBtnLoading}>
+                <ActivityIndicator color="#FFFFFF" />
+                <Text style={styles.saveBtnText}>
+                  {uploading ? `Uploading ${uploadProgress}%...` : 'Saving...'}
+                </Text>
+              </View>
             ) : (
               <>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={22}
-                  color={COLORS.textWhite}
-                />
+                <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
                 <Text style={styles.saveBtnText}>
                   {existingItem ? 'Update Item' : 'Add to Menu'}
                 </Text>
@@ -532,166 +759,269 @@ export default function AddMenuItemScreen({ route, navigation }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
+  // ── Scan Banner ───────────────────────────
+  scanBanner: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    backgroundColor:  COLORS.primary + '10',
+    marginHorizontal: SIZES.md,
+    marginTop:        SIZES.md,
+    padding:          SIZES.md,
+    borderRadius:     RADIUS.lg,
+    borderWidth:      1.5,
+    borderColor:      COLORS.primary + '30',
+    gap:              SIZES.sm,
+  },
+  scanBannerIcon: {
+    width:           44,
+    height:          44,
+    borderRadius:    RADIUS.md,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent:  'center',
+    alignItems:      'center',
+  },
+  scanBannerTitle: {
+    fontSize:   FONTS.md,
+    fontWeight: '700',
+    color:      COLORS.text,
+  },
+  scanBannerSub: {
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
+    marginTop: 2,
+  },
+
+  // ── Image Section ─────────────────────────
   imageSection: {
-    alignItems: 'center',
-    padding: SIZES.lg,
-    backgroundColor: COLORS.surface,
+    alignItems:        'center',
+    padding:           SIZES.lg,
+    backgroundColor:   COLORS.surface,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
+    marginTop:         SIZES.md,
   },
   imagePicker: {
-    width: 280,
-    height: 200,
+    width:        280,
+    height:       200,
     borderRadius: RADIUS.xl,
-    overflow: 'hidden',
-    position: 'relative',
+    overflow:     'hidden',
+    position:     'relative',
     ...SHADOW,
   },
   previewImage: {
-    width: '100%',
+    width:  '100%',
     height: '100%',
   },
-  imageOverlay: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SIZES.sm,
-    gap: SIZES.xs,
+
+  // ── Upload Overlay ────────────────────────
+  uploadOverlay: {
+    position:       'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent:  'center',
+    alignItems:      'center',
+    gap:             SIZES.sm,
+    padding:         SIZES.md,
   },
-  imageOverlayText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.sm,
-    fontWeight: '600',
-  },
-  badge: {
-    position: 'absolute',
-    top: SIZES.sm,
-    left: SIZES.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SIZES.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.round,
-    gap: 4,
-  },
-  badgeAuto:     { backgroundColor: COLORS.primary              },
-  badgeExisting: { backgroundColor: COLORS.info   || '#3498DB'  },
-  badgeNew:      { backgroundColor: COLORS.success               },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.xs,
+  uploadProgressText: {
+    color:      '#FFFFFF',
+    fontSize:   FONTS.md,
     fontWeight: '700',
   },
+  progressBarBg: {
+    width:           '80%',
+    height:          6,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius:    3,
+    overflow:        'hidden',
+  },
+  progressBarFill: {
+    height:          '100%',
+    backgroundColor: COLORS.primary,
+    borderRadius:    3,
+  },
+
+  // ── Camera Overlay ────────────────────────
+  imageOverlay: {
+    position:        'absolute',
+    bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    paddingVertical: SIZES.sm,
+    gap:             SIZES.xs,
+  },
+  imageOverlayText: {
+    color:      '#FFFFFF',
+    fontSize:   FONTS.sm,
+    fontWeight: '600',
+  },
+
+  // ── Badges ────────────────────────────────
+  badge: {
+    position:          'absolute',
+    top:               SIZES.sm,
+    left:              SIZES.sm,
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
+    gap:               4,
+  },
+  badgeAuto:     { backgroundColor: COLORS.primary             },
+  badgeExisting: { backgroundColor: COLORS.info || '#3498DB'   },
+  badgeNew:      { backgroundColor: COLORS.success             },
+  badgeText: {
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xs,
+    fontWeight: '700',
+  },
+
+  // ── Image Actions ─────────────────────────
   imageActions: {
-    flexDirection: 'row',
-    gap: SIZES.sm,
-    marginTop: SIZES.md,
-    flexWrap: 'wrap',
+    flexDirection:  'row',
+    gap:            SIZES.sm,
+    marginTop:      SIZES.md,
+    flexWrap:       'wrap',
     justifyContent: 'center',
   },
   imageActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               6,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.primary + '15',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.primary + '15',
+    borderWidth:       1,
+    borderColor:       COLORS.primary + '40',
   },
   imageActionBtnDanger: {
     backgroundColor: COLORS.error + '10',
-    borderColor: COLORS.error,
+    borderColor:     COLORS.error + '40',
   },
   imageActionText: {
-    color: COLORS.primary,
+    color:      COLORS.primary,
     fontWeight: '600',
-    fontSize: FONTS.sm,
+    fontSize:   FONTS.sm,
   },
   imageHint: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    marginTop: SIZES.sm,
-    lineHeight: 18,
+    fontSize:          FONTS.xs,
+    color:             COLORS.textMuted,
+    textAlign:         'center',
+    marginTop:         SIZES.sm,
+    lineHeight:        18,
     paddingHorizontal: SIZES.md,
   },
+
+  // ── Form ──────────────────────────────────
   form:      { padding: SIZES.md, gap: SIZES.md },
   field:     { gap: SIZES.xs },
   row:       { flexDirection: 'row', gap: SIZES.md },
   label:     { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
   fieldHint: { fontSize: FONTS.xs, color: COLORS.textMuted },
   input: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
+    backgroundColor:   COLORS.surface,
+    borderRadius:      RADIUS.md,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-    fontSize: FONTS.md,
-    color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   SIZES.md,
+    fontSize:          FONTS.md,
+    color:             COLORS.text,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
   textarea: {
-    height: 80,
+    height:          80,
     textAlignVertical: 'top',
   },
+
+  // ── Category ──────────────────────────────
   categoryBtn: {
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.surface,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
   categoryBtnActive: {
     backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
+    borderColor:     COLORS.primary,
   },
-  categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text },
-  categoryBtnTextActive: { color: COLORS.textWhite, fontWeight: '600' },
+  categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text        },
+  categoryBtnTextActive: { color: '#FFFFFF', fontWeight: '600' },
+
+  // ── Dietary ───────────────────────────────
   dietaryGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.sm,
+    flexWrap:      'wrap',
+    gap:           SIZES.sm,
   },
   dietaryBtn: {
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   SIZES.sm,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.surface,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
   dietaryBtnActive: {
     backgroundColor: COLORS.success + '15',
-    borderColor: COLORS.success,
+    borderColor:     COLORS.success,
   },
-  dietaryText:       { fontSize: FONTS.sm, color: COLORS.text },
-  dietaryTextActive: { color: COLORS.success, fontWeight: '600' },
+  dietaryText:       { fontSize: FONTS.sm, color: COLORS.text    },
+  dietaryTextActive: { color: COLORS.success, fontWeight: '600'  },
+
+  // ── Upload Status Card ────────────────────
+  uploadStatusCard: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    backgroundColor: COLORS.primary + '08',
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
+    borderWidth:     1,
+    borderColor:     COLORS.primary + '20',
+    gap:             SIZES.sm,
+  },
+  uploadStatusTitle: {
+    fontSize:   FONTS.sm,
+    fontWeight: '700',
+    color:      COLORS.text,
+  },
+  uploadStatusSub: {
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
+    marginTop: 2,
+  },
+
+  // ── Save Button ───────────────────────────
   saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
-    marginTop: SIZES.md,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    marginTop:       SIZES.md,
     ...SHADOW,
   },
   saveBtnDisabled: { opacity: 0.7 },
+  saveBtnLoading:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
   saveBtnText: {
-    color: COLORS.textWhite,
-    fontSize: FONTS.xl,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
   },
 });
