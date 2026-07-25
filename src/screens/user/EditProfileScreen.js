@@ -1,27 +1,26 @@
 // ============================================
 // FILE: src/screens/user/EditProfileScreen.js
 // ============================================
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Alert,
-  ActivityIndicator,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, TextInput, TouchableOpacity,
+  ScrollView, StyleSheet, Alert,
+  ActivityIndicator, Image, KeyboardAvoidingView,
+  Platform, Switch,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
+import * as ImagePicker      from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db }             from '../../firebase/config';
 import { useAuth }        from '../../hooks/useAuth';
-import { uploadImage }    from '../../utils/imageUpload';
+import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
+const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
+
+// ─── Dietary Options ──────────────────────────
 const DIETARY_OPTIONS = [
   { label: 'Vegetarian', emoji: '🥗' },
   { label: 'Vegan',      emoji: '🌱' },
@@ -33,17 +32,67 @@ const DIETARY_OPTIONS = [
   { label: 'Keto',       emoji: '🥩' },
 ];
 
+const MAX_BIO = 200;
+
+// ─────────────────────────────────────────────
+// UPLOAD AVATAR TO CLOUDINARY
+// ─────────────────────────────────────────────
+const uploadAvatarToCloudinary = async (imageUri, userId) => {
+  try {
+    // ✅ Compress first
+    const compressed = await ImageManipulator.manipulateAsync(
+      imageUri,
+      [{ resize: { width: 400 } }],
+      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
+    );
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri:  compressed.uri,
+      type: 'image/jpeg',
+      name: `avatar_${userId}_${Date.now()}.jpg`,
+    });
+    formData.append('upload_preset', uploadPreset);
+    // ✅ Goes to whats_cooking/profiles/
+    formData.append('folder', folders.profiles);
+    // ✅ Same public_id overwrites old avatar automatically
+    formData.append('public_id', `avatar_${userId}`);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      {
+        method:  'POST',
+        body:    formData,
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Upload failed');
+    }
+
+    const data = await response.json();
+    return { success: true, url: data.secure_url };
+  } catch (err) {
+    console.error('Avatar upload error:', err);
+    return { success: false, error: err.message };
+  }
+};
+
+// ─────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────
 export default function EditProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  // ✅ Destructure forgotPassword here at component level
-  // — hooks must NEVER be called inside callbacks
   const { user, userProfile, updateUserProfile, forgotPassword } = useAuth();
 
-  // ── Input refs for keyboard focus chain ──
+  // ── Refs ──────────────────────────────────
   const lastNameRef = useRef(null);
   const phoneRef    = useRef(null);
   const bioRef      = useRef(null);
 
+  // ── Form State ────────────────────────────
   const [form, setForm] = useState({
     firstName: userProfile?.firstName || '',
     lastName:  userProfile?.lastName  || '',
@@ -51,71 +100,193 @@ export default function EditProfileScreen({ navigation }) {
     bio:       userProfile?.bio       || '',
   });
 
-  const [dietary, setDietary]             = useState(
+  const [dietary, setDietary] = useState(
     userProfile?.dietaryPreferences || []
   );
+  const [notifications, setNotifications] = useState({
+    pushEnabled: userProfile?.notifications?.pushEnabled ?? true,
+    menuUpdates: userProfile?.notifications?.menuUpdates ?? true,
+    promotions:  userProfile?.notifications?.promotions  ?? false,
+  });
+
+  // ── Avatar State ──────────────────────────
   const [avatarUri, setAvatarUri]         = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(
     userProfile?.avatar || null
   );
-  const [loading, setLoading]             = useState(false);
-  const [notifications, setNotifications] = useState(
-    userProfile?.notifications || {
-      pushEnabled: true,
-      menuUpdates: true,
-      promotions:  false,
-    }
-  );
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
-  const updateForm = (field, value) => {
+  // ── Save State ────────────────────────────
+  const [loading, setLoading]   = useState(false);
+  const [loadingStep, setLoadingStep] = useState('');
+
+  // ─────────────────────────────────────────
+  // CHANGE DETECTION
+  // ✅ Only enable save when something changed
+  // ─────────────────────────────────────────
+  const hasChanges = useMemo(() => {
+    const formChanged =
+      form.firstName !== (userProfile?.firstName || '') ||
+      form.lastName  !== (userProfile?.lastName  || '') ||
+      form.phone     !== (userProfile?.phone     || '') ||
+      form.bio       !== (userProfile?.bio       || '');
+
+    const dietaryChanged = JSON.stringify([...dietary].sort()) !==
+      JSON.stringify([...(userProfile?.dietaryPreferences || [])].sort());
+
+    const notifChanged =
+      notifications.pushEnabled !== (userProfile?.notifications?.pushEnabled ?? true) ||
+      notifications.menuUpdates !== (userProfile?.notifications?.menuUpdates ?? true) ||
+      notifications.promotions  !== (userProfile?.notifications?.promotions  ?? false);
+
+    const avatarChanged = !!avatarUri || avatarRemoved;
+
+    return formChanged || dietaryChanged || notifChanged || avatarChanged;
+  }, [form, dietary, notifications, avatarUri, avatarRemoved, userProfile]);
+
+  // ─────────────────────────────────────────
+  // FORM HELPERS
+  // ─────────────────────────────────────────
+  const updateForm = useCallback((field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
-  };
+  }, []);
 
-  const toggleDietary = (pref) => {
+  const toggleDietary = useCallback((pref) => {
     setDietary(prev =>
       prev.includes(pref)
         ? prev.filter(p => p !== pref)
         : [...prev, pref]
     );
-  };
+  }, []);
 
-  const pickAvatar = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access');
+  const toggleNotif = useCallback((key) => {
+    setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  // ─────────────────────────────────────────
+  // AVATAR PICKER
+  // ✅ Camera + Library + Remove options
+  // ─────────────────────────────────────────
+  const handleAvatarPress = useCallback(() => {
+    const options = [
+      { text: '📷 Take Photo',          onPress: () => pickAvatar('camera')  },
+      { text: '🖼️ Choose from Library', onPress: () => pickAvatar('library') },
+    ];
+
+    if (avatarPreview) {
+      options.push({
+        text:    '🗑️ Remove Photo',
+        style:   'destructive',
+        onPress: () => {
+          setAvatarUri(null);
+          setAvatarPreview(null);
+          setAvatarRemoved(true);
+        },
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Profile Photo', 'Choose an option', options);
+  }, [avatarPreview]);
+
+  const pickAvatar = useCallback(async (source) => {
+    try {
+      let result;
+
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please allow camera access');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect:        [1, 1],
+          quality:       1,
+        });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Please allow photo library access');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes:    ['images'],
+          allowsEditing: true,
+          aspect:        [1, 1],
+          quality:       1,
+        });
+      }
+
+      if (!result.canceled) {
+        setAvatarUri(result.assets[0].uri);
+        setAvatarPreview(result.assets[0].uri);
+        setAvatarRemoved(false);
+      }
+    } catch (err) {
+      console.error('Avatar pick error:', err);
+      Alert.alert('Error', 'Could not select photo');
+    }
+  }, []);
+
+  // ─────────────────────────────────────────
+  // SAVE HANDLER
+  // ─────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    // ── Validation ────────────────────────
+    if (!form.firstName.trim()) {
+      Alert.alert('Required', 'First name is required');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],  // ✅ Updated API
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled) {
-      setAvatarUri(result.assets[0].uri);
-      setAvatarPreview(result.assets[0].uri);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!form.firstName.trim() || !form.lastName.trim()) {
-      Alert.alert('Error', 'First and last name are required');
+    if (!form.lastName.trim()) {
+      Alert.alert('Required', 'Last name is required');
       return;
     }
 
     setLoading(true);
     try {
-      let avatarUrl  = userProfile?.avatar     || '';
-      let avatarPath = userProfile?.avatarPath || '';
+      let avatarUrl = userProfile?.avatar || '';
 
+      // ── Upload new avatar ─────────────────
       if (avatarUri) {
-        avatarPath = `users/${user.uid}/avatar_${Date.now()}`;
-        const uploadResult = await uploadImage(avatarUri, avatarPath);
+        setLoadingStep('Uploading photo...');
+        setAvatarUploading(true);
+
+        const uploadResult = await uploadAvatarToCloudinary(
+          avatarUri, user.uid
+        );
+        setAvatarUploading(false);
+
         if (uploadResult.success) {
           avatarUrl = uploadResult.url;
+        } else {
+          // Ask if they want to continue without photo
+          const continueWithout = await new Promise(resolve => {
+            Alert.alert(
+              '⚠️ Photo Upload Failed',
+              'Could not upload your photo. Save profile without it?',
+              [
+                { text: 'Cancel',      onPress: () => resolve(false), style: 'cancel' },
+                { text: 'Save Anyway', onPress: () => resolve(true) },
+              ]
+            );
+          });
+          if (!continueWithout) {
+            setLoading(false);
+            setLoadingStep('');
+            return;
+          }
         }
       }
+
+      // ── Remove avatar ─────────────────────
+      if (avatarRemoved) {
+        avatarUrl = '';
+      }
+
+      // ── Save to Firestore ─────────────────
+      setLoadingStep('Saving profile...');
 
       const result = await updateUserProfile({
         firstName:          form.firstName.trim(),
@@ -123,78 +294,92 @@ export default function EditProfileScreen({ navigation }) {
         phone:              form.phone.trim(),
         bio:                form.bio.trim(),
         avatar:             avatarUrl,
-        avatarPath,
         dietaryPreferences: dietary,
         notifications,
       });
 
       if (result.success) {
-        Alert.alert('✅ Success', 'Profile updated successfully!', [
-          { text: 'OK', onPress: () => navigation.goBack() },
-        ]);
+        Alert.alert(
+          '✅ Profile Updated!',
+          'Your changes have been saved.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
       } else {
         Alert.alert('Error', result.error || 'Failed to update profile');
       }
     } catch (err) {
-      Alert.alert('Error', 'Something went wrong');
+      console.error('Save profile error:', err);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
+      setLoadingStep('');
+      setAvatarUploading(false);
     }
-  };
+  }, [
+    form, dietary, notifications,
+    avatarUri, avatarRemoved,
+    user, userProfile, updateUserProfile, navigation,
+  ]);
 
-  // ✅ Fixed: forgotPassword called from component scope, not inside useAuth()
-  const handleChangePassword = () => {
+  // ─────────────────────────────────────────
+  // CHANGE PASSWORD
+  // ─────────────────────────────────────────
+  const handleChangePassword = useCallback(() => {
     Alert.alert(
       'Change Password',
-      'A password reset email will be sent to ' + user?.email,
+      `A password reset email will be sent to:\n${user?.email}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send Email',
           onPress: async () => {
-            await forgotPassword(user?.email);
-            Alert.alert(
-              '📧 Email Sent',
-              'Check your inbox for password reset instructions'
-            );
+            try {
+              await forgotPassword(user?.email);
+              Alert.alert(
+                '📧 Email Sent',
+                'Check your inbox for password reset instructions.'
+              );
+            } catch {
+              Alert.alert('Error', 'Could not send reset email. Try again.');
+            }
           },
         },
       ]
     );
-  };
+  }, [user, forgotPassword]);
 
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
   return (
-    // ✅ KeyboardAvoidingView outermost
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios'
-          ? 0
-          // ✅ Stack header (~56) + translucent status bar
-          : insets.top + 56
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top + 56}
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{
-          // ✅ Bottom clears Android nav bar
-          paddingBottom: insets.bottom + SIZES.xl,
-        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
       >
 
-        {/* ── Avatar section ────────────────── */}
+        {/* ── Avatar Section ─────────────────── */}
         <View style={styles.avatarSection}>
           <TouchableOpacity
             style={styles.avatarContainer}
-            onPress={pickAvatar}
+            onPress={handleAvatarPress}
             activeOpacity={0.8}
+            disabled={avatarUploading}
           >
-            {avatarPreview ? (
+            {avatarUploading ? (
+              <View style={styles.avatarFallback}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
+              </View>
+            ) : avatarPreview ? (
               <Image
                 source={{ uri: avatarPreview }}
                 style={styles.avatar}
+                resizeMode="cover"
               />
             ) : (
               <View style={styles.avatarFallback}>
@@ -203,21 +388,40 @@ export default function EditProfileScreen({ navigation }) {
                 </Text>
               </View>
             )}
-            <View style={styles.avatarEditBadge}>
-              <Ionicons name="camera" size={14} color="#FFFFFF" />
-            </View>
+
+            {!avatarUploading && (
+              <View style={styles.avatarEditBadge}>
+                <Ionicons name="camera" size={14} color="#FFFFFF" />
+              </View>
+            )}
+
+            {/* ✅ New photo indicator */}
+            {avatarUri && !avatarUploading && (
+              <View style={styles.avatarNewBadge}>
+                <Text style={styles.avatarNewText}>New</Text>
+              </View>
+            )}
           </TouchableOpacity>
-          <Text style={styles.avatarHint}>Tap to change photo</Text>
+
+          <Text style={styles.avatarHint}>
+            {avatarUploading
+              ? 'Uploading...'
+              : avatarUri
+              ? 'New photo selected — tap Save to apply'
+              : 'Tap to change photo'}
+          </Text>
         </View>
 
-        {/* ── Basic info ────────────────────── */}
+        {/* ── Basic Info ────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>👤 Basic Information</Text>
 
-          {/* Name row */}
+          {/* Name Row */}
           <View style={styles.row}>
             <View style={[styles.field, { flex: 1 }]}>
-              <Text style={styles.label}>First Name *</Text>
+              <Text style={styles.label}>
+                First Name <Text style={{ color: COLORS.error }}>*</Text>
+              </Text>
               <TextInput
                 style={styles.input}
                 value={form.firstName}
@@ -231,7 +435,9 @@ export default function EditProfileScreen({ navigation }) {
               />
             </View>
             <View style={[styles.field, { flex: 1 }]}>
-              <Text style={styles.label}>Last Name *</Text>
+              <Text style={styles.label}>
+                Last Name <Text style={{ color: COLORS.error }}>*</Text>
+              </Text>
               <TextInput
                 ref={lastNameRef}
                 style={styles.input}
@@ -251,51 +457,89 @@ export default function EditProfileScreen({ navigation }) {
           <View style={styles.field}>
             <Text style={styles.label}>Email</Text>
             <View style={[styles.input, styles.disabledInput]}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={14}
+                color={COLORS.textMuted}
+              />
               <Text style={styles.disabledText}>{user?.email}</Text>
             </View>
-            <Text style={styles.fieldHint}>Email cannot be changed</Text>
+            <Text style={styles.fieldHint}>
+              Email address cannot be changed
+            </Text>
           </View>
 
           {/* Phone */}
           <View style={styles.field}>
             <Text style={styles.label}>Phone Number</Text>
-            <TextInput
-              ref={phoneRef}
-              style={styles.input}
-              value={form.phone}
-              onChangeText={v => updateForm('phone', v)}
-              placeholder="+1 (555) 000-0000"
-              placeholderTextColor={COLORS.textMuted}
-              keyboardType="phone-pad"
-              returnKeyType="next"
-              onSubmitEditing={() => bioRef.current?.focus()}
-            />
+            <View style={styles.inputRow}>
+              <Ionicons
+                name="call-outline"
+                size={16}
+                color={COLORS.textMuted}
+              />
+              <TextInput
+                ref={phoneRef}
+                style={styles.inputFlex}
+                value={form.phone}
+                onChangeText={v => updateForm('phone', v)}
+                placeholder="+1 (876) 000-0000"
+                placeholderTextColor={COLORS.textMuted}
+                keyboardType="phone-pad"
+                returnKeyType="next"
+                onSubmitEditing={() => bioRef.current?.focus()}
+              />
+            </View>
           </View>
 
           {/* Bio */}
           <View style={styles.field}>
-            <Text style={styles.label}>Bio</Text>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Bio</Text>
+              <Text style={[
+                styles.charCount,
+                form.bio.length > MAX_BIO * 0.9 && { color: COLORS.error },
+              ]}>
+                {form.bio.length}/{MAX_BIO}
+              </Text>
+            </View>
             <TextInput
               ref={bioRef}
               style={[styles.input, styles.textarea]}
               value={form.bio}
-              onChangeText={v => updateForm('bio', v)}
+              onChangeText={v => updateForm('bio', v.slice(0, MAX_BIO))}
               placeholder="Tell us a bit about yourself..."
               placeholderTextColor={COLORS.textMuted}
               multiline
               numberOfLines={3}
               textAlignVertical="top"
+              maxLength={MAX_BIO}
               returnKeyType="done"
             />
           </View>
         </View>
 
-        {/* ── Dietary preferences ───────────── */}
+        {/* ── Dietary Preferences ───────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🥗 Dietary Preferences</Text>
           <Text style={styles.sectionHint}>
             We'll highlight menu items that match your diet
           </Text>
+
+          {dietary.length > 0 && (
+            <View style={styles.selectedDietaryBanner}>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={16}
+                color={COLORS.success}
+              />
+              <Text style={styles.selectedDietaryText}>
+                {dietary.length} preference
+                {dietary.length !== 1 ? 's' : ''} selected
+              </Text>
+            </View>
+          )}
+
           <View style={styles.chipGrid}>
             {DIETARY_OPTIONS.map(opt => {
               const active = dietary.includes(opt.label);
@@ -313,6 +557,9 @@ export default function EditProfileScreen({ navigation }) {
                   ]}>
                     {opt.label}
                   </Text>
+                  {active && (
+                    <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -324,44 +571,59 @@ export default function EditProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>🔔 Notifications</Text>
           {[
             {
+              key:   'pushEnabled',
+              label: 'Push Notifications',
+              desc:  'Allow alerts on this device',
+              icon:  'phone-portrait-outline',
+            },
+            {
               key:   'menuUpdates',
               label: 'Daily Menu Updates',
-              desc:  'Get notified when restaurants update their menu',
+              desc:  'When restaurants post today\'s menu',
+              icon:  'restaurant-outline',
             },
             {
               key:   'promotions',
               label: 'Promotions & Deals',
-              desc:  'Special offers from your favorite restaurants',
+              desc:  'Special offers from your favorites',
+              icon:  'pricetag-outline',
             },
-            {
-              key:   'pushEnabled',
-              label: 'Push Notifications',
-              desc:  'Allow push notifications on this device',
-            },
-          ].map(notif => (
-            <TouchableOpacity
+          ].map((notif, idx, arr) => (
+            <View
               key={notif.key}
-              style={styles.notifRow}
-              onPress={() => setNotifications(prev => ({
-                ...prev,
-                [notif.key]: !prev[notif.key],
-              }))}
-              activeOpacity={0.7}
+              style={[
+                styles.notifRow,
+                idx === arr.length - 1 && { borderBottomWidth: 0 },
+              ]}
             >
+              <View style={[
+                styles.notifIconBg,
+                { backgroundColor: COLORS.primary + '15' },
+              ]}>
+                <Ionicons
+                  name={notif.icon}
+                  size={18}
+                  color={COLORS.primary}
+                />
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.notifLabel}>{notif.label}</Text>
                 <Text style={styles.notifDesc}>{notif.desc}</Text>
               </View>
-              <View style={[
-                styles.toggle,
-                notifications[notif.key] && styles.toggleOn,
-              ]}>
-                <View style={[
-                  styles.toggleThumb,
-                  notifications[notif.key] && styles.toggleThumbOn,
-                ]} />
-              </View>
-            </TouchableOpacity>
+              {/* ✅ Using Switch instead of custom toggle */}
+              <Switch
+                value={!!notifications[notif.key]}
+                onValueChange={() => toggleNotif(notif.key)}
+                trackColor={{
+                  false: COLORS.border,
+                  true:  COLORS.primary + '80',
+                }}
+                thumbColor={
+                  notifications[notif.key] ? COLORS.primary : '#f4f3f4'
+                }
+                ios_backgroundColor={COLORS.border}
+              />
+            </View>
           ))}
         </View>
 
@@ -373,29 +635,42 @@ export default function EditProfileScreen({ navigation }) {
             onPress={handleChangePassword}
             activeOpacity={0.7}
           >
-            <Ionicons name="key-outline" size={20} color={COLORS.primary} />
+            <View style={[
+              styles.notifIconBg,
+              { backgroundColor: COLORS.primary + '15' },
+            ]}>
+              <Ionicons name="key-outline" size={18} color={COLORS.primary} />
+            </View>
             <Text style={styles.securityBtnText}>Change Password</Text>
             <Ionicons
-              name="chevron-forward"
+              name="chevron-forward-outline"
               size={18}
               color={COLORS.textMuted}
             />
           </TouchableOpacity>
         </View>
 
-        {/* ── Save button ───────────────────── */}
+        {/* ── Save Button ───────────────────── */}
         <TouchableOpacity
-          style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
+          style={[
+            styles.saveBtn,
+            (!hasChanges || loading) && styles.saveBtnDisabled,
+          ]}
           onPress={handleSave}
-          disabled={loading}
+          disabled={!hasChanges || loading}
           activeOpacity={0.8}
         >
           {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <View style={styles.saveBtnLoading}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.saveBtnText}>{loadingStep}</Text>
+            </View>
           ) : (
             <>
-              <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
-              <Text style={styles.saveBtnText}>Save Changes</Text>
+              <Ionicons name="checkmark-circle-outline" size={22} color="#FFFFFF" />
+              <Text style={styles.saveBtnText}>
+                {hasChanges ? 'Save Changes' : 'No Changes'}
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -405,221 +680,198 @@ export default function EditProfileScreen({ navigation }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
 
-  // ── Avatar ───────────────────────────────
+  // ── Avatar Section ────────────────────────
   avatarSection: {
-    alignItems: 'center',
+    alignItems:     'center',
     paddingVertical: SIZES.xl,
     backgroundColor: COLORS.primary,
+    gap:            SIZES.sm,
   },
-  avatarContainer: {
-    position: 'relative',
-  },
+  avatarContainer: { position: 'relative' },
   avatar: {
-    width: 100,
-    height: 100,
+    width:        100,
+    height:       100,
     borderRadius: 50,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderWidth:  3,
+    borderColor:  '#FFFFFF',
   },
   avatarFallback: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width:           100,
+    height:          100,
+    borderRadius:    50,
     backgroundColor: 'rgba(255,255,255,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
+    justifyContent:  'center',
+    alignItems:      'center',
+    borderWidth:     3,
+    borderColor:     '#FFFFFF',
   },
   avatarInitial: {
-    fontSize: 40,
+    fontSize:   40,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color:      '#FFFFFF',
   },
   avatarEditBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
+    position:        'absolute',
+    bottom:          0,
+    right:           0,
     backgroundColor: COLORS.secondary,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    width:           30,
+    height:          30,
+    borderRadius:    15,
+    justifyContent:  'center',
+    alignItems:      'center',
+    borderWidth:     2,
+    borderColor:     '#FFFFFF',
   },
-  avatarHint: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: FONTS.sm,
-    marginTop: SIZES.sm,
+  avatarNewBadge: {
+    position:          'absolute',
+    top:               0,
+    right:             0,
+    backgroundColor:   COLORS.success,
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
   },
+  avatarNewText: { color: '#FFFFFF', fontSize: 9, fontWeight: 'bold' },
+  avatarHint:    { color: 'rgba(255,255,255,0.85)', fontSize: FONTS.sm },
 
-  // ── Sections ─────────────────────────────
+  // ── Sections ──────────────────────────────
   section: {
     backgroundColor: COLORS.surface,
-    margin: SIZES.md,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.lg,
-    gap: SIZES.md,
+    margin:          SIZES.md,
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.lg,
+    gap:             SIZES.md,
     ...SHADOW,
   },
-  sectionTitle: {
-    fontSize: FONTS.lg,
-    fontWeight: 'bold',
-    color: COLORS.text,
-  },
-  sectionHint: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
-    marginTop: -SIZES.sm,
-  },
+  sectionTitle: { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text },
+  sectionHint:  { fontSize: FONTS.sm, color: COLORS.textMuted, marginTop: -SIZES.sm },
 
-  // ── Form fields ──────────────────────────
-  row: {
-    flexDirection: 'row',
-    gap: SIZES.md,
-  },
-  field: {
-    gap: SIZES.xs,
-  },
-  label: {
-    fontSize: FONTS.sm,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  fieldHint: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-  },
+  // ── Form Fields ───────────────────────────
+  row:      { flexDirection: 'row', gap: SIZES.md },
+  field:    { gap: SIZES.xs },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  label:    { fontSize: FONTS.sm, fontWeight: '600', color: COLORS.text },
+  fieldHint:{ fontSize: FONTS.xs, color: COLORS.textMuted },
+  charCount:{ fontSize: FONTS.xs, color: COLORS.textMuted },
+
   input: {
-    backgroundColor: COLORS.background,
-    borderRadius: RADIUS.md,
+    backgroundColor:   COLORS.background,
+    borderRadius:      RADIUS.md,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.sm,
-    fontSize: FONTS.md,
-    color: COLORS.text,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   SIZES.sm,
+    fontSize:          FONTS.md,
+    color:             COLORS.text,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
+  inputRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.background,
+    borderRadius:      RADIUS.md,
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.sm,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
+    gap:               SIZES.sm,
+  },
+  inputFlex: { flex: 1, fontSize: FONTS.md, color: COLORS.text },
   textarea: {
-    height: 80,
+    height:            80,
     textAlignVertical: 'top',
   },
   disabledInput: {
-    justifyContent: 'center',
-    opacity: 0.6,
-  },
-  disabledText: {
-    fontSize: FONTS.md,
-    color: COLORS.textMuted,
-  },
-
-  // ── Dietary chips ────────────────────────
-  chipGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.sm,
+    alignItems:    'center',
+    opacity:       0.6,
+    gap:           SIZES.sm,
   },
+  disabledText: { fontSize: FONTS.md, color: COLORS.textMuted },
+
+  // ── Dietary Chips ─────────────────────────
+  selectedDietaryBanner: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             SIZES.xs,
+    backgroundColor: COLORS.success + '15',
+    padding:         SIZES.sm,
+    borderRadius:    RADIUS.md,
+  },
+  selectedDietaryText: {
+    fontSize:   FONTS.sm,
+    color:      COLORS.success,
+    fontWeight: '600',
+  },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SIZES.sm },
   chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:     'row',
+    alignItems:        'center',
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.xs,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 6,
+    paddingVertical:   SIZES.xs,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.background,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
+    gap:               6,
   },
-  chipActive: {
-    backgroundColor: COLORS.primary,
-    borderColor:     COLORS.primary,
-  },
-  chipEmoji:       { fontSize: 14 },
-  chipText: {
-    fontSize: FONTS.sm,
-    color: COLORS.text,
-    fontWeight: '500',
-  },
-  chipTextActive:  { color: '#FFFFFF' },
+  chipActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  chipEmoji:      { fontSize: 14 },
+  chipText:       { fontSize: FONTS.sm, color: COLORS.text, fontWeight: '500' },
+  chipTextActive: { color: '#FFFFFF' },
 
-  // ── Notifications ────────────────────────
+  // ── Notifications ─────────────────────────
   notifRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SIZES.sm,
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingVertical:   SIZES.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-    gap: SIZES.md,
+    gap:               SIZES.md,
   },
-  notifLabel: {
-    fontSize: FONTS.md,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
-  notifDesc: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  toggle: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.border,
-    padding: 2,
+  notifIconBg: {
+    width:          36,
+    height:         36,
+    borderRadius:   RADIUS.md,
     justifyContent: 'center',
+    alignItems:     'center',
   },
-  toggleOn: {
-    backgroundColor: COLORS.primary,
-  },
-  toggleThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  toggleThumbOn: {
-    alignSelf: 'flex-end',
-  },
+  notifLabel: { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
+  notifDesc:  { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
 
-  // ── Security ─────────────────────────────
+  // ── Security ──────────────────────────────
   securityBtn: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.md,
+    alignItems:    'center',
+    gap:           SIZES.md,
     paddingVertical: SIZES.sm,
   },
   securityBtnText: {
-    flex: 1,
-    fontSize: FONTS.md,
-    color: COLORS.text,
+    flex:       1,
+    fontSize:   FONTS.md,
+    color:      COLORS.text,
     fontWeight: '500',
   },
 
-  // ── Save button ──────────────────────────
+  // ── Save Button ───────────────────────────
   saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'center',
+    backgroundColor:  COLORS.primary,
     marginHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
+    paddingVertical:  SIZES.md,
+    borderRadius:     RADIUS.lg,
+    gap:              SIZES.sm,
     ...SHADOW,
   },
-  saveBtnDisabled: { opacity: 0.7 },
-  saveBtnText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.lg,
-    fontWeight: 'bold',
-  },
+  saveBtnDisabled: { opacity: 0.5 },
+  saveBtnLoading:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
+  saveBtnText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
 });
