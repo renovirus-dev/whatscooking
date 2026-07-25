@@ -1,14 +1,10 @@
 // ============================================
 // FILE: src/navigation/AppNavigator.js
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  ActivityIndicator,
-  TouchableOpacity,
-  ScrollView,
-  StatusBar,
+  View, Text, ActivityIndicator,
+  TouchableOpacity, ScrollView, StatusBar,
 } from 'react-native';
 import { NavigationContainer }        from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -18,9 +14,15 @@ import { useSafeAreaInsets }          from 'react-native-safe-area-context';
 import { useAuth }                    from '../hooks/useAuth';
 import { useNotifications }           from '../context/NotificationContext';
 
-// =============================================
+// ─── Brand Colors ─────────────────────────────
+const PRIMARY   = '#FF6B35';
+const DARK      = '#2C3E50';
+const MUTED     = '#7F8C8D';
+const BG        = '#F8F9FA';
+
+// ─────────────────────────────────────────────
 // PLACEHOLDER FACTORY
-// =============================================
+// ─────────────────────────────────────────────
 function makePlaceholder(name) {
   return function PlaceholderScreen() {
     const insets = useSafeAreaInsets();
@@ -29,24 +31,22 @@ function makePlaceholder(name) {
         flex:            1,
         justifyContent:  'center',
         alignItems:      'center',
-        backgroundColor: '#F8F9FA',
+        backgroundColor: BG,
         paddingTop:      insets.top,
         paddingBottom:   insets.bottom,
-        paddingLeft:     insets.left,
-        paddingRight:    insets.right,
         padding:         20,
+        gap:             12,
       }}>
         <Text style={{ fontSize: 50 }}>🚧</Text>
         <Text style={{
           fontSize:   20,
           fontWeight: 'bold',
-          color:      '#2C3E50',
-          marginTop:  16,
+          color:      DARK,
           textAlign:  'center',
         }}>
           {name}
         </Text>
-        <Text style={{ fontSize: 13, color: '#7F8C8D', marginTop: 8 }}>
+        <Text style={{ fontSize: 13, color: MUTED }}>
           Coming Soon
         </Text>
       </View>
@@ -54,103 +54,133 @@ function makePlaceholder(name) {
   };
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // SAFE IMPORTS
-// =============================================
+// ─────────────────────────────────────────────
 
-// ── Auth ──────────────────────────────────
+// ── Auth ──────────────────────────────────────
 let LoginScreen, RegisterScreen;
 try { LoginScreen    = require('../screens/auth/LoginScreen').default;    }
-catch(e) { LoginScreen    = makePlaceholder('Login');    }
+catch { LoginScreen    = makePlaceholder('Login');    }
 try { RegisterScreen = require('../screens/auth/RegisterScreen').default; }
-catch(e) { RegisterScreen = makePlaceholder('Register'); }
+catch { RegisterScreen = makePlaceholder('Register'); }
 
-// ── User ──────────────────────────────────
+// ── User ──────────────────────────────────────
 let HomeScreen, ExploreScreen, RestaurantDetailScreen,
     FavoritesScreen, ProfileScreen, EditProfileScreen,
     FavoriteDishesScreen, NotificationsScreen;
 
 try { HomeScreen             = require('../screens/user/HomeScreen').default;             }
-catch(e) { HomeScreen             = makePlaceholder('Home');              }
+catch { HomeScreen             = makePlaceholder('Home');              }
 try { ExploreScreen          = require('../screens/user/ExploreScreen').default;          }
-catch(e) { ExploreScreen          = makePlaceholder('Explore');           }
+catch { ExploreScreen          = makePlaceholder('Explore');           }
 try { RestaurantDetailScreen = require('../screens/user/RestaurantDetailScreen').default; }
-catch(e) { RestaurantDetailScreen = makePlaceholder('Restaurant Detail'); }
+catch { RestaurantDetailScreen = makePlaceholder('Restaurant Detail'); }
 try { FavoritesScreen        = require('../screens/user/FavoritesScreen').default;        }
-catch(e) { FavoritesScreen        = makePlaceholder('Favorites');         }
+catch { FavoritesScreen        = makePlaceholder('Favorites');         }
 try { ProfileScreen          = require('../screens/user/ProfileScreen').default;          }
-catch(e) { ProfileScreen          = makePlaceholder('Profile');           }
+catch { ProfileScreen          = makePlaceholder('Profile');           }
 try { EditProfileScreen      = require('../screens/user/EditProfileScreen').default;      }
-catch(e) { EditProfileScreen      = makePlaceholder('Edit Profile');      }
+catch { EditProfileScreen      = makePlaceholder('Edit Profile');      }
 try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').default;   }
-catch(e) { FavoriteDishesScreen   = makePlaceholder('Favourite Dishes');  }
+catch { FavoriteDishesScreen   = makePlaceholder('Favourite Dishes');  }
 try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
-catch(e) { NotificationsScreen    = makePlaceholder('Notifications');     }
+catch { NotificationsScreen    = makePlaceholder('Notifications');     }
 
-// ── Owner ─────────────────────────────────
+// ── Owner ─────────────────────────────────────
 let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
     DailyMenuScreen, RestaurantSetupScreen,
-    SubscriptionScreen, AnalyticsScreen;
+    SubscriptionScreen, AnalyticsScreen, MenuScannerScreen;
 
 try { OwnerDashboardScreen  = require('../screens/owner/OwnerDashboardScreen').default;  }
-catch(e) { OwnerDashboardScreen  = makePlaceholder('Dashboard');          }
+catch { OwnerDashboardScreen  = makePlaceholder('Dashboard');      }
 try { ManageMenuScreen      = require('../screens/owner/ManageMenuScreen').default;      }
-catch(e) { ManageMenuScreen      = makePlaceholder('Menu');               }
+catch { ManageMenuScreen      = makePlaceholder('Manage Menu');    }
 try { AddMenuItemScreen     = require('../screens/owner/AddMenuItemScreen').default;     }
-catch(e) { AddMenuItemScreen     = makePlaceholder('Add Item');           }
+catch { AddMenuItemScreen     = makePlaceholder('Add Item');       }
 try { DailyMenuScreen       = require('../screens/owner/DailyMenuScreen').default;       }
-catch(e) { DailyMenuScreen       = makePlaceholder('Daily Menu');         }
+catch { DailyMenuScreen       = makePlaceholder('Daily Menu');     }
 try { RestaurantSetupScreen = require('../screens/owner/RestaurantSetupScreen').default; }
-catch(e) { RestaurantSetupScreen = makePlaceholder('Setup');              }
+catch { RestaurantSetupScreen = makePlaceholder('Setup');          }
 try { SubscriptionScreen    = require('../screens/owner/SubscriptionScreen').default;    }
-catch(e) { SubscriptionScreen    = makePlaceholder('Subscription');       }
+catch { SubscriptionScreen    = makePlaceholder('Subscription');   }
 try { AnalyticsScreen       = require('../screens/owner/AnalyticsScreen').default;       }
-catch(e) { AnalyticsScreen       = makePlaceholder('Analytics');          }
+catch { AnalyticsScreen       = makePlaceholder('Analytics');      }
+// ✅ Menu Scanner
+try { MenuScannerScreen     = require('../screens/owner/MenuScannerScreen').default;     }
+catch { MenuScannerScreen     = makePlaceholder('Menu Scanner');   }
 
-// ── Admin ─────────────────────────────────
-let AdminDashboardScreen, ManageRestaurantsScreen,
-    ImageDownloadScreen;
+// ── Admin ─────────────────────────────────────
+let AdminDashboardScreen, ImageDownloadScreen;
 
-try { AdminDashboardScreen    = require('../screens/admin/AdminDashboardScreen').default;    }
-catch(e) { AdminDashboardScreen    = makePlaceholder('Admin');         }
-try { ManageRestaurantsScreen = require('../screens/admin/ManageRestaurantsScreen').default; }
-catch(e) { ManageRestaurantsScreen = makePlaceholder('Manage');        }
-try { ImageDownloadScreen     = require('../screens/admin/ImageDownloadScreen').default;     }
-catch(e) { ImageDownloadScreen     = makePlaceholder('Image Manager'); }
+try { AdminDashboardScreen = require('../screens/admin/AdminDashboardScreen').default; }
+catch { AdminDashboardScreen = makePlaceholder('Admin Dashboard'); }
+try { ImageDownloadScreen  = require('../screens/admin/ImageDownloadScreen').default;  }
+catch { ImageDownloadScreen  = makePlaceholder('Image Manager');   }
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
-// =============================================
+// ─────────────────────────────────────────────
 // LOADING SCREEN
-// =============================================
-function LoadingScreen() {
+// ✅ Has timeout to prevent hanging forever
+// ─────────────────────────────────────────────
+function LoadingScreen({ onTimeout }) {
   const insets = useSafeAreaInsets();
+
+  // ✅ Show "taking too long?" after 8 seconds
+  const [showTimeout, setShowTimeout] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowTimeout(true), 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <View style={{
       flex:            1,
       justifyContent:  'center',
       alignItems:      'center',
-      backgroundColor: '#F8F9FA',
+      backgroundColor: BG,
       paddingTop:      insets.top,
       paddingBottom:   insets.bottom,
+      gap:             16,
     }}>
-      <Text style={{ fontSize: 60, marginBottom: 20 }}>🍳</Text>
-      <ActivityIndicator size="large" color="#FF6B35" />
-      <Text style={{ fontSize: 16, color: '#7F8C8D', marginTop: 16 }}>
+      <Text style={{ fontSize: 60 }}>🍳</Text>
+      <ActivityIndicator size="large" color={PRIMARY} />
+      <Text style={{ fontSize: 16, color: MUTED }}>
         Loading What's Cooking...
       </Text>
+      {showTimeout && (
+        <View style={{ alignItems: 'center', gap: 8, marginTop: 8 }}>
+          <Text style={{ fontSize: 13, color: MUTED, textAlign: 'center' }}>
+            Taking longer than expected...
+          </Text>
+          <TouchableOpacity
+            onPress={onTimeout}
+            style={{
+              backgroundColor:   PRIMARY,
+              paddingHorizontal: 24,
+              paddingVertical:   10,
+              borderRadius:      8,
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>
+              Continue as Guest
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // WELCOME SCREEN
-// =============================================
+// ─────────────────────────────────────────────
 function WelcomeScreen({ onGuest, onLogin, onRegister }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={{ flex: 1, backgroundColor: '#FF6B35' }}>
+    <View style={{ flex: 1, backgroundColor: PRIMARY }}>
       <StatusBar
         translucent
         backgroundColor="transparent"
@@ -164,44 +194,77 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           paddingHorizontal: 32,
           paddingTop:        insets.top + 32,
           paddingBottom:     insets.bottom + 32,
+          gap:               12,
         }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={{ fontSize: 80, marginBottom: 16 }}>🍳</Text>
+        {/* Logo */}
+        <Text style={{ fontSize: 80 }}>🍳</Text>
+
         <Text style={{
-          fontSize:     32,
-          fontWeight:   'bold',
-          color:        '#FFFFFF',
-          textAlign:    'center',
-          marginBottom: 8,
+          fontSize:   32,
+          fontWeight: 'bold',
+          color:      '#FFFFFF',
+          textAlign:  'center',
         }}>
           What's Cooking
         </Text>
+
         <Text style={{
           fontSize:     16,
           color:        'rgba(255,255,255,0.85)',
           textAlign:    'center',
-          marginBottom: 40,
           lineHeight:   24,
+          marginBottom: 16,
         }}>
           Discover daily menus from restaurants near you
         </Text>
+
+        {/* Features preview */}
+        <View style={{
+          backgroundColor:   'rgba(255,255,255,0.15)',
+          borderRadius:      16,
+          padding:           20,
+          width:             '100%',
+          gap:               10,
+          marginBottom:      8,
+        }}>
+          {[
+            { icon: '🍽️', text: 'Browse daily menus from local restaurants' },
+            { icon: '📍', text: 'Find restaurants near you'                 },
+            { icon: '⭐', text: 'Save favorites and write reviews'           },
+            { icon: '🔔', text: 'Get notified about daily specials'          },
+          ].map((item, i) => (
+            <View
+              key={i}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
+            >
+              <Text style={{ fontSize: 20 }}>{item.icon}</Text>
+              <Text style={{
+                color:    'rgba(255,255,255,0.9)',
+                fontSize: 14,
+                flex:     1,
+              }}>
+                {item.text}
+              </Text>
+            </View>
+          ))}
+        </View>
 
         {/* Sign In */}
         <TouchableOpacity
           style={{
             backgroundColor: '#FFFFFF',
-            paddingVertical: 14,
+            paddingVertical: 15,
             borderRadius:    12,
             width:           '100%',
             alignItems:      'center',
-            marginBottom:    12,
           }}
           onPress={onLogin}
           activeOpacity={0.8}
         >
-          <Text style={{ color: '#FF6B35', fontSize: 18, fontWeight: 'bold' }}>
+          <Text style={{ color: PRIMARY, fontSize: 18, fontWeight: 'bold' }}>
             Sign In
           </Text>
         </TouchableOpacity>
@@ -210,13 +273,12 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255,255,255,0.2)',
-            paddingVertical: 14,
+            paddingVertical: 15,
             borderRadius:    12,
             width:           '100%',
             alignItems:      'center',
             borderWidth:     2,
             borderColor:     'rgba(255,255,255,0.5)',
-            marginBottom:    12,
           }}
           onPress={onRegister}
           activeOpacity={0.8}
@@ -226,15 +288,15 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           </Text>
         </TouchableOpacity>
 
-        {/* Browse as Guest */}
+        {/* Guest */}
         <TouchableOpacity
-          style={{ paddingVertical: 14, marginTop: 8 }}
+          style={{ paddingVertical: 12 }}
           onPress={onGuest}
           activeOpacity={0.7}
         >
           <Text style={{
             color:              'rgba(255,255,255,0.8)',
-            fontSize:           16,
+            fontSize:           15,
             fontWeight:         '600',
             textDecorationLine: 'underline',
           }}>
@@ -246,106 +308,123 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // GUEST FAVORITES SCREEN
-// =============================================
+// ─────────────────────────────────────────────
 function GuestFavoritesScreen({ onLogin }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{
       flex:            1,
-      backgroundColor: '#F8F9FA',
-      paddingBottom:   insets.bottom,
+      backgroundColor: BG,
+      justifyContent:  'center',
+      alignItems:      'center',
+      padding:         32,
+      paddingBottom:   insets.bottom + 32,
+      gap:             12,
     }}>
-      <View style={{
-        flex:           1,
-        justifyContent: 'center',
-        alignItems:     'center',
-        padding:        32,
+      <Text style={{ fontSize: 70 }}>❤️</Text>
+      <Text style={{ fontSize: 22, fontWeight: 'bold', color: DARK }}>
+        Save Your Favorites
+      </Text>
+      <Text style={{
+        fontSize:   14,
+        color:      MUTED,
+        textAlign:  'center',
+        lineHeight: 22,
       }}>
-        <Text style={{ fontSize: 70, marginBottom: 16 }}>❤️</Text>
-        <Text style={{
-          fontSize:     22,
-          fontWeight:   'bold',
-          color:        '#2C3E50',
-          marginBottom: 8,
-        }}>
-          Save Your Favorites
+        Sign in to save restaurants and track your favorite meals
+      </Text>
+      <TouchableOpacity
+        style={{
+          backgroundColor:   PRIMARY,
+          paddingHorizontal: 32,
+          paddingVertical:   12,
+          borderRadius:      12,
+          flexDirection:     'row',
+          alignItems:        'center',
+          gap:               8,
+          marginTop:         8,
+        }}
+        onPress={onLogin}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
+        <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>
+          Sign In
         </Text>
-        <Text style={{
-          fontSize:     14,
-          color:        '#7F8C8D',
-          textAlign:    'center',
-          marginBottom: 24,
-        }}>
-          Sign in to save restaurants and track your favorite meals
-        </Text>
-        <TouchableOpacity
-          style={{
-            backgroundColor:   '#FF6B35',
-            paddingHorizontal: 32,
-            paddingVertical:   12,
-            borderRadius:      12,
-          }}
-          onPress={onLogin}
-          activeOpacity={0.8}
-        >
-          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' }}>
-            Sign In
-          </Text>
-        </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // GUEST PROFILE SCREEN
-// =============================================
+// ─────────────────────────────────────────────
 function GuestProfileScreen({ onLogin, onRegister }) {
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#F8F9FA' }}
+      style={{ flex: 1, backgroundColor: BG }}
       contentContainerStyle={{
         flexGrow:       1,
         justifyContent: 'center',
         alignItems:     'center',
         padding:        32,
         paddingBottom:  insets.bottom + 32,
+        gap:            12,
       }}
-      keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      <Text style={{ fontSize: 70, marginBottom: 16 }}>👤</Text>
-      <Text style={{
-        fontSize:     24,
-        fontWeight:   'bold',
-        color:        '#2C3E50',
-        marginBottom: 8,
-      }}>
+      <Text style={{ fontSize: 70 }}>👤</Text>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', color: DARK }}>
         Guest Mode
       </Text>
       <Text style={{
-        fontSize:     14,
-        color:        '#7F8C8D',
-        textAlign:    'center',
-        marginBottom: 32,
-        lineHeight:   22,
+        fontSize:   14,
+        color:      MUTED,
+        textAlign:  'center',
+        lineHeight: 22,
+        marginBottom: 8,
       }}>
         Sign in to save favorites, leave reviews and access all features
       </Text>
 
+      {/* Benefits list */}
+      {[
+        '⭐ Save favorite restaurants',
+        '🍽️ Track favorite dishes',
+        '✍️ Write reviews',
+        '🔔 Get push notifications',
+      ].map((benefit, i) => (
+        <View
+          key={i}
+          style={{
+            flexDirection:     'row',
+            alignItems:        'center',
+            backgroundColor:   '#FFFFFF',
+            padding:           12,
+            borderRadius:      10,
+            width:             '100%',
+            gap:               12,
+          }}
+        >
+          <Text style={{ fontSize: 20 }}>{benefit.split(' ')[0]}</Text>
+          <Text style={{ color: DARK, fontSize: 14, flex: 1 }}>
+            {benefit.split(' ').slice(1).join(' ')}
+          </Text>
+        </View>
+      ))}
+
       {/* Sign In */}
       <TouchableOpacity
         style={{
-          backgroundColor:   '#FF6B35',
-          paddingHorizontal: 48,
-          paddingVertical:   14,
-          borderRadius:      12,
-          width:             '100%',
-          alignItems:        'center',
-          marginBottom:      12,
+          backgroundColor: PRIMARY,
+          paddingVertical: 14,
+          borderRadius:    12,
+          width:           '100%',
+          alignItems:      'center',
+          marginTop:       8,
         }}
         onPress={onLogin}
         activeOpacity={0.8}
@@ -358,19 +437,18 @@ function GuestProfileScreen({ onLogin, onRegister }) {
       {/* Create Account */}
       <TouchableOpacity
         style={{
-          backgroundColor:   '#FFFFFF',
-          paddingHorizontal: 48,
-          paddingVertical:   14,
-          borderRadius:      12,
-          width:             '100%',
-          alignItems:        'center',
-          borderWidth:       2,
-          borderColor:       '#FF6B35',
+          backgroundColor: '#FFFFFF',
+          paddingVertical: 14,
+          borderRadius:    12,
+          width:           '100%',
+          alignItems:      'center',
+          borderWidth:     2,
+          borderColor:     PRIMARY,
         }}
         onPress={onRegister}
         activeOpacity={0.8}
       >
-        <Text style={{ color: '#FF6B35', fontSize: 18, fontWeight: 'bold' }}>
+        <Text style={{ color: PRIMARY, fontSize: 18, fontWeight: 'bold' }}>
           Create Account
         </Text>
       </TouchableOpacity>
@@ -378,28 +456,28 @@ function GuestProfileScreen({ onLogin, onRegister }) {
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // TAB ICON HELPER
-// =============================================
+// ─────────────────────────────────────────────
 function getTabIcon(routeName, focused) {
   const icons = {
-    Home:      focused ? 'home'       : 'home-outline',
-    Explore:   focused ? 'compass'    : 'compass-outline',
-    Favorites: focused ? 'heart'      : 'heart-outline',
-    Profile:   focused ? 'person'     : 'person-outline',
-    Dashboard: focused ? 'grid'       : 'grid-outline',
-    Menu:      focused ? 'restaurant' : 'restaurant-outline',
-    Daily:     focused ? 'today'      : 'today-outline',
+    Home:      focused ? 'home'            : 'home-outline',
+    Explore:   focused ? 'compass'         : 'compass-outline',
+    Favorites: focused ? 'heart'           : 'heart-outline',
+    Profile:   focused ? 'person'          : 'person-outline',
+    Dashboard: focused ? 'grid'            : 'grid-outline',
+    Menu:      focused ? 'restaurant'      : 'restaurant-outline',
+    Daily:     focused ? 'today'           : 'today-outline',
   };
   return icons[routeName] || 'ellipse-outline';
 }
 
-// =============================================
-// TAB BAR SCREEN OPTIONS
-// =============================================
+// ─────────────────────────────────────────────
+// TAB SCREEN OPTIONS
+// ─────────────────────────────────────────────
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
-  tabBarActiveTintColor:   '#FF6B35',
+  tabBarActiveTintColor:   PRIMARY,
   tabBarInactiveTintColor: '#95A5A6',
   tabBarHideOnKeyboard:    true,
   tabBarStyle: {
@@ -417,18 +495,15 @@ const tabBarScreenOptions = ({ route }) => ({
   ),
 });
 
-// =============================================
-// NOTIFICATION BADGE HELPER
-// Shows red dot on Profile tab if unread > 0
-// =============================================
+// ─────────────────────────────────────────────
+// NOTIFICATION BADGE ICON
+// ─────────────────────────────────────────────
 function ProfileTabIcon({ color, size, focused }) {
-  // ✅ Safe — useNotifications is available because
-  // AppNavigator is wrapped in NotificationProvider
   let unreadCount = 0;
   try {
     const ctx = useNotifications();
     unreadCount = ctx?.unreadCount || 0;
-  } catch (_) {}
+  } catch {}
 
   return (
     <View style={{ position: 'relative' }}>
@@ -439,15 +514,15 @@ function ProfileTabIcon({ color, size, focused }) {
       />
       {unreadCount > 0 && (
         <View style={{
-          position:        'absolute',
-          top:             -2,
-          right:           -6,
-          backgroundColor: '#FF3B30',
-          borderRadius:    8,
-          minWidth:        16,
-          height:          16,
-          justifyContent:  'center',
-          alignItems:      'center',
+          position:          'absolute',
+          top:               -2,
+          right:             -6,
+          backgroundColor:   '#FF3B30',
+          borderRadius:      8,
+          minWidth:          16,
+          height:            16,
+          justifyContent:    'center',
+          alignItems:        'center',
           paddingHorizontal: 3,
         }}>
           <Text style={{
@@ -463,9 +538,40 @@ function ProfileTabIcon({ color, size, focused }) {
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
+// HEADER STYLES
+// ─────────────────────────────────────────────
+const headerStyle = {
+  headerStyle:      { backgroundColor: PRIMARY },
+  headerTintColor:  '#FFFFFF',
+  headerTitleStyle: { fontWeight: 'bold' },
+};
+
+const adminHeaderStyle = {
+  headerShown:      true,
+  headerStyle:      { backgroundColor: DARK },
+  headerTintColor:  '#FFFFFF',
+  headerTitleStyle: { fontWeight: 'bold' },
+};
+
+// ─────────────────────────────────────────────
+// AUTH STACK
+// ─────────────────────────────────────────────
+function AuthStack({ initialRoute = 'Login' }) {
+  return (
+    <Stack.Navigator
+      initialRouteName={initialRoute}
+      screenOptions={{ headerShown: false }}
+    >
+      <Stack.Screen name="Login"    component={LoginScreen}    />
+      <Stack.Screen name="Register" component={RegisterScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// ─────────────────────────────────────────────
 // GUEST TABS
-// =============================================
+// ─────────────────────────────────────────────
 function GuestTabs({ onLogin, onRegister }) {
   return (
     <Tab.Navigator screenOptions={tabBarScreenOptions}>
@@ -486,9 +592,9 @@ function GuestTabs({ onLogin, onRegister }) {
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // USER TABS
-// =============================================
+// ─────────────────────────────────────────────
 function UserTabs() {
   return (
     <Tab.Navigator screenOptions={tabBarScreenOptions}>
@@ -499,7 +605,6 @@ function UserTabs() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          // ✅ Notification badge on Profile tab
           tabBarIcon: (props) => <ProfileTabIcon {...props} />,
         }}
       />
@@ -507,65 +612,42 @@ function UserTabs() {
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // OWNER TABS
-// =============================================
+// ─────────────────────────────────────────────
 function OwnerTabs() {
   return (
     <Tab.Navigator screenOptions={tabBarScreenOptions}>
-      <Tab.Screen name="Dashboard" component={OwnerDashboardScreen} />
-      <Tab.Screen name="Menu"      component={ManageMenuScreen}     />
+      <Tab.Screen
+        name="Dashboard"
+        component={OwnerDashboardScreen}
+        options={{ tabBarLabel: 'Dashboard' }}
+      />
+      <Tab.Screen
+        name="Menu"
+        component={ManageMenuScreen}
+        options={{ tabBarLabel: 'My Menu' }}
+      />
       <Tab.Screen
         name="Daily"
         component={DailyMenuScreen}
-        options={{ tabBarLabel: "Today's Menu" }}
+        options={{ tabBarLabel: "Today's" }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
-          // ✅ Notification badge on Profile tab for owners too
-          tabBarIcon: (props) => <ProfileTabIcon {...props} />,
+          tabBarLabel: 'Profile',
+          tabBarIcon:  (props) => <ProfileTabIcon {...props} />,
         }}
       />
     </Tab.Navigator>
   );
 }
 
-// =============================================
-// HEADER STYLES
-// =============================================
-const headerStyle = {
-  headerStyle:      { backgroundColor: '#FF6B35' },
-  headerTintColor:  '#FFFFFF',
-  headerTitleStyle: { fontWeight: 'bold' },
-};
-
-const adminHeaderStyle = {
-  headerShown:      true,
-  headerStyle:      { backgroundColor: '#2C3E50' },
-  headerTintColor:  '#FFFFFF',
-  headerTitleStyle: { fontWeight: 'bold' },
-};
-
-// =============================================
-// AUTH STACK
-// =============================================
-function AuthStack({ initialRoute = 'Login' }) {
-  return (
-    <Stack.Navigator
-      initialRouteName={initialRoute}
-      screenOptions={{ headerShown: false }}
-    >
-      <Stack.Screen name="Login"    component={LoginScreen}    />
-      <Stack.Screen name="Register" component={RegisterScreen} />
-    </Stack.Navigator>
-  );
-}
-
-// =============================================
+// ─────────────────────────────────────────────
 // USER NAVIGATOR
-// =============================================
+// ─────────────────────────────────────────────
 function UserNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
@@ -597,35 +679,46 @@ function UserNavigator() {
         options={{ title: 'Notifications' }}
       />
       <Stack.Screen
-        name="FavoritesStack"
+        name="Favorites"
         component={FavoritesScreen}
         options={{ title: 'My Favorites' }}
+      />
+      {/* ✅ Users can also view subscription info */}
+      <Stack.Screen
+        name="Subscription"
+        component={SubscriptionScreen}
+        options={{ title: 'Subscription Plans' }}
       />
     </Stack.Navigator>
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // OWNER NAVIGATOR
-// =============================================
+// ✅ Added MenuScanner route
+// ─────────────────────────────────────────────
 function OwnerNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
-      {/* Main tab navigator */}
+      {/* Main tabs */}
       <Stack.Screen
         name="OwnerTabs"
         component={OwnerTabs}
         options={{ headerShown: false }}
       />
 
-      {/* ✅ Restaurant setup */}
+      {/* Restaurant setup */}
       <Stack.Screen
         name="RestaurantSetup"
         component={RestaurantSetupScreen}
-        options={{ title: 'Setup Restaurant' }}
+        options={({ route }) => ({
+          title: route.params?.restaurant
+            ? 'Edit Restaurant'
+            : 'Setup Restaurant',
+        })}
       />
 
-      {/* ✅ Add / Edit menu item */}
+      {/* Add / Edit menu item */}
       <Stack.Screen
         name="AddMenuItem"
         component={AddMenuItemScreen}
@@ -634,7 +727,17 @@ function OwnerNavigator() {
         })}
       />
 
-      {/* ✅ View restaurant as customer */}
+      {/* ✅ Menu Scanner */}
+      <Stack.Screen
+        name="MenuScanner"
+        component={MenuScannerScreen}
+        options={{
+          title:       '📷 Scan Menu',
+          headerShown: false, // Scanner has its own header
+        }}
+      />
+
+      {/* View as customer */}
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
@@ -643,36 +746,35 @@ function OwnerNavigator() {
         })}
       />
 
-      {/* ✅ Subscription plans + PayPal / Bank Transfer */}
+      {/* Subscription */}
       <Stack.Screen
         name="Subscription"
         component={SubscriptionScreen}
         options={{ title: 'Subscription Plans' }}
       />
 
-      {/* ✅ Analytics (Premium only) */}
+      {/* Analytics */}
       <Stack.Screen
         name="Analytics"
         component={AnalyticsScreen}
         options={{ title: 'Analytics' }}
       />
 
-      {/* ✅ Edit profile */}
+      {/* Edit profile */}
       <Stack.Screen
         name="EditProfile"
         component={EditProfileScreen}
         options={{ title: 'Edit Profile' }}
       />
 
-      {/* ✅ Notifications */}
+      {/* Notifications */}
       <Stack.Screen
         name="Notifications"
         component={NotificationsScreen}
         options={{ title: 'Notifications' }}
       />
 
-      {/* ✅ Owner Dashboard accessible from ProfileScreen
-          navigation.navigate('OwnerDashboard') goes here */}
+      {/* Owner Dashboard (from ProfileScreen) */}
       <Stack.Screen
         name="OwnerDashboard"
         component={OwnerDashboardScreen}
@@ -682,41 +784,41 @@ function OwnerNavigator() {
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // ADMIN NAVIGATOR
-// =============================================
+// ─────────────────────────────────────────────
 function AdminNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen
         name="AdminDashboard"
         component={AdminDashboardScreen}
-        options={{ headerShown: false }}
       />
-      <Stack.Screen
-        name="ManageRestaurants"
-        component={ManageRestaurantsScreen}
-        options={{
-          ...adminHeaderStyle,
-          title: 'Manage Restaurants',
-        }}
-      />
-      {/* ✅ Image download manager */}
       <Stack.Screen
         name="ImageDownload"
         component={ImageDownloadScreen}
         options={{
           ...adminHeaderStyle,
-          title: '🖼️ Food Image Manager',
+          title: '🖼️ Image Manager',
         }}
+      />
+      {/* ✅ Admin can also view restaurant details */}
+      <Stack.Screen
+        name="RestaurantDetail"
+        component={RestaurantDetailScreen}
+        options={({ route }) => ({
+          ...adminHeaderStyle,
+          title: route.params?.name || 'Restaurant',
+        })}
       />
     </Stack.Navigator>
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // GUEST NAVIGATOR
-// =============================================
+// ✅ Added more routes guests can access
+// ─────────────────────────────────────────────
 function GuestNavigator({ onLogin, onRegister }) {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
@@ -731,6 +833,8 @@ function GuestNavigator({ onLogin, onRegister }) {
           />
         )}
       </Stack.Screen>
+
+      {/* Guests can view restaurant details */}
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
@@ -738,18 +842,31 @@ function GuestNavigator({ onLogin, onRegister }) {
           title: route.params?.name || 'Restaurant',
         })}
       />
+
+      {/* Auth screens accessible from guest */}
+      <Stack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ title: 'Sign In' }}
+      />
+      <Stack.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{ title: 'Create Account' }}
+      />
     </Stack.Navigator>
   );
 }
 
-// =============================================
+// ─────────────────────────────────────────────
 // ROOT APP NAVIGATOR
-// =============================================
+// ─────────────────────────────────────────────
 export default function AppNavigator() {
   const { user, userProfile, loading } = useAuth();
   const [isGuest, setIsGuest]          = useState(false);
   const [authScreen, setAuthScreen]    = useState(null);
 
+  // ✅ Reset guest/auth state when user logs in
   useEffect(() => {
     if (user) {
       setIsGuest(false);
@@ -757,31 +874,42 @@ export default function AppNavigator() {
     }
   }, [user]);
 
-  if (loading) return <LoadingScreen />;
+  // ✅ Loading timeout handler
+  const handleLoadingTimeout = useCallback(() => {
+    setIsGuest(true);
+  }, []);
+
+  // ── Loading ─────────────────────────────────
+  if (loading) {
+    return <LoadingScreen onTimeout={handleLoadingTimeout} />;
+  }
 
   return (
     <NavigationContainer>
       {(() => {
-        // ── Logged in ──────────────────────
+        // ── Logged in ──────────────────────────
         if (user) {
-          if (!userProfile) return <LoadingScreen />;
+          // Wait for profile to load
+          if (!userProfile) {
+            return <LoadingScreen onTimeout={handleLoadingTimeout} />;
+          }
+
+          // Route by role
           if (userProfile.role === 'admin')            return <AdminNavigator />;
           if (userProfile.role === 'restaurant_owner') return <OwnerNavigator />;
           return <UserNavigator />;
         }
 
-        // ── Auth screens ───────────────────
+        // ── Auth screens ───────────────────────
         if (authScreen) {
           return (
             <AuthStack
-              initialRoute={
-                authScreen === 'login' ? 'Login' : 'Register'
-              }
+              initialRoute={authScreen === 'login' ? 'Login' : 'Register'}
             />
           );
         }
 
-        // ── Guest mode ─────────────────────
+        // ── Guest mode ─────────────────────────
         if (isGuest) {
           return (
             <GuestNavigator
@@ -797,7 +925,7 @@ export default function AppNavigator() {
           );
         }
 
-        // ── Welcome screen ─────────────────
+        // ── Welcome screen ─────────────────────
         return (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Welcome">
