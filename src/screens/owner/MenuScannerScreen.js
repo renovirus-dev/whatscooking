@@ -14,6 +14,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImageManipulator from 'expo-image-manipulator';
+import TextRecognition       from '@react-native-ml-kit/text-recognition';
 import { useMenu }           from '../../hooks/useMenu';
 import { useSubscription }   from '../../hooks/useSubscription';
 import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
@@ -21,23 +22,19 @@ import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
-// ─── Google Vision API ────────────────────────
-const VISION_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_VISION_KEY || '';
-const VISION_API_URL =
-  `https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`;
-
-// ─── Category Keywords Map ────────────────────
-// Used to auto-detect category from section headers
+// ─── Category Keywords ────────────────────────
 const CATEGORY_KEYWORDS = {
   appetizer:   ['appetizer', 'starter', 'starters', 'appetizers', 'small plates'],
   soup:        ['soup', 'soups', 'broth', 'chowder'],
   salad:       ['salad', 'salads'],
-  main_course: ['main', 'mains', 'entree', 'entrees', 'dinner', 'lunch', 'main course'],
+  main_course: ['main', 'mains', 'entree', 'entrees', 'dinner',
+                'lunch', 'main course'],
   side_dish:   ['side', 'sides', 'side dish', 'extras'],
   dessert:     ['dessert', 'desserts', 'sweet', 'sweets', 'pudding'],
-  beverage:    ['drink', 'drinks', 'beverage', 'beverages', 'juice', 'cocktail'],
+  beverage:    ['drink', 'drinks', 'beverage', 'beverages',
+                'juice', 'cocktail', 'smoothie'],
   breakfast:   ['breakfast', 'brunch', 'morning'],
-  combo_meal:  ['combo', 'combos', 'meal deal', 'bundle'],
+  combo_meal:  ['combo', 'combos', 'meal deal', 'bundle', 'special'],
   snack:       ['snack', 'snacks', 'bite', 'bites'],
 };
 
@@ -55,58 +52,82 @@ const STEPS = {
   REVIEW:     'review',
 };
 
+// ─── Categories ──────────────────────────────
+const CATEGORIES = [
+  { id: 'appetizer',   label: '🥗 Appetizer'  },
+  { id: 'soup',        label: '🍲 Soup'        },
+  { id: 'salad',       label: '🥙 Salad'       },
+  { id: 'main_course', label: '🍽️ Main Course' },
+  { id: 'side_dish',   label: '🍟 Side Dish'   },
+  { id: 'dessert',     label: '🧁 Dessert'     },
+  { id: 'beverage',    label: '🥤 Beverage'    },
+  { id: 'breakfast',   label: '🍳 Breakfast'   },
+  { id: 'combo_meal',  label: '🎁 Combo Meal'  },
+  { id: 'snack',       label: '🍿 Snack'       },
+];
+
 // ─────────────────────────────────────────────
-// OCR HELPER: Call Google Vision API
+// ✅ ON-DEVICE OCR — No API key needed!
+// Uses Google ML Kit which runs locally
+// Works offline, completely free
 // ─────────────────────────────────────────────
-const callGoogleVision = async (base64Image) => {
-  if (!VISION_API_KEY) {
-    throw new Error('Google Vision API key not configured');
+const runOCR = async (imageUri) => {
+  try {
+    // ✅ Compress image first for faster processing
+    const compressed = await ImageManipulator.manipulateAsync(
+      imageUri,
+      [{ resize: { width: 1200 } }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+    );
+
+    // ✅ ML Kit reads text directly from URI
+    // No base64 conversion needed!
+    const result = await TextRecognition.recognize(compressed.uri);
+
+    // ✅ ML Kit returns structured blocks
+    // We join all text for our parser
+    return result.text || '';
+  } catch (err) {
+    console.error('ML Kit OCR error:', err);
+    return '';
   }
-
-  const response = await fetch(VISION_API_URL, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      requests: [{
-        image:    { content: base64Image },
-        features: [{ type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }],
-      }],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error('Vision API request failed');
-  }
-
-  const data = await response.json();
-  return data.responses?.[0]?.fullTextAnnotation?.text || '';
 };
 
 // ─────────────────────────────────────────────
-// PARSER: Extract menu items from raw OCR text
+// ✅ IMPROVED PARSER
+// ML Kit gives better structured output
+// so we can parse more accurately
 // ─────────────────────────────────────────────
 const parseMenuText = (rawText) => {
-  const lines    = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-  const items    = [];
-  let currentCategory = 'main_course';
+  if (!rawText?.trim()) return [];
 
-  // ── Price regex patterns ──────────────────
-  // Matches: $12.99, $12, 12.99, J$1200
-  const priceRegex = /(?:J?\$|USD\s*)?\s*(\d{1,4}(?:\.\d{2})?)/;
+  const lines           = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const items           = [];
+  let currentCategory   = 'main_course';
 
-  // ── Check if line is a section header ─────
+  // ── Price patterns ────────────────────────
+  // Matches: $12.99  $12  J$1200  12.99  1,500
+  const priceRegex = /(?:J?\$\s*)?(\d{1,4}(?:[,.]?\d{2,3})?)/;
+
+  // ── Is this line a section header? ────────
   const isSectionHeader = (line) => {
-    const lower = line.toLowerCase().trim();
-    // Headers are usually short, all caps, or match keywords
-    const isAllCaps  = line === line.toUpperCase() && line.length > 2;
-    const isShort    = line.split(' ').length <= 4;
-    const isKeyword  = Object.values(CATEGORY_KEYWORDS)
+    const lower   = line.toLowerCase().trim();
+    const isShort = line.split(' ').length <= 5;
+    const isAllCaps = line === line.toUpperCase() &&
+                      line.length > 2 &&
+                      /[A-Z]/.test(line);
+    const isKeyword = Object.values(CATEGORY_KEYWORDS)
       .flat()
       .some(kw => lower.includes(kw));
-    return (isAllCaps || isKeyword) && isShort && !priceRegex.test(line);
+
+    // Headers don't usually have prices
+    const hasPrice = /\d+\.\d{2}/.test(line) ||
+                     /\$\d+/.test(line);
+
+    return (isAllCaps || isKeyword) && isShort && !hasPrice;
   };
 
-  // ── Detect category from header ───────────
+  // ── Detect category from text ─────────────
   const detectCategory = (line) => {
     const lower = line.toLowerCase();
     for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
@@ -115,65 +136,93 @@ const parseMenuText = (rawText) => {
     return currentCategory;
   };
 
-  // ── Parse price from line ─────────────────
-  const parsePrice = (line) => {
-    const match = line.match(priceRegex);
-    if (!match) return null;
-    const price = parseFloat(match[1]);
-    // ✅ Sanity check: menu prices between $0.50 and $999
-    if (price < 0.5 || price > 999) return null;
-    return price;
+  // ── Extract price from line ───────────────
+  const extractPrice = (line) => {
+    // Try explicit $ price first
+    const dollarMatch = line.match(/J?\$\s*(\d{1,4}(?:[.,]\d{2})?)/);
+    if (dollarMatch) {
+      const val = parseFloat(dollarMatch[1].replace(',', '.'));
+      if (val >= 0.5 && val <= 9999) return val;
+    }
+
+    // Try decimal price (e.g. 12.99)
+    const decimalMatch = line.match(/\b(\d{1,3}\.\d{2})\b/);
+    if (decimalMatch) {
+      const val = parseFloat(decimalMatch[1]);
+      if (val >= 0.5 && val <= 999) return val;
+    }
+
+    // Try JMD price (e.g. 1,500 or 1500)
+    const jmdMatch = line.match(/\b(\d{3,4})\b/);
+    if (jmdMatch) {
+      const val = parseFloat(jmdMatch[1]);
+      // JMD prices typically 100-9999
+      if (val >= 100 && val <= 9999) return val / 100;
+    }
+
+    return null;
   };
 
-  // ── Remove price from line ────────────────
-  const removePriceFromLine = (line) => {
-    return line
-      .replace(/J?\$\s*\d{1,4}(?:\.\d{2})?/g, '')
-      .replace(/\d{1,4}\.\d{2}/g, '')
+  // ── Remove price text from line ───────────
+  const stripPrice = (line) =>
+    line
+      .replace(/J?\$\s*\d{1,4}(?:[.,]\d{2,3})?/g, '')
+      .replace(/\b\d{1,3}\.\d{2}\b/g, '')
+      .replace(/\b\d{3,4}\b/g, '')
+      .replace(/\.{2,}/g, '') // remove ... separators
+      .replace(/\s{2,}/g, ' ')
       .trim();
-  };
 
-  // ── Main parsing loop ─────────────────────
+  // ── Main loop ─────────────────────────────
   let i = 0;
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lines[i].trim();
 
-    // Check for section header
+    if (!line || line.length < 2) { i++; continue; }
+
+    // ── Section header detection ─────────────
     if (isSectionHeader(line)) {
       currentCategory = detectCategory(line);
       i++;
       continue;
     }
 
-    // Check if line has a price
-    const price = parsePrice(line);
-    if (price !== null) {
-      const nameRaw = removePriceFromLine(line);
+    // ── Price detection ───────────────────────
+    const price = extractPrice(line);
 
-      // ✅ Name should be at least 2 chars and not just numbers
-      if (nameRaw.length >= 2 && !/^\d+$/.test(nameRaw)) {
-        // Look ahead for description (next line without price)
+    if (price !== null) {
+      const namePart = stripPrice(line);
+
+      // ✅ Valid item name check
+      const isValidName =
+        namePart.length >= 2 &&
+        !/^\d+$/.test(namePart) &&
+        !/^[^a-zA-Z]*$/.test(namePart);
+
+      if (isValidName) {
+        // Look ahead for description
         let description = '';
         if (
           i + 1 < lines.length &&
-          !parsePrice(lines[i + 1]) &&
+          extractPrice(lines[i + 1]) === null &&
           !isSectionHeader(lines[i + 1]) &&
-          lines[i + 1].length > 2
+          lines[i + 1].length > 3 &&
+          lines[i + 1].length < 150
         ) {
-          description = lines[i + 1];
-          i++; // skip description line
+          description = lines[i + 1].trim();
+          i++;
         }
 
         items.push({
-          id:          `scan_${Date.now()}_${items.length}`,
-          name:        nameRaw
-                         .replace(/^\W+/, '') // remove leading non-word chars
+          id:          `scan_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          name:        namePart
+                         .replace(/^[-•*·]+\s*/, '') // remove bullet points
                          .replace(/\s+/g, ' ')
                          .trim(),
-          price,
-          description: description.trim(),
+          price:       Math.round(price * 100) / 100,
+          description: description,
           category:    currentCategory,
-          confidence:  0.85,
+          confidence:  price > 0.5 ? 0.9 : 0.7,
           isEdited:    false,
           isSelected:  true,
         });
@@ -183,18 +232,18 @@ const parseMenuText = (rawText) => {
     i++;
   }
 
-  // ✅ Remove duplicates by name similarity
-  const unique = items.filter((item, idx) =>
-    !items.slice(0, idx).some(
-      prev => prev.name.toLowerCase() === item.name.toLowerCase()
-    )
-  );
-
-  return unique;
+  // ── Remove duplicates ─────────────────────
+  const seen = new Set();
+  return items.filter(item => {
+    const key = item.name.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };
 
 // ─────────────────────────────────────────────
-// UPLOAD SCANNED PAGE TO CLOUDINARY
+// UPLOAD SCAN TO CLOUDINARY
 // ─────────────────────────────────────────────
 const uploadScanToCloudinary = async (imageUri, pageNum) => {
   try {
@@ -208,10 +257,9 @@ const uploadScanToCloudinary = async (imageUri, pageNum) => {
     formData.append('file', {
       uri:  compressed.uri,
       type: 'image/jpeg',
-      name: `menu_scan_page_${pageNum}_${Date.now()}.jpg`,
+      name: `menu_scan_p${pageNum}_${Date.now()}.jpg`,
     });
     formData.append('upload_preset', uploadPreset);
-    // ✅ Goes to whats_cooking/menus/
     formData.append('folder', folders.menus);
 
     const response = await fetch(
@@ -232,6 +280,7 @@ const uploadScanToCloudinary = async (imageUri, pageNum) => {
     return { success: true, url: data.secure_url };
   } catch (err) {
     console.error('Scan upload error:', err);
+    // ✅ Don't block processing if upload fails
     return { success: false, error: err.message };
   }
 };
@@ -240,63 +289,76 @@ const uploadScanToCloudinary = async (imageUri, pageNum) => {
 // MAIN SCREEN
 // ─────────────────────────────────────────────
 export default function MenuScannerScreen({ route, navigation }) {
-  const insets       = useSafeAreaInsets();
+  const insets     = useSafeAreaInsets();
   const { restaurantId, restaurant } = route.params || {};
 
-  const { addScannedMenuItems }              = useMenu(restaurantId);
-  const { getCurrentPlan, hasBasic }         = useSubscription();
-  const [permission, requestPermission]      = useCameraPermissions();
+  const { addScannedMenuItems }          = useMenu(restaurantId);
+  const { getCurrentPlan, hasBasic }     = useSubscription();
+  const [permission, requestPermission]  = useCameraPermissions();
 
   const cameraRef = useRef(null);
 
   // ── State ─────────────────────────────────
-  const [step, setStep]               = useState(STEPS.CAPTURE);
-  const [scannedPages, setScannedPages] = useState([]);
-  // [{ uri, cloudinaryUrl, text }]
+  const [step, setStep]                   = useState(STEPS.CAPTURE);
+  const [scannedPages, setScannedPages]   = useState([]);
   const [extractedItems, setExtractedItems] = useState([]);
-  const [processingMsg, setProcessingMsg]   = useState('');
-  const [processingPct, setProcessingPct]   = useState(0);
-  const [saving, setSaving]                 = useState(false);
-  const [editingItem, setEditingItem]       = useState(null);
-  const [showEditModal, setShowEditModal]   = useState(false);
-  const [facing, setFacing]                 = useState('back');
+  const [processingMsg, setProcessingMsg] = useState('');
+  const [processingPct, setProcessingPct] = useState(0);
+  const [saving, setSaving]               = useState(false);
+  const [editingItem, setEditingItem]     = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [facing, setFacing]               = useState('back');
+  const [torchOn, setTorchOn]             = useState(false);
 
   // ── Plan check ────────────────────────────
   const currentPlan = getCurrentPlan(restaurant);
   const maxPages    = MAX_PAGES[currentPlan?.id || 'free_trial'];
 
-  // ── Permission check ──────────────────────
+  // ── Permission ────────────────────────────
   useEffect(() => {
-    if (!permission?.granted) {
-      requestPermission();
-    }
+    if (!permission?.granted) requestPermission();
   }, []);
 
-  // ── Not subscribed (free trial) ───────────
+  // ─────────────────────────────────────────
+  // SUBSCRIPTION GATE
+  // ─────────────────────────────────────────
   if (!hasBasic(restaurant)) {
     return (
       <View style={[
         styles.lockedContainer,
         { paddingTop: insets.top, paddingBottom: insets.bottom },
       ]}>
-        <Ionicons name="scan-outline" size={60} color={COLORS.textMuted} />
+        <View style={styles.lockedIconBg}>
+          <Ionicons name="scan-outline" size={50} color={COLORS.primary} />
+        </View>
         <Text style={styles.lockedTitle}>Menu Scanner</Text>
         <Text style={styles.lockedDesc}>
           Scan your physical menu pages to automatically
-          extract and add items to your menu.
+          extract and upload items — no typing needed!
         </Text>
+
+        {/* Plan comparison */}
         <View style={styles.planCompare}>
           {[
-            { plan: '🆓 Free Trial', scan: '❌ Not available' },
-            { plan: '⭐ Basic',      scan: '✅ Up to 2 pages' },
-            { plan: '👑 Premium',   scan: '✅ Up to 20 pages' },
+            { plan: '🆓 Free Trial', scan: '❌ Not available',  color: COLORS.error   },
+            { plan: '⭐ Basic',      scan: '✅ Up to 2 pages',  color: COLORS.success },
+            { plan: '👑 Premium',   scan: '✅ Up to 20 pages', color: COLORS.success },
           ].map((row, i) => (
-            <View key={i} style={styles.planCompareRow}>
+            <View
+              key={i}
+              style={[
+                styles.planCompareRow,
+                i === 2 && { borderBottomWidth: 0 },
+              ]}
+            >
               <Text style={styles.planComparePlan}>{row.plan}</Text>
-              <Text style={styles.planCompareScan}>{row.scan}</Text>
+              <Text style={[styles.planCompareScan, { color: row.color }]}>
+                {row.scan}
+              </Text>
             </View>
           ))}
         </View>
+
         <TouchableOpacity
           style={styles.lockedUpgradeBtn}
           onPress={() => navigation.navigate('Subscription', { restaurant })}
@@ -314,7 +376,9 @@ export default function MenuScannerScreen({ route, navigation }) {
     );
   }
 
-  // ── No camera permission ──────────────────
+  // ─────────────────────────────────────────
+  // NO CAMERA PERMISSION
+  // ─────────────────────────────────────────
   if (!permission?.granted) {
     return (
       <View style={[
@@ -324,13 +388,14 @@ export default function MenuScannerScreen({ route, navigation }) {
         <Ionicons name="camera-outline" size={60} color={COLORS.textMuted} />
         <Text style={styles.lockedTitle}>Camera Access Needed</Text>
         <Text style={styles.lockedDesc}>
-          Please allow camera access to scan your menu
+          Please allow camera access to scan your menu pages
         </Text>
         <TouchableOpacity
           style={styles.lockedUpgradeBtn}
           onPress={requestPermission}
           activeOpacity={0.8}
         >
+          <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
           <Text style={styles.lockedUpgradeBtnText}>
             Allow Camera Access
           </Text>
@@ -340,19 +405,26 @@ export default function MenuScannerScreen({ route, navigation }) {
   }
 
   // ─────────────────────────────────────────
-  // STEP 1: CAPTURE PHOTO
+  // CAPTURE PHOTO
   // ─────────────────────────────────────────
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current) return;
 
-    // ✅ Check page limit
     if (scannedPages.length >= maxPages) {
       Alert.alert(
         '📄 Page Limit Reached',
-        `Your ${currentPlan.name} plan allows up to ${maxPages} page${maxPages !== 1 ? 's' : ''}.\n\nUpgrade to Premium for up to 20 pages.`,
+        `Your ${currentPlan.name} plan allows up to ${maxPages} ` +
+        `page${maxPages !== 1 ? 's' : ''}.\n\n` +
+        `Upgrade to Premium for up to 20 pages.`,
         [
-          { text: 'Upgrade', onPress: () => navigation.navigate('Subscription', { restaurant }) },
-          { text: 'Continue with current pages', onPress: handleDoneScanning },
+          {
+            text:    'Upgrade',
+            onPress: () => navigation.navigate('Subscription', { restaurant }),
+          },
+          {
+            text:    'Process Current Pages',
+            onPress: handleDoneScanning,
+          },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -361,35 +433,44 @@ export default function MenuScannerScreen({ route, navigation }) {
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality:  0.9,
-        base64:   false,
+        quality:        0.9,
+        base64:         false,
         skipProcessing: false,
       });
 
       const pageNum = scannedPages.length + 1;
       setScannedPages(prev => [
         ...prev,
-        { uri: photo.uri, pageNum, cloudinaryUrl: null, text: '' },
+        {
+          uri:          photo.uri,
+          pageNum,
+          cloudinaryUrl: null,
+        },
       ]);
 
-      Alert.alert(
-        `✅ Page ${pageNum} Captured`,
-        scannedPages.length + 1 >= maxPages
-          ? `You've reached your ${maxPages}-page limit. Tap "Done Scanning" to process.`
-          : 'Scan another page or tap "Done Scanning" to process.',
-        [{ text: 'OK' }]
-      );
+      // ✅ Show feedback
+      if (scannedPages.length + 1 >= maxPages) {
+        Alert.alert(
+          `✅ Page ${pageNum} Captured`,
+          `You've reached your ${maxPages}-page limit.\nTap "Process Menu" to continue.`,
+          [{ text: 'OK' }]
+        );
+      }
+      // else — no alert, just visual feedback from thumbnail
     } catch (err) {
-      Alert.alert('Error', 'Failed to capture photo. Please try again.');
+      Alert.alert('Error', 'Failed to capture. Please try again.');
     }
   }, [cameraRef, scannedPages, maxPages, currentPlan]);
 
   // ─────────────────────────────────────────
-  // STEP 2: PROCESS PAGES
+  // PROCESS PAGES
   // ─────────────────────────────────────────
   const handleDoneScanning = useCallback(async () => {
     if (scannedPages.length === 0) {
-      Alert.alert('No Pages', 'Please scan at least one menu page first.');
+      Alert.alert(
+        'No Pages Scanned',
+        'Please scan at least one menu page first.'
+      );
       return;
     }
 
@@ -399,78 +480,86 @@ export default function MenuScannerScreen({ route, navigation }) {
     for (let i = 0; i < scannedPages.length; i++) {
       const page    = scannedPages[i];
       const pageNum = i + 1;
+      const total   = scannedPages.length;
 
-      // ── Upload to Cloudinary ──────────────
-      setProcessingMsg(`Uploading page ${pageNum}/${scannedPages.length}...`);
-      setProcessingPct(Math.round(((i * 3) / (scannedPages.length * 3)) * 100));
+      // ── Upload to Cloudinary (background) ─
+      setProcessingMsg(
+        `Uploading page ${pageNum}/${total} to cloud...`
+      );
+      setProcessingPct(Math.round(((i * 3)     / (total * 3)) * 100));
 
-      const uploadResult = await uploadScanToCloudinary(page.uri, pageNum);
-      if (uploadResult.success) {
-        setScannedPages(prev =>
-          prev.map((p, idx) =>
-            idx === i ? { ...p, cloudinaryUrl: uploadResult.url } : p
-          )
-        );
-      }
+      // ✅ Upload doesn't block OCR if it fails
+      uploadScanToCloudinary(page.uri, pageNum).then(result => {
+        if (result.success) {
+          setScannedPages(prev =>
+            prev.map((p, idx) =>
+              idx === i ? { ...p, cloudinaryUrl: result.url } : p
+            )
+          );
+        }
+      });
 
-      // ── Compress & convert to base64 for OCR
-      setProcessingMsg(`Reading page ${pageNum}/${scannedPages.length}...`);
-      setProcessingPct(Math.round(((i * 3 + 1) / (scannedPages.length * 3)) * 100));
+      // ── Run ML Kit OCR ────────────────────
+      setProcessingMsg(
+        `📖 Reading page ${pageNum}/${total}...`
+      );
+      setProcessingPct(Math.round(((i * 3 + 1) / (total * 3)) * 100));
 
-      let rawText = '';
-      try {
-        const compressed = await ImageManipulator.manipulateAsync(
-          page.uri,
-          [{ resize: { width: 1200 } }],
-          {
-            compress: 0.8,
-            format:   ImageManipulator.SaveFormat.JPEG,
-            base64:   true,
-          }
-        );
+      const rawText = await runOCR(page.uri);
 
-        rawText = await callGoogleVision(compressed.base64);
-      } catch (err) {
-        console.warn(`OCR failed for page ${pageNum}:`, err.message);
-        rawText = '';
-      }
-
-      // ── Parse items from OCR text ─────────
-      setProcessingMsg(`Extracting items from page ${pageNum}...`);
-      setProcessingPct(Math.round(((i * 3 + 2) / (scannedPages.length * 3)) * 100));
+      // ── Parse menu items ──────────────────
+      setProcessingMsg(
+        `🔍 Extracting items from page ${pageNum}...`
+      );
+      setProcessingPct(Math.round(((i * 3 + 2) / (total * 3)) * 100));
 
       if (rawText) {
         const pageItems = parseMenuText(rawText);
         allItems = [...allItems, ...pageItems];
       }
+
+      // Small delay between pages
+      await new Promise(r => setTimeout(r, 300));
     }
 
     setProcessingPct(100);
-    setProcessingMsg('Done!');
+    setProcessingMsg('✅ Done!');
 
-    // ✅ Remove duplicates across pages
-    const unique = allItems.filter((item, idx) =>
-      !allItems.slice(0, idx).some(
-        prev => prev.name.toLowerCase() === item.name.toLowerCase()
-      )
-    );
+    // ✅ Final dedup across all pages
+    const seen   = new Set();
+    const unique = allItems.filter(item => {
+      const key = item.name.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
-    await new Promise(r => setTimeout(r, 500)); // show 100%
+    await new Promise(r => setTimeout(r, 600));
 
     if (unique.length === 0) {
       Alert.alert(
         '⚠️ No Items Found',
-        'Could not extract menu items from the scanned pages.\n\n' +
-        'Tips:\n' +
-        '• Make sure the menu is well-lit\n' +
-        '• Hold the camera steady\n' +
-        '• Ensure text is in focus\n' +
-        '• Try scanning one page at a time',
+        'Could not extract menu items.\n\n' +
+        'Tips for better results:\n' +
+        '• Ensure good lighting 💡\n' +
+        '• Hold camera steady 📷\n' +
+        '• Make sure text is sharp & in focus 🔍\n' +
+        '• Try scanning one section at a time\n' +
+        '• Menus with clear fonts work best',
         [
-          { text: 'Try Again', onPress: () => setStep(STEPS.CAPTURE) },
-          { text: 'Add Manually', onPress: () => {
-            navigation.navigate('AddMenuItem', { restaurantId });
-          }},
+          {
+            text:    '📷 Try Again',
+            onPress: () => {
+              setStep(STEPS.CAPTURE);
+              setScannedPages([]);
+            },
+          },
+          {
+            text:    '✏️ Add Manually',
+            onPress: () => {
+              navigation.navigate('AddMenuItem', { restaurantId });
+            },
+          },
         ]
       );
       setStep(STEPS.CAPTURE);
@@ -482,137 +571,123 @@ export default function MenuScannerScreen({ route, navigation }) {
   }, [scannedPages, restaurantId]);
 
   // ─────────────────────────────────────────
-  // STEP 3: REVIEW — ITEM ACTIONS
+  // REVIEW ACTIONS
   // ─────────────────────────────────────────
-  const toggleItemSelected = useCallback((itemId) => {
+  const toggleSelected = useCallback((id) => {
     setExtractedItems(prev =>
-      prev.map(i =>
-        i.id === itemId ? { ...i, isSelected: !i.isSelected } : i
-      )
+      prev.map(i => i.id === id ? { ...i, isSelected: !i.isSelected } : i)
     );
   }, []);
 
-  const deleteItem = useCallback((itemId) => {
-    setExtractedItems(prev => prev.filter(i => i.id !== itemId));
+  const deleteItem = useCallback((id) => {
+    setExtractedItems(prev => prev.filter(i => i.id !== id));
   }, []);
 
-  const openEditItem = useCallback((item) => {
-    setEditingItem({ ...item });
+  const openEdit = useCallback((item) => {
+    setEditingItem({ ...item, price: item.price?.toString() });
     setShowEditModal(true);
   }, []);
 
-  const saveEditedItem = useCallback(() => {
-    if (!editingItem?.name?.trim()) {
-      Alert.alert('Error', 'Item name is required');
-      return;
-    }
-    if (!editingItem?.price || isNaN(parseFloat(editingItem.price))) {
-      Alert.alert('Error', 'Valid price is required');
-      return;
-    }
-    setExtractedItems(prev =>
-      prev.map(i =>
-        i.id === editingItem.id
-          ? { ...editingItem, price: parseFloat(editingItem.price), isEdited: true }
-          : i
-      )
-    );
-    setShowEditModal(false);
-    setEditingItem(null);
-  }, [editingItem]);
-
-  const addManualItem = useCallback(() => {
-    const newItem = {
+  const openAddNew = useCallback(() => {
+    setEditingItem({
       id:          `manual_${Date.now()}`,
       name:        '',
-      price:       0,
+      price:       '',
       description: '',
       category:    'main_course',
       confidence:  1,
       isEdited:    true,
       isSelected:  true,
-    };
-    setEditingItem(newItem);
+      isNew:       true,
+    });
     setShowEditModal(true);
   }, []);
 
-  const saveNewItem = useCallback(() => {
+  const saveItem = useCallback(() => {
     if (!editingItem?.name?.trim()) {
-      Alert.alert('Error', 'Item name is required');
+      Alert.alert('Required', 'Please enter an item name');
       return;
     }
-    if (!editingItem?.price || isNaN(parseFloat(editingItem.price))) {
-      Alert.alert('Error', 'Valid price is required');
+    const price = parseFloat(editingItem.price);
+    if (isNaN(price) || price < 0) {
+      Alert.alert('Required', 'Please enter a valid price');
       return;
     }
-    const isNew = !extractedItems.find(i => i.id === editingItem.id);
-    if (isNew) {
-      setExtractedItems(prev => [
-        ...prev,
-        { ...editingItem, price: parseFloat(editingItem.price) },
-      ]);
-    } else {
+
+    const updated = {
+      ...editingItem,
+      price:    Math.round(price * 100) / 100,
+      isEdited: true,
+    };
+    delete updated.isNew;
+
+    const exists = extractedItems.some(i => i.id === updated.id);
+    if (exists) {
       setExtractedItems(prev =>
-        prev.map(i =>
-          i.id === editingItem.id
-            ? { ...editingItem, price: parseFloat(editingItem.price), isEdited: true }
-            : i
-        )
+        prev.map(i => i.id === updated.id ? updated : i)
       );
+    } else {
+      setExtractedItems(prev => [...prev, updated]);
     }
+
     setShowEditModal(false);
     setEditingItem(null);
   }, [editingItem, extractedItems]);
 
   // ─────────────────────────────────────────
-  // SAVE TO FIRESTORE
+  // SAVE TO MENU
   // ─────────────────────────────────────────
   const handleAddToMenu = useCallback(async () => {
-    const selectedItems = extractedItems.filter(i => i.isSelected);
+    const selected = extractedItems.filter(i => i.isSelected);
 
-    if (selectedItems.length === 0) {
-      Alert.alert('No Items Selected', 'Please select at least one item to add.');
+    if (selected.length === 0) {
+      Alert.alert(
+        'Nothing Selected',
+        'Please select at least one item to add to your menu.'
+      );
       return;
     }
 
     Alert.alert(
       '✅ Add to Menu',
-      `Add ${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} to your menu?\n\nYou can edit photos and details later.`,
+      `Add ${selected.length} item${selected.length !== 1 ? 's' : ''} ` +
+      `to your menu?\n\nYou can add photos later from Manage Menu.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Add to Menu',
+          text:    'Add to Menu',
           onPress: async () => {
             setSaving(true);
             try {
               const results = await addScannedMenuItems(
-                selectedItems.map(item => ({
-                  name:        item.name,
+                selected.map(item => ({
+                  name:        item.name.trim(),
                   price:       item.price,
-                  description: item.description,
-                  category:    item.category,
+                  description: item.description?.trim() || '',
+                  category:    item.category || 'main_course',
                   dietaryInfo: {},
                   tags:        [],
+                  servingSize: '',
                 }))
               );
 
-              const successCount = results.success.length;
-              const failCount    = results.failed.length;
+              const ok   = results.success.length;
+              const fail = results.failed.length;
 
               Alert.alert(
-                '🎉 Done!',
-                `✅ ${successCount} item${successCount !== 1 ? 's' : ''} added to your menu.\n` +
-                (failCount > 0 ? `⚠️ ${failCount} failed — you can add them manually.` : '') +
-                '\n\nYou can add photos to each item from Manage Menu.',
+                '🎉 Menu Updated!',
+                `✅ ${ok} item${ok !== 1 ? 's' : ''} added.\n` +
+                (fail > 0
+                  ? `⚠️ ${fail} failed — add them manually.\n\n`
+                  : '\n') +
+                'Add photos from Manage Menu.',
                 [
                   {
-                    text: 'View Menu',
-                    onPress: () => {
-                      navigation.navigate('ManageMenu');
-                    },
+                    text:    '📋 View Menu',
+                    onPress: () => navigation.navigate('ManageMenu'),
                   },
                   {
-                    text: 'Scan More',
+                    text:    '📷 Scan More',
                     onPress: () => {
                       setStep(STEPS.CAPTURE);
                       setScannedPages([]);
@@ -633,76 +708,81 @@ export default function MenuScannerScreen({ route, navigation }) {
   }, [extractedItems, addScannedMenuItems, navigation]);
 
   // ─────────────────────────────────────────
-  // CATEGORY OPTIONS
-  // ─────────────────────────────────────────
-  const CATEGORIES = [
-    { id: 'appetizer',   label: '🥗 Appetizer'  },
-    { id: 'soup',        label: '🍲 Soup'        },
-    { id: 'salad',       label: '🥙 Salad'       },
-    { id: 'main_course', label: '🍽️ Main Course' },
-    { id: 'side_dish',   label: '🍟 Side Dish'   },
-    { id: 'dessert',     label: '🧁 Dessert'     },
-    { id: 'beverage',    label: '🥤 Beverage'    },
-    { id: 'breakfast',   label: '🍳 Breakfast'   },
-    { id: 'combo_meal',  label: '🎁 Combo Meal'  },
-    { id: 'snack',       label: '🍿 Snack'       },
-  ];
-
-  // ─────────────────────────────────────────
   // RENDER: STEP 1 — CAPTURE
   // ─────────────────────────────────────────
   const renderCapture = () => (
     <View style={styles.container}>
-      {/* Camera View */}
+      {/* Camera */}
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing={facing}
+        enableTorch={torchOn}
       />
 
-      {/* ── Top Bar ──────────────────────── */}
+      {/* Top Bar */}
       <View style={[
         styles.cameraTopBar,
         { paddingTop: insets.top + SIZES.sm },
       ]}>
         <TouchableOpacity
-          style={styles.cameraBackBtn}
+          style={styles.camIconBtn}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
 
         <View style={styles.cameraTopCenter}>
           <Text style={styles.cameraTitle}>📷 Scan Menu</Text>
           <Text style={styles.cameraSubtitle}>
-            Page {scannedPages.length + 1}
-            {maxPages < 20 ? ` / ${maxPages}` : ''}
+            {scannedPages.length > 0
+              ? `${scannedPages.length}/${maxPages} pages captured`
+              : `Point at a menu page`}
           </Text>
         </View>
 
-        {/* Flip camera */}
-        <TouchableOpacity
-          style={styles.cameraBackBtn}
-          onPress={() => setFacing(f => f === 'back' ? 'front' : 'back')}
-        >
-          <Ionicons name="camera-reverse-outline" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={styles.camTopRight}>
+          {/* Torch */}
+          <TouchableOpacity
+            style={[
+              styles.camIconBtn,
+              torchOn && { backgroundColor: '#FFD700' + '60' },
+            ]}
+            onPress={() => setTorchOn(t => !t)}
+          >
+            <Ionicons
+              name={torchOn ? 'flashlight' : 'flashlight-outline'}
+              size={20}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+
+          {/* Flip */}
+          <TouchableOpacity
+            style={styles.camIconBtn}
+            onPress={() => setFacing(f =>
+              f === 'back' ? 'front' : 'back'
+            )}
+          >
+            <Ionicons
+              name="camera-reverse-outline"
+              size={20}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* ── Guide Overlay ─────────────────── */}
-      <View style={styles.guideOverlay}>
+      {/* Guide Frame */}
+      <View style={styles.guideOverlay} pointerEvents="none">
         <View style={styles.guideFrame}>
-          {/* Corner marks */}
           {[
-            { top: 0,    left: 0,    borderTopWidth: 3,    borderLeftWidth: 3  },
-            { top: 0,    right: 0,   borderTopWidth: 3,    borderRightWidth: 3 },
-            { bottom: 0, left: 0,    borderBottomWidth: 3, borderLeftWidth: 3  },
-            { bottom: 0, right: 0,   borderBottomWidth: 3, borderRightWidth: 3 },
-          ].map((corner, i) => (
-            <View
-              key={i}
-              style={[styles.guideCorner, corner, { borderColor: COLORS.primary }]}
-            />
+            { top: 0,    left: 0                },
+            { top: 0,    right: 0               },
+            { bottom: 0, left: 0                },
+            { bottom: 0, right: 0               },
+          ].map((pos, i) => (
+            <View key={i} style={[styles.guideCorner, pos]} />
           ))}
         </View>
         <Text style={styles.guideText}>
@@ -710,7 +790,7 @@ export default function MenuScannerScreen({ route, navigation }) {
         </Text>
       </View>
 
-      {/* ── Scanned Pages Thumbnails ──────── */}
+      {/* Thumbnail Strip */}
       {scannedPages.length > 0 && (
         <View style={styles.thumbnailStrip}>
           <ScrollView
@@ -722,7 +802,7 @@ export default function MenuScannerScreen({ route, navigation }) {
               <View key={idx} style={styles.thumbnail}>
                 <Image
                   source={{ uri: page.uri }}
-                  style={styles.thumbnailImage}
+                  style={styles.thumbnailImg}
                   resizeMode="cover"
                 />
                 <View style={styles.thumbnailBadge}>
@@ -730,14 +810,19 @@ export default function MenuScannerScreen({ route, navigation }) {
                     {idx + 1}
                   </Text>
                 </View>
-                {/* Remove page */}
                 <TouchableOpacity
                   style={styles.thumbnailRemove}
-                  onPress={() => {
-                    setScannedPages(prev => prev.filter((_, i) => i !== idx));
-                  }}
+                  onPress={() =>
+                    setScannedPages(prev =>
+                      prev.filter((_, i) => i !== idx)
+                    )
+                  }
                 >
-                  <Ionicons name="close-circle" size={16} color="#FFFFFF" />
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color="#FFFFFF"
+                  />
                 </TouchableOpacity>
               </View>
             ))}
@@ -745,23 +830,19 @@ export default function MenuScannerScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* ── Tips ─────────────────────────── */}
+      {/* Tips */}
       <View style={styles.cameraTips}>
-        {[
-          '💡 Good lighting helps accuracy',
-          '📐 Keep menu flat and straight',
-          '🔍 Make sure text is in focus',
-        ].map((tip, i) => (
-          <Text key={i} style={styles.cameraTipText}>{tip}</Text>
-        ))}
+        <Text style={styles.cameraTipText}>
+          💡 Good lighting · 📐 Keep flat · 🔍 Stay focused
+        </Text>
       </View>
 
-      {/* ── Bottom Controls ───────────────── */}
+      {/* Bottom Controls */}
       <View style={[
         styles.cameraControls,
         { paddingBottom: insets.bottom + SIZES.md },
       ]}>
-        {/* Capture Button */}
+        {/* Capture button */}
         <TouchableOpacity
           style={styles.captureBtn}
           onPress={handleCapture}
@@ -770,17 +851,21 @@ export default function MenuScannerScreen({ route, navigation }) {
           <View style={styles.captureBtnInner} />
         </TouchableOpacity>
 
-        {/* Done Scanning */}
+        {/* Process button */}
         {scannedPages.length > 0 && (
           <TouchableOpacity
-            style={styles.doneBtn}
+            style={styles.processBtn}
             onPress={handleDoneScanning}
             activeOpacity={0.8}
           >
-            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.doneBtnText}>
-              Done ({scannedPages.length} page
-              {scannedPages.length !== 1 ? 's' : ''})
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={20}
+              color="#FFFFFF"
+            />
+            <Text style={styles.processBtnText}>
+              Process {scannedPages.length} page
+              {scannedPages.length !== 1 ? 's' : ''}
             </Text>
           </TouchableOpacity>
         )}
@@ -796,18 +881,17 @@ export default function MenuScannerScreen({ route, navigation }) {
       styles.processingContainer,
       { paddingTop: insets.top, paddingBottom: insets.bottom },
     ]}>
-      {/* Animated icon */}
       <View style={styles.processingIconBg}>
-        <Ionicons name="scan-outline" size={60} color={COLORS.primary} />
+        <Ionicons name="scan-outline" size={56} color={COLORS.primary} />
       </View>
 
       <Text style={styles.processingTitle}>Reading Your Menu...</Text>
       <Text style={styles.processingMsg}>{processingMsg}</Text>
 
-      {/* Progress Bar */}
-      <View style={styles.progressBarBg}>
+      {/* Progress */}
+      <View style={styles.progressBg}>
         <View style={[
-          styles.progressBarFill,
+          styles.progressFill,
           { width: `${processingPct}%` },
         ]} />
       </View>
@@ -823,7 +907,7 @@ export default function MenuScannerScreen({ route, navigation }) {
           <View key={idx} style={styles.processingPage}>
             <Image
               source={{ uri: page.uri }}
-              style={styles.processingPageImage}
+              style={styles.processingPageImg}
               resizeMode="cover"
             />
             <Text style={styles.processingPageLabel}>
@@ -833,8 +917,18 @@ export default function MenuScannerScreen({ route, navigation }) {
         ))}
       </ScrollView>
 
+      <View style={styles.processingNote}>
+        <Ionicons
+          name="phone-portrait-outline"
+          size={16}
+          color={COLORS.primary}
+        />
+        <Text style={styles.processingNoteText}>
+          Reading text on-device · No internet required
+        </Text>
+      </View>
       <Text style={styles.processingHint}>
-        Please wait — do not close the app
+        Please keep the app open
       </Text>
     </View>
   );
@@ -847,34 +941,39 @@ export default function MenuScannerScreen({ route, navigation }) {
     const editedCount   = extractedItems.filter(i => i.isEdited).length;
 
     return (
-      <View style={styles.container}>
-        {/* ── Review Header ──────────────── */}
+      <View style={[
+        styles.container,
+        { backgroundColor: COLORS.background },
+      ]}>
+
+        {/* Header */}
         <View style={[
           styles.reviewHeader,
           { paddingTop: insets.top + SIZES.sm },
         ]}>
           <TouchableOpacity
-            onPress={() => {
+            onPress={() =>
               Alert.alert(
                 'Go Back?',
-                'You\'ll lose the extracted items. Scan again?',
+                'Extracted items will be lost.',
                 [
                   { text: 'Stay', style: 'cancel' },
-                  { text: 'Go Back', onPress: () => {
-                    setStep(STEPS.CAPTURE);
-                    setExtractedItems([]);
-                  }},
+                  {
+                    text: 'Go Back',
+                    onPress: () => {
+                      setStep(STEPS.CAPTURE);
+                      setExtractedItems([]);
+                    },
+                  },
                 ]
-              );
-            }}
+              )
+            }
           >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
 
-          <View style={{ flex: 1, marginLeft: SIZES.sm }}>
-            <Text style={styles.reviewTitle}>
-              Review Items
-            </Text>
+          <View style={{ flex: 1, marginHorizontal: SIZES.sm }}>
+            <Text style={styles.reviewTitle}>Review Items</Text>
             <Text style={styles.reviewSubtitle}>
               {extractedItems.length} found ·{' '}
               {selectedCount} selected
@@ -882,136 +981,139 @@ export default function MenuScannerScreen({ route, navigation }) {
             </Text>
           </View>
 
-          {/* Add manual item */}
+          {/* Add manual */}
           <TouchableOpacity
             style={styles.addManualBtn}
-            onPress={addManualItem}
+            onPress={openAddNew}
           >
-            <Ionicons name="add" size={20} color={COLORS.primary} />
+            <Ionicons name="add" size={22} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* ── Info Banner ────────────────── */}
-        <View style={styles.reviewInfoBanner}>
+        {/* Info Banner */}
+        <View style={styles.reviewBanner}>
           <Ionicons
             name="information-circle-outline"
             size={16}
             color={COLORS.primary}
           />
-          <Text style={styles.reviewInfoText}>
-            Review each item, fix any errors, then tap
-            "Add to Menu". You can add photos later.
+          <Text style={styles.reviewBannerText}>
+            Tap ✏️ to fix any errors · Tap + to add missed items
           </Text>
         </View>
 
-        {/* ── Select All / Deselect All ───── */}
+        {/* Controls */}
         <View style={styles.reviewControls}>
           <TouchableOpacity
-            onPress={() => setExtractedItems(prev =>
-              prev.map(i => ({ ...i, isSelected: true }))
-            )}
+            onPress={() =>
+              setExtractedItems(p => p.map(i => ({ ...i, isSelected: true })))
+            }
           >
-            <Text style={styles.reviewControlBtn}>Select All</Text>
+            <Text style={styles.reviewCtrlBtn}>Select All</Text>
           </TouchableOpacity>
-          <Text style={styles.reviewControlDot}>·</Text>
+          <Text style={styles.reviewCtrlDot}>·</Text>
           <TouchableOpacity
-            onPress={() => setExtractedItems(prev =>
-              prev.map(i => ({ ...i, isSelected: false }))
-            )}
+            onPress={() =>
+              setExtractedItems(p => p.map(i => ({ ...i, isSelected: false })))
+            }
           >
-            <Text style={[
-              styles.reviewControlBtn,
-              { color: COLORS.error },
-            ]}>
+            <Text style={[styles.reviewCtrlBtn, { color: COLORS.error }]}>
               Deselect All
             </Text>
           </TouchableOpacity>
+          <View style={{ flex: 1 }} />
+          <Text style={styles.reviewCtrlCount}>
+            {selectedCount}/{extractedItems.length}
+          </Text>
         </View>
 
-        {/* ── Items List ─────────────────── */}
+        {/* Items */}
         <FlatList
           data={extractedItems}
           keyExtractor={item => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.reviewList,
-            { paddingBottom: insets.bottom + 100 },
+            { paddingBottom: insets.bottom + 110 },
           ]}
           ListEmptyComponent={
             <View style={styles.reviewEmpty}>
+              <Text style={{ fontSize: 40 }}>🍴</Text>
               <Text style={styles.reviewEmptyText}>
-                No items yet. Tap + to add manually.
+                No items yet
+              </Text>
+              <Text style={styles.reviewEmptySubtext}>
+                Tap + to add items manually
               </Text>
             </View>
           }
           renderItem={({ item }) => (
             <View style={[
               styles.reviewItem,
-              !item.isSelected && styles.reviewItemDeselected,
-              item.isEdited && styles.reviewItemEdited,
+              !item.isSelected && styles.reviewItemOff,
+              item.isEdited  && styles.reviewItemEdited,
             ]}>
               {/* Checkbox */}
               <TouchableOpacity
                 style={[
-                  styles.reviewCheckbox,
-                  item.isSelected && styles.reviewCheckboxActive,
+                  styles.checkbox,
+                  item.isSelected && styles.checkboxOn,
                 ]}
-                onPress={() => toggleItemSelected(item.id)}
+                onPress={() => toggleSelected(item.id)}
               >
                 {item.isSelected && (
                   <Ionicons name="checkmark" size={14} color="#FFFFFF" />
                 )}
               </TouchableOpacity>
 
-              {/* Item Info */}
+              {/* Info */}
               <View style={{ flex: 1 }}>
-                <View style={styles.reviewItemHeader}>
-                  <Text style={[
-                    styles.reviewItemName,
-                    !item.isSelected && styles.reviewItemNameDim,
-                  ]}>
+                <View style={styles.reviewItemTop}>
+                  <Text
+                    style={[
+                      styles.reviewItemName,
+                      !item.isSelected && { color: COLORS.textMuted },
+                    ]}
+                    numberOfLines={1}
+                  >
                     {item.name || 'Unnamed Item'}
                   </Text>
                   {item.isEdited && (
-                    <View style={styles.editedBadge}>
-                      <Text style={styles.editedBadgeText}>edited</Text>
+                    <View style={styles.editedTag}>
+                      <Text style={styles.editedTagText}>✏️ edited</Text>
                     </View>
                   )}
                 </View>
 
-                <View style={styles.reviewItemMeta}>
+                <View style={styles.reviewItemRow}>
                   <Text style={styles.reviewItemPrice}>
-                    ${parseFloat(item.price || 0).toFixed(2)}
+                    ${Number(item.price || 0).toFixed(2)}
                   </Text>
-                  <View style={styles.reviewItemCategory}>
-                    <Text style={styles.reviewItemCategoryText}>
+                  <View style={styles.reviewItemCat}>
+                    <Text style={styles.reviewItemCatText}>
                       {item.category?.replace(/_/g, ' ')}
                     </Text>
                   </View>
                 </View>
 
-                {item.description ? (
-                  <Text
-                    style={styles.reviewItemDesc}
-                    numberOfLines={1}
-                  >
+                {!!item.description && (
+                  <Text style={styles.reviewItemDesc} numberOfLines={1}>
                     {item.description}
                   </Text>
-                ) : null}
+                )}
 
-                {/* Confidence indicator */}
-                {item.confidence < 0.9 && (
-                  <Text style={styles.reviewItemConfidence}>
-                    ⚠️ Low confidence — please verify
+                {item.confidence < 0.85 && (
+                  <Text style={styles.reviewItemWarn}>
+                    ⚠️ Please verify this item
                   </Text>
                 )}
               </View>
 
               {/* Actions */}
-              <View style={styles.reviewItemActions}>
+              <View style={styles.reviewActions}>
                 <TouchableOpacity
                   style={styles.reviewEditBtn}
-                  onPress={() => openEditItem(item)}
+                  onPress={() => openEdit(item)}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Ionicons
@@ -1036,19 +1138,18 @@ export default function MenuScannerScreen({ route, navigation }) {
           )}
         />
 
-        {/* ── Add to Menu Button ──────────── */}
+        {/* Footer */}
         <View style={[
           styles.reviewFooter,
           { paddingBottom: insets.bottom + SIZES.sm },
         ]}>
-          <View style={styles.reviewFooterInfo}>
+          <View>
             <Text style={styles.reviewFooterCount}>
               {selectedCount} item{selectedCount !== 1 ? 's' : ''}
             </Text>
-            <Text style={styles.reviewFooterSub}>
-              ready to add
-            </Text>
+            <Text style={styles.reviewFooterSub}>ready to add</Text>
           </View>
+
           <TouchableOpacity
             style={[
               styles.addToMenuBtn,
@@ -1079,14 +1180,17 @@ export default function MenuScannerScreen({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────
-  // RENDER: EDIT ITEM MODAL
+  // RENDER: EDIT MODAL
   // ─────────────────────────────────────────
   const renderEditModal = () => (
     <Modal
       visible={showEditModal}
       animationType="slide"
       transparent
-      onRequestClose={() => setShowEditModal(false)}
+      onRequestClose={() => {
+        setShowEditModal(false);
+        setEditingItem(null);
+      }}
     >
       <KeyboardAvoidingView
         style={styles.modalOverlay}
@@ -1096,13 +1200,10 @@ export default function MenuScannerScreen({ route, navigation }) {
           styles.editModal,
           { paddingBottom: insets.bottom + SIZES.md },
         ]}>
-          {/* Handle */}
           <View style={styles.modalHandle} />
 
           <Text style={styles.modalTitle}>
-            {extractedItems.find(i => i.id === editingItem?.id)
-              ? 'Edit Item'
-              : 'Add Item'}
+            {editingItem?.isNew ? '➕ Add Item' : '✏️ Edit Item'}
           </Text>
 
           <ScrollView
@@ -1111,16 +1212,19 @@ export default function MenuScannerScreen({ route, navigation }) {
           >
             {/* Name */}
             <Text style={styles.modalLabel}>
-              Item Name <Text style={{ color: COLORS.error }}>*</Text>
+              Name <Text style={{ color: COLORS.error }}>*</Text>
             </Text>
             <TextInput
               style={styles.modalInput}
               value={editingItem?.name || ''}
-              onChangeText={v => setEditingItem(p => ({ ...p, name: v }))}
+              onChangeText={v =>
+                setEditingItem(p => ({ ...p, name: v }))
+              }
               placeholder="e.g. Jerk Chicken"
               placeholderTextColor={COLORS.textMuted}
               autoCapitalize="words"
               autoFocus
+              returnKeyType="next"
             />
 
             {/* Price */}
@@ -1130,21 +1234,28 @@ export default function MenuScannerScreen({ route, navigation }) {
             <TextInput
               style={styles.modalInput}
               value={editingItem?.price?.toString() || ''}
-              onChangeText={v => setEditingItem(p => ({ ...p, price: v }))}
+              onChangeText={v =>
+                setEditingItem(p => ({ ...p, price: v }))
+              }
               placeholder="0.00"
               placeholderTextColor={COLORS.textMuted}
               keyboardType="decimal-pad"
+              returnKeyType="next"
             />
 
             {/* Description */}
             <Text style={styles.modalLabel}>Description</Text>
             <TextInput
-              style={[styles.modalInput, { height: 70, textAlignVertical: 'top' }]}
+              style={[styles.modalInput, styles.modalTextarea]}
               value={editingItem?.description || ''}
-              onChangeText={v => setEditingItem(p => ({ ...p, description: v }))}
+              onChangeText={v =>
+                setEditingItem(p => ({ ...p, description: v }))
+              }
               placeholder="Optional description..."
               placeholderTextColor={COLORS.textMuted}
               multiline
+              numberOfLines={3}
+              textAlignVertical="top"
             />
 
             {/* Category */}
@@ -1152,24 +1263,24 @@ export default function MenuScannerScreen({ route, navigation }) {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.modalCategories}
+              contentContainerStyle={styles.modalCats}
             >
               {CATEGORIES.map(cat => (
                 <TouchableOpacity
                   key={cat.id}
                   style={[
-                    styles.modalCategoryBtn,
+                    styles.modalCatBtn,
                     editingItem?.category === cat.id &&
-                      styles.modalCategoryBtnActive,
+                      styles.modalCatBtnActive,
                   ]}
                   onPress={() =>
                     setEditingItem(p => ({ ...p, category: cat.id }))
                   }
                 >
                   <Text style={[
-                    styles.modalCategoryText,
+                    styles.modalCatText,
                     editingItem?.category === cat.id &&
-                      styles.modalCategoryTextActive,
+                      styles.modalCatTextActive,
                   ]}>
                     {cat.label}
                   </Text>
@@ -1177,8 +1288,8 @@ export default function MenuScannerScreen({ route, navigation }) {
               ))}
             </ScrollView>
 
-            {/* Save / Cancel */}
-            <View style={styles.modalActions}>
+            {/* Actions */}
+            <View style={styles.modalBtns}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
                 onPress={() => {
@@ -1190,18 +1301,14 @@ export default function MenuScannerScreen({ route, navigation }) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.modalSaveBtn}
-                onPress={
-                  extractedItems.find(i => i.id === editingItem?.id)
-                    ? saveEditedItem
-                    : saveNewItem
-                }
+                onPress={saveItem}
               >
                 <Ionicons
                   name="checkmark-circle-outline"
                   size={18}
                   color="#FFFFFF"
                 />
-                <Text style={styles.modalSaveText}>Save Item</Text>
+                <Text style={styles.modalSaveText}>Save</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -1227,10 +1334,9 @@ export default function MenuScannerScreen({ route, navigation }) {
 // STYLES
 // ─────────────────────────────────────────────
 const styles = StyleSheet.create({
+  container: { flex: 1 },
 
-  container: { flex: 1, backgroundColor: '#000' },
-
-  // ── Locked / No Permission ────────────────
+  // ── Locked ────────────────────────────────
   lockedContainer: {
     flex:            1,
     justifyContent:  'center',
@@ -1238,6 +1344,14 @@ const styles = StyleSheet.create({
     padding:         SIZES.xl,
     backgroundColor: COLORS.background,
     gap:             SIZES.md,
+  },
+  lockedIconBg: {
+    width:           100,
+    height:          100,
+    borderRadius:    50,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent:  'center',
+    alignItems:      'center',
   },
   lockedTitle: {
     fontSize:   FONTS.xxl,
@@ -1260,15 +1374,15 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   planCompareRow: {
-    flexDirection:  'row',
-    justifyContent: 'space-between',
-    alignItems:     'center',
-    paddingVertical: SIZES.xs,
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
+    paddingVertical:   SIZES.xs,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
   planComparePlan: { fontSize: FONTS.md, color: COLORS.text, fontWeight: '600' },
-  planCompareScan: { fontSize: FONTS.sm, color: COLORS.textMuted },
+  planCompareScan: { fontSize: FONTS.sm, fontWeight: '600' },
   lockedUpgradeBtn: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -1277,35 +1391,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.xl,
     paddingVertical:   SIZES.md,
     borderRadius:      RADIUS.lg,
-    marginTop:         SIZES.sm,
   },
   lockedUpgradeBtnText: {
     color:      '#FFFFFF',
     fontWeight: 'bold',
     fontSize:   FONTS.md,
   },
-  lockedPayText: {
-    fontSize: FONTS.sm,
-    color:    COLORS.textMuted,
-  },
+  lockedPayText: { fontSize: FONTS.sm, color: COLORS.textMuted },
 
-  // ── Camera ────────────────────────────────
+  // ── Camera Top Bar ────────────────────────
   cameraTopBar: {
     flexDirection:     'row',
     justifyContent:    'space-between',
     alignItems:        'center',
     paddingHorizontal: SIZES.md,
     paddingBottom:     SIZES.md,
-    backgroundColor:   'rgba(0,0,0,0.5)',
+    backgroundColor:   'rgba(0,0,0,0.55)',
   },
-  cameraBackBtn: {
-    width:           44,
-    height:          44,
-    borderRadius:    22,
+  camIconBtn: {
+    width:           40,
+    height:          40,
+    borderRadius:    20,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent:  'center',
     alignItems:      'center',
   },
+  camTopRight:     { flexDirection: 'row', gap: SIZES.sm },
   cameraTopCenter: { alignItems: 'center' },
   cameraTitle: {
     fontSize:   FONTS.lg,
@@ -1313,8 +1424,9 @@ const styles = StyleSheet.create({
     color:      '#FFFFFF',
   },
   cameraSubtitle: {
-    fontSize: FONTS.sm,
+    fontSize: FONTS.xs,
     color:    'rgba(255,255,255,0.8)',
+    marginTop: 2,
   },
 
   // ── Guide Frame ───────────────────────────
@@ -1324,32 +1436,34 @@ const styles = StyleSheet.create({
     alignItems:     'center',
   },
   guideFrame: {
-    width:           '85%',
-    height:          '60%',
-    borderRadius:    RADIUS.lg,
-    position:        'relative',
+    width:    '88%',
+    height:   '65%',
+    position: 'relative',
   },
   guideCorner: {
-    position:     'absolute',
-    width:         24,
-    height:        24,
-    borderColor:   COLORS.primary,
-    borderRadius:  4,
+    position:        'absolute',
+    width:           28,
+    height:          28,
+    borderColor:     COLORS.primary,
+    borderTopWidth:  3,
+    borderLeftWidth: 3,
+    borderRadius:    4,
+    // Override per corner in JSX
   },
   guideText: {
-    color:     'rgba(255,255,255,0.8)',
-    fontSize:  FONTS.sm,
-    marginTop: SIZES.md,
-    textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    color:             'rgba(255,255,255,0.85)',
+    fontSize:          FONTS.sm,
+    marginTop:         SIZES.md,
+    textAlign:         'center',
+    backgroundColor:   'rgba(0,0,0,0.45)',
     paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.xs,
+    paddingVertical:   6,
     borderRadius:      RADIUS.round,
   },
 
   // ── Thumbnails ────────────────────────────
   thumbnailStrip: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.65)',
     paddingVertical: SIZES.sm,
   },
   thumbnailContent: {
@@ -1358,19 +1472,19 @@ const styles = StyleSheet.create({
     alignItems:        'center',
   },
   thumbnail: {
-    width:        60,
-    height:       80,
+    width:        56,
+    height:       76,
     borderRadius: RADIUS.md,
     overflow:     'hidden',
     position:     'relative',
     borderWidth:  2,
     borderColor:  COLORS.primary,
   },
-  thumbnailImage: { width: '100%', height: '100%' },
+  thumbnailImg:  { width: '100%', height: '100%' },
   thumbnailBadge: {
     position:        'absolute',
-    bottom:          4,
-    left:            4,
+    bottom:          3,
+    left:            3,
     backgroundColor: COLORS.primary,
     borderRadius:    8,
     width:           16,
@@ -1380,25 +1494,22 @@ const styles = StyleSheet.create({
   },
   thumbnailBadgeText: {
     color:      '#FFFFFF',
-    fontSize:   9,
+    fontSize:   8,
     fontWeight: 'bold',
   },
-  thumbnailRemove: {
-    position: 'absolute',
-    top:      2,
-    right:    2,
-  },
+  thumbnailRemove: { position: 'absolute', top: 2, right: 2 },
 
   // ── Camera Tips ───────────────────────────
   cameraTips: {
     backgroundColor:   'rgba(0,0,0,0.6)',
     paddingHorizontal: SIZES.md,
     paddingVertical:   SIZES.sm,
-    gap:               4,
+    alignItems:        'center',
   },
   cameraTipText: {
-    color:    'rgba(255,255,255,0.8)',
-    fontSize: FONTS.xs,
+    color:     'rgba(255,255,255,0.8)',
+    fontSize:  FONTS.xs,
+    textAlign: 'center',
   },
 
   // ── Camera Controls ───────────────────────
@@ -1406,26 +1517,26 @@ const styles = StyleSheet.create({
     alignItems:        'center',
     paddingTop:        SIZES.md,
     paddingHorizontal: SIZES.md,
-    backgroundColor:   'rgba(0,0,0,0.7)',
+    backgroundColor:   'rgba(0,0,0,0.75)',
     gap:               SIZES.md,
   },
   captureBtn: {
-    width:           80,
-    height:          80,
-    borderRadius:    40,
+    width:           76,
+    height:          76,
+    borderRadius:    38,
     borderWidth:     4,
     borderColor:     '#FFFFFF',
     justifyContent:  'center',
     alignItems:      'center',
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   captureBtnInner: {
-    width:           60,
-    height:          60,
-    borderRadius:    30,
+    width:           56,
+    height:          56,
+    borderRadius:    28,
     backgroundColor: '#FFFFFF',
   },
-  doneBtn: {
+  processBtn: {
     flexDirection:     'row',
     alignItems:        'center',
     gap:               SIZES.sm,
@@ -1434,7 +1545,7 @@ const styles = StyleSheet.create({
     paddingVertical:   SIZES.md,
     borderRadius:      RADIUS.lg,
   },
-  doneBtnText: {
+  processBtnText: {
     color:      '#FFFFFF',
     fontWeight: 'bold',
     fontSize:   FONTS.md,
@@ -1462,44 +1573,57 @@ const styles = StyleSheet.create({
     fontSize:   FONTS.xxl,
     fontWeight: 'bold',
     color:      COLORS.text,
+    textAlign:  'center',
   },
   processingMsg: {
     fontSize:  FONTS.md,
     color:     COLORS.textMuted,
     textAlign: 'center',
   },
-  progressBarBg: {
+  progressBg: {
     width:           '100%',
     height:          8,
     backgroundColor: COLORS.border,
     borderRadius:    RADIUS.round,
     overflow:        'hidden',
   },
-  progressBarFill: {
+  progressFill: {
     height:          '100%',
     backgroundColor: COLORS.primary,
     borderRadius:    RADIUS.round,
   },
   progressPct: {
-    fontSize:   FONTS.lg,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
     color:      COLORS.primary,
   },
   processingPages: {
     gap:               SIZES.sm,
     paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.sm,
   },
-  processingPage: { alignItems: 'center', gap: 4 },
-  processingPageImage: {
-    width:        60,
-    height:       80,
+  processingPage:    { alignItems: 'center', gap: 4 },
+  processingPageImg: {
+    width:        56,
+    height:       76,
     borderRadius: RADIUS.md,
     borderWidth:  1,
     borderColor:  COLORS.border,
   },
-  processingPageLabel: {
-    fontSize: FONTS.xs,
-    color:    COLORS.textMuted,
+  processingPageLabel: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  processingNote: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             SIZES.xs,
+    backgroundColor: COLORS.primary + '10',
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.sm,
+    borderRadius:    RADIUS.round,
+  },
+  processingNoteText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
+    fontWeight: '600',
   },
   processingHint: {
     fontSize:  FONTS.sm,
@@ -1507,7 +1631,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Review ────────────────────────────────
+  // ── Review Header ─────────────────────────
   reviewHeader: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -1519,7 +1643,7 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   reviewTitle:    { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text },
-  reviewSubtitle: { fontSize: FONTS.sm, color: COLORS.textMuted, marginTop: 2 },
+  reviewSubtitle: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
   addManualBtn: {
     width:           36,
     height:          36,
@@ -1530,17 +1654,17 @@ const styles = StyleSheet.create({
     borderWidth:     1,
     borderColor:     COLORS.primary + '30',
   },
-  reviewInfoBanner: {
-    flexDirection:   'row',
-    alignItems:      'flex-start',
-    gap:             SIZES.sm,
-    backgroundColor: COLORS.primary + '08',
+  reviewBanner: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               SIZES.sm,
+    backgroundColor:   COLORS.primary + '08',
     paddingHorizontal: SIZES.md,
     paddingVertical:   SIZES.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.primary + '20',
   },
-  reviewInfoText: {
+  reviewBannerText: {
     flex:      1,
     fontSize:  FONTS.xs,
     color:     COLORS.primary,
@@ -1556,18 +1680,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  reviewControlBtn: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.primary,
-    fontWeight: '600',
-  },
-  reviewControlDot: { color: COLORS.textMuted },
-  reviewList:        { padding: SIZES.md, gap: SIZES.sm },
+  reviewCtrlBtn:   { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '600' },
+  reviewCtrlDot:   { color: COLORS.textMuted },
+  reviewCtrlCount: { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '600' },
+  reviewList:      { padding: SIZES.md, gap: SIZES.sm },
   reviewEmpty: {
     alignItems: 'center',
     padding:    SIZES.xl,
+    gap:        SIZES.sm,
   },
-  reviewEmptyText: { fontSize: FONTS.md, color: COLORS.textMuted },
+  reviewEmptyText:    { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text },
+  reviewEmptySubtext: { fontSize: FONTS.md, color: COLORS.textMuted },
 
   // ── Review Item ───────────────────────────
   reviewItem: {
@@ -1581,29 +1704,26 @@ const styles = StyleSheet.create({
     borderColor:     COLORS.border,
     ...SHADOW,
   },
-  reviewItemDeselected: {
-    opacity:     0.5,
-    borderColor: COLORS.border,
-  },
+  reviewItemOff:    { opacity: 0.45 },
   reviewItemEdited: {
-    borderColor: COLORS.primary + '40',
-    backgroundColor: COLORS.primary + '05',
+    borderColor:     COLORS.primary + '50',
+    backgroundColor: COLORS.primary + '04',
   },
-  reviewCheckbox: {
-    width:           24,
-    height:          24,
-    borderRadius:    6,
-    borderWidth:     2,
-    borderColor:     COLORS.border,
-    justifyContent:  'center',
-    alignItems:      'center',
-    marginTop:       2,
+  checkbox: {
+    width:          24,
+    height:         24,
+    borderRadius:   6,
+    borderWidth:    2,
+    borderColor:    COLORS.border,
+    justifyContent: 'center',
+    alignItems:     'center',
+    marginTop:      2,
   },
-  reviewCheckboxActive: {
+  checkboxOn: {
     backgroundColor: COLORS.primary,
     borderColor:     COLORS.primary,
   },
-  reviewItemHeader: {
+  reviewItemTop: {
     flexDirection: 'row',
     alignItems:    'center',
     gap:           SIZES.xs,
@@ -1615,19 +1735,18 @@ const styles = StyleSheet.create({
     color:      COLORS.text,
     flex:       1,
   },
-  reviewItemNameDim: { color: COLORS.textMuted },
-  editedBadge: {
+  editedTag: {
     backgroundColor:   COLORS.primary + '20',
     paddingHorizontal: 6,
     paddingVertical:   2,
     borderRadius:      RADIUS.round,
   },
-  editedBadgeText: {
+  editedTagText: {
     fontSize:   9,
     color:      COLORS.primary,
     fontWeight: '700',
   },
-  reviewItemMeta: {
+  reviewItemRow: {
     flexDirection: 'row',
     alignItems:    'center',
     gap:           SIZES.sm,
@@ -1638,32 +1757,29 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color:      COLORS.primary,
   },
-  reviewItemCategory: {
+  reviewItemCat: {
     backgroundColor:   COLORS.border,
     paddingHorizontal: SIZES.sm,
     paddingVertical:   2,
     borderRadius:      RADIUS.round,
   },
-  reviewItemCategoryText: {
-    fontSize:        FONTS.xs,
-    color:           COLORS.textMuted,
-    textTransform:   'capitalize',
-    fontWeight:      '500',
+  reviewItemCatText: {
+    fontSize:      FONTS.xs,
+    color:         COLORS.textMuted,
+    textTransform: 'capitalize',
   },
   reviewItemDesc: {
     fontSize:  FONTS.xs,
     color:     COLORS.textMuted,
     marginTop: 4,
   },
-  reviewItemConfidence: {
-    fontSize:  FONTS.xs,
-    color:     '#F39C12',
-    marginTop: 4,
+  reviewItemWarn: {
+    fontSize:   FONTS.xs,
+    color:      '#F39C12',
+    marginTop:  4,
     fontWeight: '600',
   },
-  reviewItemActions: {
-    gap: SIZES.sm,
-  },
+  reviewActions: { gap: SIZES.sm },
   reviewEditBtn: {
     padding:         SIZES.sm,
     backgroundColor: COLORS.primary + '15',
@@ -1696,7 +1812,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color:      COLORS.primary,
   },
-  reviewFooterSub:   { fontSize: FONTS.xs, color: COLORS.textMuted },
+  reviewFooterSub: { fontSize: FONTS.xs, color: COLORS.textMuted },
   addToMenuBtn: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -1715,7 +1831,7 @@ const styles = StyleSheet.create({
   // ── Edit Modal ────────────────────────────
   modalOverlay: {
     flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent:  'flex-end',
   },
   editModal: {
@@ -1723,7 +1839,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius:  24,
     borderTopRightRadius: 24,
     padding:              SIZES.lg,
-    maxHeight:            '85%',
+    maxHeight:            '88%',
   },
   modalHandle: {
     width:           40,
@@ -1756,11 +1872,15 @@ const styles = StyleSheet.create({
     borderWidth:       1,
     borderColor:       COLORS.border,
   },
-  modalCategories: {
-    gap:               SIZES.sm,
-    paddingVertical:   SIZES.sm,
+  modalTextarea: {
+    height:            80,
+    textAlignVertical: 'top',
   },
-  modalCategoryBtn: {
+  modalCats: {
+    gap:             SIZES.sm,
+    paddingVertical: SIZES.sm,
+  },
+  modalCatBtn: {
     paddingHorizontal: SIZES.md,
     paddingVertical:   SIZES.sm,
     borderRadius:      RADIUS.round,
@@ -1768,16 +1888,16 @@ const styles = StyleSheet.create({
     borderWidth:       1,
     borderColor:       COLORS.border,
   },
-  modalCategoryBtnActive: {
+  modalCatBtnActive: {
     backgroundColor: COLORS.primary,
     borderColor:     COLORS.primary,
   },
-  modalCategoryText:       { fontSize: FONTS.sm, color: COLORS.textMuted },
-  modalCategoryTextActive: { color: '#FFFFFF', fontWeight: '600' },
-  modalActions: {
-    flexDirection:  'row',
-    gap:            SIZES.md,
-    marginTop:      SIZES.lg,
+  modalCatText:       { fontSize: FONTS.sm, color: COLORS.textMuted },
+  modalCatTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  modalBtns: {
+    flexDirection: 'row',
+    gap:           SIZES.md,
+    marginTop:     SIZES.lg,
   },
   modalCancelBtn: {
     flex:            1,
