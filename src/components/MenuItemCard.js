@@ -1,33 +1,41 @@
 // ============================================
 // FILE: src/components/MenuItemCard.js
 // ============================================
-import React, { useState, useRef, useEffect } from 'react';
+import React, {
+  useState, useRef, useEffect, useCallback,
+} from 'react';
 import {
   View, Text, Image, TouchableOpacity,
   StyleSheet, Modal, Alert, ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons }  from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   doc, updateDoc, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
-import { db }      from '../firebase/config';
-import { useAuth } from '../hooks/useAuth';
+import { db }        from '../firebase/config';
+import { useAuth }   from '../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
-// ✅ Use local images — no internet needed, no Unsplash blocking
-import { getImageSource } from '../utils/localFoodImages';
+import { getImageSource }  from '../utils/localFoodImages';
+import { getThumbUrl }     from '../utils/uploadToCloudinary';
 
-// ✅ Safe import of useAnalytics
+// ─── Safe Color Fallbacks ─────────────────────
+const WARNING_COLOR = COLORS.warning || '#F39C12';
+
+// ─── Safe Analytics Import ────────────────────
+// ✅ Import at module level - not inside component
 let useAnalytics;
 try {
   useAnalytics = require('../hooks/useAnalytics').useAnalytics;
-} catch (e) {
+} catch {
   useAnalytics = () => ({
     trackMenuItemView: () => {},
     trackAction:       () => {},
   });
 }
 
-// ─── Constants ───────────────────────────────
+// ─── Dietary Badges ───────────────────────────
 const DIETARY_BADGES = {
   isVegetarian: { icon: '🥬', label: 'Vegetarian' },
   isVegan:      { icon: '🌱', label: 'Vegan'       },
@@ -36,55 +44,71 @@ const DIETARY_BADGES = {
   isSpicy:      { icon: '🌶️', label: 'Spicy'       },
 };
 
-// ─── Component ───────────────────────────────
-export default function MenuItemCard({ item, onLoginRequired }) {
-  const { user, userProfile, updateUserProfile } = useAuth();
-
-  // ✅ Safe analytics
-  let analytics;
-  try {
-    analytics = useAnalytics();
-  } catch (e) {
-    analytics = { trackMenuItemView: () => {}, trackAction: () => {} };
+// ─────────────────────────────────────────────
+// GET IMAGE SOURCE
+// ✅ Handles Cloudinary, Firebase, and local images
+// ─────────────────────────────────────────────
+const getMenuItemImageSource = (item) => {
+  // ✅ Cloudinary URL → use thumb transform (128x128)
+  if (item?.cloudinaryUrl) {
+    return { uri: getThumbUrl(item.cloudinaryUrl, 200, 200) };
   }
-  const { trackMenuItemView } = analytics;
+  // ✅ Legacy Firebase/any HTTP URL
+  if (item?.imageUrl && item.imageUrl.startsWith('http')) {
+    return { uri: item.imageUrl };
+  }
+  // ✅ Local auto image fallback
+  return getImageSource(item);
+};
 
-  // ✅ isMounted ref
+// ─────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────
+export default function MenuItemCard({ item, onLoginRequired }) {
+  const insets = useSafeAreaInsets();
+  const { user, userProfile } = useAuth();
+
+  // ✅ Called unconditionally at top level — no try/catch
+  const { trackMenuItemView } = useAnalytics();
+
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
+  // ── State ─────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
   const [favLoading, setFavLoading]     = useState(false);
+  const [imageError, setImageError]     = useState(false);
 
-  // ✅ Check if dish is in user's favourites
-  const isFavorited =
-    userProfile?.favoriteDishes?.includes(item.id) || false;
-
+  // ── Derived ───────────────────────────────
+  const isFavorited = userProfile?.favoriteDishes?.includes(item.id) || false;
   const activeDietary = Object.entries(DIETARY_BADGES).filter(
     ([key]) => item.dietaryInfo?.[key]
   );
 
-  // ✅ Get image source — local bundled image
-  // If item has a Firebase Storage URL (custom upload) use that
-  // Otherwise use local image based on dish name and category
-  const imageSource = getImageSource(item);
+  // ✅ Image source with Cloudinary support
+  const imageSource = imageError
+    ? getImageSource(item) // fallback on error
+    : getMenuItemImageSource(item);
 
-  // ─── Handlers ────────────────────────────
-  const handleCardPress = () => {
+  // ─────────────────────────────────────────
+  // HANDLERS
+  // ─────────────────────────────────────────
+
+  const handleCardPress = useCallback(() => {
     if (isMounted.current) setModalVisible(true);
     try {
       trackMenuItemView(item.id, item.name, item.restaurantId);
-    } catch (e) {}
-  };
+    } catch {}
+  }, [item, trackMenuItemView]);
 
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     if (isMounted.current) setModalVisible(false);
-  };
+  }, []);
 
-  const handleFavourite = async (e) => {
+  const handleFavourite = useCallback(async (e) => {
     e?.stopPropagation?.();
 
     if (!user) {
@@ -114,21 +138,22 @@ export default function MenuItemCard({ item, onLoginRequired }) {
           favoriteDishes: arrayUnion(item.id),
         });
       }
+      // ✅ Removed updateUserProfile({}) - unnecessary extra call
+      // userProfile updates automatically via auth listener
 
-      if (isMounted.current) {
-        await updateUserProfile({});
-      }
     } catch (err) {
       console.error('handleFavourite error:', err);
       if (isMounted.current) {
-        Alert.alert('Error', 'Could not update favourite');
+        Alert.alert('Error', 'Could not update favourite. Please try again.');
       }
     } finally {
       if (isMounted.current) setFavLoading(false);
     }
-  };
+  }, [user, isFavorited, item.id, onLoginRequired]);
 
-  // ─── Render ──────────────────────────────
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
   return (
     <>
       {/* ── Card ──────────────────────────── */}
@@ -136,12 +161,14 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         style={[
           styles.card,
           !item.isAvailable && styles.cardUnavailable,
+          item.isSpecialOfTheDay && styles.cardSpecial,
         ]}
         onPress={handleCardPress}
         activeOpacity={0.85}
       >
         {/* Left: Info */}
         <View style={styles.info}>
+          {/* Name + Special badge */}
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={2}>
               {item.name}
@@ -153,12 +180,14 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             )}
           </View>
 
-          {item.description ? (
+          {/* Description */}
+          {!!item.description && (
             <Text style={styles.description} numberOfLines={2}>
               {item.description}
             </Text>
-          ) : null}
+          )}
 
+          {/* Dietary icons */}
           {activeDietary.length > 0 && (
             <View style={styles.dietaryRow}>
               {activeDietary.map(([key, d]) => (
@@ -169,11 +198,12 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             </View>
           )}
 
+          {/* Price + Prep Time */}
           <View style={styles.priceRow}>
             <Text style={styles.price}>
               ${item.price?.toFixed(2)}
             </Text>
-            {item.preparationTime ? (
+            {!!item.preparationTime && (
               <View style={styles.prepTime}>
                 <Ionicons
                   name="time-outline"
@@ -184,7 +214,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   {item.preparationTime} min
                 </Text>
               </View>
-            ) : null}
+            )}
           </View>
 
           {!item.isAvailable && (
@@ -196,11 +226,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 
         {/* Right: Image + Heart */}
         <View style={styles.imageWrapper}>
-          {/*
-            ✅ source works with both:
-            - require() number (local bundled image)
-            - { uri: string } (Firebase Storage URL)
-          */}
           <Image
             source={imageSource}
             style={[
@@ -208,8 +233,13 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               !item.isAvailable && styles.imageGray,
             ]}
             resizeMode="cover"
+            onError={() => {
+              // ✅ Fallback to local image on error
+              if (isMounted.current) setImageError(true);
+            }}
           />
 
+          {/* Heart button */}
           <TouchableOpacity
             style={styles.heartBtn}
             onPress={handleFavourite}
@@ -217,19 +247,20 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             activeOpacity={0.8}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Ionicons
-              name={isFavorited ? 'heart' : 'heart-outline'}
-              size={18}
-              color={isFavorited ? COLORS.error : '#FFFFFF'}
-            />
+            {favLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons
+                name={isFavorited ? 'heart' : 'heart-outline'}
+                size={18}
+                color={isFavorited ? COLORS.error : '#FFFFFF'}
+              />
+            )}
           </TouchableOpacity>
 
+          {/* Expand hint */}
           <View style={styles.expandHint}>
-            <Ionicons
-              name="expand-outline"
-              size={12}
-              color="#FFFFFF"
-            />
+            <Ionicons name="expand-outline" size={12} color="#FFFFFF" />
           </View>
         </View>
       </TouchableOpacity>
@@ -248,16 +279,23 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         >
           <TouchableOpacity
             activeOpacity={1}
-            onPress={() => {}}
-            style={styles.modalCard}
+            style={[
+              styles.modalCard,
+              // ✅ Safe area for bottom inset
+              { paddingBottom: insets.bottom },
+            ]}
           >
-            {/* Hero image — same source */}
+            {/* Hero Image */}
             <Image
               source={imageSource}
               style={styles.modalImage}
               resizeMode="cover"
+              onError={() => {
+                if (isMounted.current) setImageError(true);
+              }}
             />
 
+            {/* Close Button */}
             <TouchableOpacity
               style={styles.closeIconBtn}
               onPress={handleCloseModal}
@@ -266,18 +304,26 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
+            {/* Heart Button */}
             <TouchableOpacity
               style={styles.modalHeartBtn}
               onPress={handleFavourite}
               disabled={favLoading}
               activeOpacity={0.8}
             >
-              <Ionicons
-                name={isFavorited ? 'heart' : 'heart-outline'}
-                size={24}
-                color={isFavorited ? COLORS.error : '#FFFFFF'}
-              />
+              {favLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons
+                  name={isFavorited ? 'heart' : 'heart-outline'}
+                  size={24}
+                  color={isFavorited ? COLORS.error : '#FFFFFF'}
+                />
+              )}
             </TouchableOpacity>
+
+            {/* Drag Handle */}
+            <View style={styles.modalHandle} />
 
             <ScrollView
               style={styles.modalScroll}
@@ -287,6 +333,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             >
               <View style={styles.modalBody}>
 
+                {/* Name + Special */}
                 <View style={styles.modalNameRow}>
                   <Text style={styles.modalName}>{item.name}</Text>
                   {item.isSpecialOfTheDay && (
@@ -294,17 +341,14 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   )}
                 </View>
 
+                {/* Price + Favorites Count */}
                 <View style={styles.modalPriceRow}>
                   <Text style={styles.modalPrice}>
                     ${item.price?.toFixed(2)}
                   </Text>
                   {item.totalFavorites > 0 && (
                     <View style={styles.favCount}>
-                      <Ionicons
-                        name="heart"
-                        size={14}
-                        color={COLORS.error}
-                      />
+                      <Ionicons name="heart" size={14} color={COLORS.error} />
                       <Text style={styles.favCountText}>
                         {item.totalFavorites} saved
                       </Text>
@@ -312,12 +356,12 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   )}
                 </View>
 
-                {item.description ? (
-                  <Text style={styles.modalDesc}>
-                    {item.description}
-                  </Text>
-                ) : null}
+                {/* Description */}
+                {!!item.description && (
+                  <Text style={styles.modalDesc}>{item.description}</Text>
+                )}
 
+                {/* Dietary Badges */}
                 {activeDietary.length > 0 && (
                   <View style={styles.dietaryList}>
                     {activeDietary.map(([key, d]) => (
@@ -330,9 +374,10 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
+                {/* Extras (serving size + prep time) */}
                 {(item.servingSize || item.preparationTime) && (
                   <View style={styles.modalExtras}>
-                    {item.servingSize ? (
+                    {!!item.servingSize && (
                       <View style={styles.extraItem}>
                         <Ionicons
                           name="restaurant-outline"
@@ -343,8 +388,8 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                           {item.servingSize}
                         </Text>
                       </View>
-                    ) : null}
-                    {item.preparationTime ? (
+                    )}
+                    {!!item.preparationTime && (
                       <View style={styles.extraItem}>
                         <Ionicons
                           name="time-outline"
@@ -355,10 +400,11 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                           {item.preparationTime} min prep
                         </Text>
                       </View>
-                    ) : null}
+                    )}
                   </View>
                 )}
 
+                {/* Tags */}
                 {item.tags?.length > 0 && (
                   <View style={styles.tagsRow}>
                     {item.tags.map((tag, i) => (
@@ -369,6 +415,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
+                {/* View Count */}
                 {item.viewCount > 0 && (
                   <View style={styles.viewCountRow}>
                     <Ionicons
@@ -382,10 +429,11 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
+                {/* Unavailable Banner */}
                 {!item.isAvailable && (
                   <View style={styles.unavailableBanner}>
                     <Ionicons
-                      name="close-circle"
+                      name="close-circle-outline"
                       size={18}
                       color={COLORS.error}
                     />
@@ -395,7 +443,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* Save favourite button */}
+                {/* Save Favourite Button */}
                 <TouchableOpacity
                   style={[
                     styles.modalFavBtn,
@@ -406,12 +454,10 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   activeOpacity={0.8}
                 >
                   {favLoading ? (
-                    <Text style={[
-                      styles.modalFavBtnText,
-                      isFavorited && styles.modalFavBtnTextActive,
-                    ]}>
-                      Saving...
-                    </Text>
+                    <ActivityIndicator
+                      size="small"
+                      color={isFavorited ? '#FFFFFF' : COLORS.error}
+                    />
                   ) : (
                     <>
                       <Ionicons
@@ -431,7 +477,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   )}
                 </TouchableOpacity>
 
-                {/* Close button */}
+                {/* Close Button */}
                 <TouchableOpacity
                   style={styles.modalCloseBtn}
                   onPress={handleCloseModal}
@@ -449,286 +495,278 @@ export default function MenuItemCard({ item, onLoginRequired }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
+
+  // ── Card ──────────────────────────────────
   card: {
-    flexDirection: 'row',
+    flexDirection:   'row',
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.md,
-    marginBottom: SIZES.md,
-    gap: SIZES.md,
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
+    marginBottom:    SIZES.md,
+    gap:             SIZES.md,
+    borderWidth:     1,
+    borderColor:     'transparent',
     ...SHADOW,
   },
   cardUnavailable: { opacity: 0.65 },
+  cardSpecial: {
+    borderColor:     WARNING_COLOR + '40',
+    backgroundColor: WARNING_COLOR + '05',
+  },
+
+  // ── Info ──────────────────────────────────
   info: { flex: 1, justifyContent: 'space-between' },
   nameRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SIZES.xs,
-    marginBottom: SIZES.xs,
+    alignItems:    'flex-start',
+    gap:           SIZES.xs,
+    marginBottom:  SIZES.xs,
   },
   name: {
-    flex: 1,
-    fontSize: FONTS.lg,
+    flex:       1,
+    fontSize:   FONTS.lg,
     fontWeight: '600',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   specialBadge: {
-    backgroundColor: COLORS.warning + '25',
+    backgroundColor:   WARNING_COLOR + '25',
     paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: RADIUS.sm,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.sm,
   },
   specialText: {
-    fontSize: FONTS.xs,
-    color: COLORS.warning,
+    fontSize:   FONTS.xs,
+    color:      WARNING_COLOR,
     fontWeight: '600',
   },
   description: {
-    fontSize: FONTS.sm,
-    color: COLORS.textLight,
-    lineHeight: 18,
+    fontSize:     FONTS.sm,
+    color:        COLORS.textLight,
+    lineHeight:   18,
     marginBottom: SIZES.xs,
   },
-  dietaryRow: {
-    flexDirection: 'row',
-    gap: 4,
-    marginBottom: SIZES.xs,
-  },
+  dietaryRow:  { flexDirection: 'row', gap: 4, marginBottom: SIZES.xs },
   dietaryIcon: { fontSize: 14 },
   priceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.md,
-    marginTop: SIZES.xs,
+    alignItems:    'center',
+    gap:           SIZES.md,
+    marginTop:     SIZES.xs,
   },
-  price: {
-    fontSize: FONTS.xl,
-    fontWeight: 'bold',
-    color: COLORS.primary,
-  },
+  price: { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
   prepTime: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
+    alignItems:    'center',
+    gap:           3,
   },
-  prepTimeText: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  prepTimeText:    { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableText: {
-    fontSize: FONTS.xs,
-    color: COLORS.error,
-    marginTop: 4,
+    fontSize:   FONTS.xs,
+    color:      COLORS.error,
+    marginTop:  4,
     fontWeight: '500',
   },
+
+  // ── Image Wrapper ─────────────────────────
   imageWrapper: { position: 'relative' },
   image: {
-    width: 95,
-    height: 95,
+    width:        95,
+    height:       95,
     borderRadius: RADIUS.lg,
   },
   imageGray: { opacity: 0.4 },
   heartBtn: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
+    position:        'absolute',
+    top:             4,
+    right:           4,
     backgroundColor: 'rgba(0,0,0,0.45)',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           28,
+    height:          28,
+    borderRadius:    14,
+    justifyContent:  'center',
+    alignItems:      'center',
   },
   expandHint: {
-    position: 'absolute',
-    bottom: 4,
-    right: 4,
+    position:        'absolute',
+    bottom:          4,
+    right:           4,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 4,
-    padding: 3,
+    borderRadius:    4,
+    padding:         3,
   },
+
+  // ── Modal ─────────────────────────────────
   modalOverlay: {
-    flex: 1,
+    flex:            1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+    justifyContent:  'flex-end',
   },
   modalCard: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 28,
+    backgroundColor:      COLORS.surface,
+    borderTopLeftRadius:  28,
     borderTopRightRadius: 28,
-    overflow: 'hidden',
-    maxHeight: '92%',
+    overflow:             'hidden',
+    maxHeight:            '92%',
   },
   modalImage: {
-    width: '100%',
+    width:  '100%',
     height: 220,
   },
   closeIconBtn: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
+    position:        'absolute',
+    top:             12,
+    right:           12,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           34,
+    height:          34,
+    borderRadius:    17,
+    justifyContent:  'center',
+    alignItems:      'center',
   },
   modalHeartBtn: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
+    position:        'absolute',
+    top:             12,
+    left:            12,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           40,
+    height:          40,
+    borderRadius:    20,
+    justifyContent:  'center',
+    alignItems:      'center',
   },
-  modalScroll: { maxHeight: 420 },
-  modalBody: {
-    padding: SIZES.lg,
-    gap: SIZES.sm,
+  modalHandle: {
+    width:           40,
+    height:          4,
+    backgroundColor: COLORS.border,
+    borderRadius:    2,
+    alignSelf:       'center',
+    marginTop:       -20,
+    position:        'absolute',
+    top:             230,
   },
+  modalScroll: { maxHeight: 440 },
+  modalBody:   { padding: SIZES.lg, gap: SIZES.sm },
+
+  // ── Modal Content ─────────────────────────
   modalNameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
+    alignItems:    'center',
+    gap:           SIZES.sm,
   },
   modalName: {
-    flex: 1,
-    fontSize: FONTS.xxl,
+    flex:       1,
+    fontSize:   FONTS.xxl,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   modalSpecial: {
-    fontSize: FONTS.sm,
-    color: COLORS.warning,
+    fontSize:   FONTS.sm,
+    color:      WARNING_COLOR,
     fontWeight: '600',
   },
   modalPriceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.md,
+    alignItems:    'center',
+    gap:           SIZES.md,
   },
   modalPrice: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color:      COLORS.primary,
   },
-  favCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  favCountText: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
-  },
+  favCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  favCountText: { fontSize: FONTS.sm, color: COLORS.textMuted },
   modalDesc: {
-    fontSize: FONTS.md,
-    color: COLORS.textLight,
+    fontSize:   FONTS.md,
+    color:      COLORS.textLight,
     lineHeight: 22,
   },
   dietaryList: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.sm,
+    flexWrap:      'wrap',
+    gap:           SIZES.sm,
   },
   dietaryBadge: {
-    backgroundColor: COLORS.success + '15',
+    backgroundColor:   COLORS.success + '15',
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.round,
-    borderWidth: 1,
-    borderColor: COLORS.success + '40',
+    paddingVertical:   4,
+    borderRadius:      RADIUS.round,
+    borderWidth:       1,
+    borderColor:       COLORS.success + '40',
   },
   dietaryBadgeText: {
-    fontSize: FONTS.sm,
-    color: COLORS.success,
+    fontSize:   FONTS.sm,
+    color:      COLORS.success,
     fontWeight: '500',
   },
   modalExtras: {
     flexDirection: 'row',
-    gap: SIZES.lg,
-    flexWrap: 'wrap',
+    gap:           SIZES.lg,
+    flexWrap:      'wrap',
   },
-  extraItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
+  extraItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   extraText: { fontSize: FONTS.sm, color: COLORS.textMuted },
   tagsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.xs,
+    flexWrap:      'wrap',
+    gap:           SIZES.xs,
   },
   tag: {
-    backgroundColor: COLORS.primary + '15',
+    backgroundColor:   COLORS.primary + '15',
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.round,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
   },
-  tagText: {
-    fontSize: FONTS.xs,
-    color: COLORS.primary,
-    fontWeight: '500',
-  },
-  viewCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  viewCountText: {
-    fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-  },
+  tagText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '500' },
+  viewCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewCountText: { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             SIZES.sm,
     backgroundColor: COLORS.error + '15',
-    padding: SIZES.md,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.error + '30',
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.md,
+    borderWidth:     1,
+    borderColor:     COLORS.error + '30',
   },
   unavailableBannerText: {
-    fontSize: FONTS.md,
-    color: COLORS.error,
+    fontSize:   FONTS.md,
+    color:      COLORS.error,
     fontWeight: '500',
   },
+
+  // ── Modal Buttons ─────────────────────────
   modalFavBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.error + '15',
-    borderWidth: 1.5,
-    borderColor: COLORS.error,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
-    marginTop: SIZES.sm,
+    borderWidth:     1.5,
+    borderColor:     COLORS.error,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    marginTop:       SIZES.sm,
+    minHeight:       52,
   },
-  modalFavBtnActive: {
-    backgroundColor: COLORS.error,
-    borderColor: COLORS.error,
-  },
-  modalFavBtnText: {
-    color: COLORS.error,
-    fontSize: FONTS.md,
-    fontWeight: 'bold',
-  },
+  modalFavBtnActive:     { backgroundColor: COLORS.error, borderColor: COLORS.error },
+  modalFavBtnText:       { color: COLORS.error, fontSize: FONTS.md, fontWeight: 'bold' },
   modalFavBtnTextActive: { color: '#FFFFFF' },
   modalCloseBtn: {
     backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    marginTop: SIZES.xs,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    alignItems:      'center',
+    marginTop:       SIZES.xs,
   },
   modalCloseBtnText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.lg,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
   },
 });
