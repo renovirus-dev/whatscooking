@@ -22,20 +22,29 @@ import * as Location         from 'expo-location';
 import { useAuth }           from '../../hooks/useAuth';
 import { useRestaurants }    from '../../hooks/useRestaurants';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { getThumbUrl, getBannerUrl } from '../../utils/uploadToCloudinary';
 
 // ✅ Safe color fallback
 const ACCENT_COLOR = COLORS.accent || COLORS.secondary || '#8E44AD';
 
 const CUISINE_OPTIONS = [
-  'caribbean', 'jamaican', 'american', 'chinese',
-  'indian', 'italian', 'mexican', 'japanese',
-  'thai', 'mediterranean', 'seafood', 'bbq',
-  'fast-food', 'vegetarian', 'bakery', 'other',
+  'caribbean', 'jamaican',     'american',  'chinese',
+  'indian',    'italian',      'mexican',   'japanese',
+  'thai',      'mediterranean','seafood',   'bbq',
+  'fast-food', 'vegetarian',   'bakery',    'other',
 ];
 
 const PRICE_OPTIONS = ['$', '$$', '$$$', '$$$$'];
 
-// ── Geocode helper ────────────────────────────
+// ─── Price Range Labels ───────────────────────
+const PRICE_LABELS = {
+  '$':    'Budget',
+  '$$':   'Moderate',
+  '$$$':  'Upscale',
+  '$$$$': 'Fine Dining',
+};
+
+// ─── Geocode Helper ───────────────────────────
 const geocodeAddress = async (address, city, state, country) => {
   try {
     const fullAddress = [address, city, state, country]
@@ -62,7 +71,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   const { createRestaurant, updateRestaurant } = useRestaurants();
   const existingRestaurant                     = route.params?.restaurant;
 
-  // ── Input refs for keyboard focus chain ──
+  // ── Input Refs ────────────────────────────
   const descriptionRef = useRef(null);
   const phoneRef       = useRef(null);
   const whatsappRef    = useRef(null);
@@ -73,6 +82,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   const stateRef       = useRef(null);
   const countryRef     = useRef(null);
 
+  // ── Form State ────────────────────────────
   const [form, setForm] = useState({
     name:         existingRestaurant?.name               || '',
     description:  existingRestaurant?.description        || '',
@@ -83,7 +93,8 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     address:      existingRestaurant?.location?.address  || '',
     city:         existingRestaurant?.location?.city     || '',
     state:        existingRestaurant?.location?.state    || '',
-    country:      existingRestaurant?.location?.country  || '',
+    // ✅ Default to Jamaica
+    country:      existingRestaurant?.location?.country  || 'Jamaica',
     cuisineTypes: existingRestaurant?.cuisineTypes       || [],
     priceRange:   existingRestaurant?.priceRange         || '$$',
     hasDelivery:  existingRestaurant?.hasDelivery        || false,
@@ -91,21 +102,33 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     hasDineIn:    existingRestaurant?.hasDineIn          || true,
   });
 
+  // ── Image State ───────────────────────────
   const [logoUri, setLogoUri]           = useState(null);
   const [coverUri, setCoverUri]         = useState(null);
   const [logoPreview, setLogoPreview]   = useState(
-    existingRestaurant?.logoUrl || null
+    // ✅ Use Cloudinary optimized URL for existing images
+    existingRestaurant?.logoUrl
+      ? getThumbUrl(existingRestaurant.logoUrl, 160, 160)
+      : null
   );
   const [coverPreview, setCoverPreview] = useState(
-    existingRestaurant?.coverUrl || null
+    existingRestaurant?.coverUrl
+      ? getBannerUrl(existingRestaurant.coverUrl)
+      : null
   );
-  const [loading, setLoading]           = useState(false);
-  const [geocoding, setGeocoding]       = useState(false);
-  const [coordsFound, setCoordsFound]   = useState(
+
+  // ── Upload/Save State ─────────────────────
+  const [loading, setLoading]         = useState(false);
+  const [loadingStep, setLoadingStep] = useState('');
+  const [geocoding, setGeocoding]     = useState(false);
+  const [coordsFound, setCoordsFound] = useState(
     !!(existingRestaurant?.coords?.latitude)
   );
 
-  // ── Form handlers ─────────────────────────
+  // ─────────────────────────────────────────
+  // FORM HANDLERS
+  // ─────────────────────────────────────────
+
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
     // ✅ Reset coords verified if address fields change
@@ -126,22 +149,23 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     });
   };
 
-  // ── Image picker ──────────────────────────
-  const pickImage = async (type) => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+  // ─────────────────────────────────────────
+  // IMAGE PICKER
+  // ✅ Camera + Library options
+  // ✅ quality: 1 (compression happens in useRestaurants)
+  // ─────────────────────────────────────────
+
+  const pickImageFromLibrary = async (type) => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(
-        'Permission needed',
-        'Please allow photo library access'
-      );
+      Alert.alert('Permission needed', 'Please allow photo library access');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes:    ['images'],
       allowsEditing: true,
       aspect:        type === 'logo' ? [1, 1] : [16, 9],
-      quality:       0.8,
+      quality:       1, // ✅ No compression here — handled in useRestaurants
     });
     if (!result.canceled) {
       const uri = result.assets[0].uri;
@@ -155,7 +179,58 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     }
   };
 
-  // ── Verify address ────────────────────────
+  const takePhotoWithCamera = async (type) => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow camera access');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect:        type === 'logo' ? [1, 1] : [16, 9],
+      quality:       1,
+    });
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      if (type === 'logo') {
+        setLogoUri(uri);
+        setLogoPreview(uri);
+      } else {
+        setCoverUri(uri);
+        setCoverPreview(uri);
+      }
+    }
+  };
+
+  // ✅ Show action sheet for image source
+  const handlePickImage = (type) => {
+    const label = type === 'logo' ? 'Logo' : 'Cover Photo';
+    Alert.alert(
+      `📷 ${label}`,
+      'Choose image source',
+      [
+        { text: '📷 Take Photo',          onPress: () => takePhotoWithCamera(type)   },
+        { text: '🖼️ Choose from Library', onPress: () => pickImageFromLibrary(type) },
+        { text: 'Cancel', style: 'cancel'                                            },
+      ]
+    );
+  };
+
+  // ✅ Remove image
+  const handleRemoveImage = (type) => {
+    if (type === 'logo') {
+      setLogoUri(null);
+      setLogoPreview(existingRestaurant?.logoUrl || null);
+    } else {
+      setCoverUri(null);
+      setCoverPreview(existingRestaurant?.coverUrl || null);
+    }
+  };
+
+  // ─────────────────────────────────────────
+  // VERIFY ADDRESS
+  // ─────────────────────────────────────────
+
   const handleVerifyAddress = async () => {
     if (!form.address.trim() || !form.city.trim()) {
       Alert.alert(
@@ -183,15 +258,23 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       setCoordsFound(false);
       Alert.alert(
         '⚠️ Address Not Found',
-        'Could not find this address on the map. ' +
-        'Please check the spelling or add more details.',
+        'Could not find this address on the map.\n\n' +
+        'Tips:\n' +
+        '• Check spelling\n' +
+        '• Add more address details\n' +
+        '• Try a nearby landmark\n\n' +
+        'You can still save without verification.',
         [{ text: 'OK' }]
       );
     }
   };
 
-  // ── Save handler ──────────────────────────
+  // ─────────────────────────────────────────
+  // SAVE HANDLER
+  // ─────────────────────────────────────────
+
   const handleSave = async () => {
+    // ── Validation ────────────────────────
     if (!form.name.trim()) {
       Alert.alert('Error', 'Restaurant name is required');
       return;
@@ -204,7 +287,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       Alert.alert('Error', 'Address and city are required');
       return;
     }
-    // ✅ Warn if cuisine not selected
     if (form.cuisineTypes.length === 0) {
       Alert.alert('Error', 'Please select at least one cuisine type');
       return;
@@ -212,7 +294,8 @@ export default function RestaurantSetupScreen({ navigation, route }) {
 
     setLoading(true);
 
-    // ✅ Geocode if not already done
+    // ── Geocode if needed ─────────────────
+    setLoadingStep('Finding location...');
     let coords = null;
     if (existingRestaurant?.coords?.latitude && coordsFound) {
       coords = existingRestaurant.coords;
@@ -222,6 +305,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       );
     }
 
+    // ── Build data ────────────────────────
     const data = {
       name:        form.name.trim(),
       description: form.description.trim(),
@@ -248,6 +332,14 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       ownerId:      user.uid,
     };
 
+    // ── Upload images & save ──────────────
+    // ✅ Show which step we're on
+    if (logoUri || coverUri) {
+      setLoadingStep('Uploading images to Cloudinary...');
+    } else {
+      setLoadingStep('Saving restaurant...');
+    }
+
     let result;
     try {
       if (existingRestaurant) {
@@ -262,13 +354,14 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     }
 
     setLoading(false);
+    setLoadingStep('');
 
     if (result?.success) {
       Alert.alert(
         '✅ Success!',
         existingRestaurant
           ? 'Restaurant updated successfully!'
-          : 'Restaurant created! Now add your menu items.',
+          : 'Restaurant created!\n\nNext: Add your menu items.',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } else {
@@ -276,86 +369,122 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     }
   };
 
-  // ─── Render ───────────────────────────────
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={
-        Platform.OS === 'ios' ? 0 : insets.top + 56
-      }
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top + 56}
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{
-          paddingBottom: insets.bottom + SIZES.xl,
-        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
       >
 
-        {/* ── Cover photo ──────────────────── */}
+        {/* ── Cover Photo ──────────────────── */}
         <TouchableOpacity
           style={styles.coverPicker}
-          onPress={() => pickImage('cover')}
+          onPress={() => handlePickImage('cover')}
           activeOpacity={0.85}
+          disabled={loading}
         >
           {coverPreview ? (
-            <Image
-              source={{ uri: coverPreview }}
-              style={styles.coverImage}
-              resizeMode="cover"
-            />
+            <>
+              <Image
+                source={{ uri: coverPreview }}
+                style={styles.coverImage}
+                resizeMode="cover"
+              />
+              {/* ✅ Remove cover button */}
+              {coverUri && (
+                <TouchableOpacity
+                  style={styles.removeImageBtn}
+                  onPress={() => handleRemoveImage('cover')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle" size={24} color="#FFFFFF" />
+                </TouchableOpacity>
+              )}
+            </>
           ) : (
             <View style={styles.coverPlaceholder}>
-              <Ionicons
-                name="image-outline"
-                size={40}
-                color={COLORS.textMuted}
-              />
-              <Text style={styles.pickerText}>
-                Tap to add cover photo
-              </Text>
+              <Ionicons name="image-outline" size={40} color={COLORS.textMuted} />
+              <Text style={styles.pickerText}>Tap to add cover photo</Text>
+              <Text style={styles.pickerHint}>Recommended: 1200 × 400px</Text>
             </View>
           )}
           <View style={styles.coverEditBadge}>
             <Ionicons name="camera" size={14} color="#FFFFFF" />
           </View>
+          {/* ✅ New photo indicator */}
+          {coverUri && (
+            <View style={styles.newPhotoBadge}>
+              <Text style={styles.newPhotoBadgeText}>New</Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {/* ── Logo ─────────────────────────── */}
-        <TouchableOpacity
-          style={styles.logoPicker}
-          onPress={() => pickImage('logo')}
-          activeOpacity={0.85}
-        >
-          {logoPreview ? (
-            <Image
-              source={{ uri: logoPreview }}
-              style={styles.logoImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.logoPlaceholder}>
-              <Ionicons
-                name="camera"
-                size={22}
-                color={COLORS.textMuted}
+        <View style={styles.logoRow}>
+          <TouchableOpacity
+            style={styles.logoPicker}
+            onPress={() => handlePickImage('logo')}
+            activeOpacity={0.85}
+            disabled={loading}
+          >
+            {logoPreview ? (
+              <Image
+                source={{ uri: logoPreview }}
+                style={styles.logoImage}
+                resizeMode="cover"
               />
+            ) : (
+              <View style={styles.logoPlaceholder}>
+                <Ionicons name="camera" size={22} color={COLORS.textMuted} />
+              </View>
+            )}
+            <View style={styles.logoEditBadge}>
+              <Ionicons name="pencil" size={10} color="#FFFFFF" />
             </View>
-          )}
-          <View style={styles.logoEditBadge}>
-            <Ionicons name="pencil" size={10} color="#FFFFFF" />
+            {/* ✅ New photo indicator */}
+            {logoUri && (
+              <View style={[styles.newPhotoBadge, { top: 0, right: 0 }]}>
+                <Text style={styles.newPhotoBadgeText}>New</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* ✅ Image hints */}
+          <View style={styles.logoHints}>
+            <Text style={styles.logoHintTitle}>
+              {existingRestaurant ? 'Update Photos' : 'Add Photos'}
+            </Text>
+            <Text style={styles.logoHintText}>
+              Logo: Square (1:1){'\n'}
+              Cover: Wide (16:9)
+            </Text>
+            {(logoUri || coverUri) && (
+              <Text style={styles.logoHintNew}>
+                📤 Will upload to Cloudinary on save
+              </Text>
+            )}
           </View>
-        </TouchableOpacity>
+        </View>
 
         {/* ── Form ─────────────────────────── */}
         <View style={styles.form}>
 
-          {/* ── Basic info ─────────────────── */}
+          {/* ── Basic Info ─────────────────── */}
           <Text style={styles.sectionTitle}>📋 Basic Information</Text>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Restaurant Name *</Text>
+            <Text style={styles.label}>
+              Restaurant Name <Text style={{ color: COLORS.error }}>*</Text>
+            </Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Mama's Kitchen"
@@ -369,11 +498,16 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Description</Text>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Description</Text>
+              <Text style={styles.charCount}>
+                {form.description.length}/300
+              </Text>
+            </View>
             <TextInput
               ref={descriptionRef}
               style={[styles.input, styles.textarea]}
-              placeholder="Tell customers about your restaurant..."
+              placeholder="Tell customers about your restaurant, specialties, atmosphere..."
               placeholderTextColor={COLORS.textMuted}
               value={form.description}
               onChangeText={v => updateForm('description', v)}
@@ -381,6 +515,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
               numberOfLines={3}
               textAlignVertical="top"
               returnKeyType="next"
+              maxLength={300}
               onSubmitEditing={() => phoneRef.current?.focus()}
             />
           </View>
@@ -389,17 +524,15 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <Text style={styles.sectionTitle}>📞 Contact Info</Text>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Phone Number *</Text>
+            <Text style={styles.label}>
+              Phone Number <Text style={{ color: COLORS.error }}>*</Text>
+            </Text>
             <View style={styles.inputRow}>
-              <Ionicons
-                name="call-outline"
-                size={18}
-                color={COLORS.textMuted}
-              />
+              <Ionicons name="call-outline" size={18} color={COLORS.textMuted} />
               <TextInput
                 ref={phoneRef}
                 style={styles.inputFlex}
-                placeholder="+1 (555) 000-0000"
+                placeholder="+1 (876) 000-0000"
                 placeholderTextColor={COLORS.textMuted}
                 value={form.phone}
                 onChangeText={v => updateForm('phone', v)}
@@ -413,15 +546,11 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.field}>
             <Text style={styles.label}>WhatsApp Number</Text>
             <View style={styles.inputRow}>
-              <Ionicons
-                name="logo-whatsapp"
-                size={18}
-                color={COLORS.success}
-              />
+              <Ionicons name="logo-whatsapp" size={18} color={COLORS.success} />
               <TextInput
                 ref={whatsappRef}
                 style={styles.inputFlex}
-                placeholder="+1 (555) 000-0000"
+                placeholder="+1 (876) 000-0000"
                 placeholderTextColor={COLORS.textMuted}
                 value={form.whatsapp}
                 onChangeText={v => updateForm('whatsapp', v)}
@@ -435,11 +564,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.field}>
             <Text style={styles.label}>Email Address</Text>
             <View style={styles.inputRow}>
-              <Ionicons
-                name="mail-outline"
-                size={18}
-                color={COLORS.textMuted}
-              />
+              <Ionicons name="mail-outline" size={18} color={COLORS.textMuted} />
               <TextInput
                 ref={emailRef}
                 style={styles.inputFlex}
@@ -459,11 +584,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.field}>
             <Text style={styles.label}>Website</Text>
             <View style={styles.inputRow}>
-              <Ionicons
-                name="globe-outline"
-                size={18}
-                color={COLORS.textMuted}
-              />
+              <Ionicons name="globe-outline" size={18} color={COLORS.textMuted} />
               <TextInput
                 ref={websiteRef}
                 style={styles.inputFlex}
@@ -483,7 +604,9 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <Text style={styles.sectionTitle}>📍 Location</Text>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Street Address *</Text>
+            <Text style={styles.label}>
+              Street Address <Text style={{ color: COLORS.error }}>*</Text>
+            </Text>
             <TextInput
               ref={addressRef}
               style={styles.input}
@@ -498,7 +621,9 @@ export default function RestaurantSetupScreen({ navigation, route }) {
 
           <View style={styles.twoCol}>
             <View style={[styles.field, { flex: 1 }]}>
-              <Text style={styles.label}>City *</Text>
+              <Text style={styles.label}>
+                City <Text style={{ color: COLORS.error }}>*</Text>
+              </Text>
               <TextInput
                 ref={cityRef}
                 style={styles.input}
@@ -538,53 +663,36 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             />
           </View>
 
-          {/* Verify address */}
+          {/* Verify Address */}
           <TouchableOpacity
             style={[
               styles.verifyBtn,
               coordsFound && styles.verifyBtnSuccess,
-              geocoding  && styles.verifyBtnLoading,
+              geocoding   && styles.verifyBtnLoading,
             ]}
             onPress={handleVerifyAddress}
-            disabled={geocoding}
+            disabled={geocoding || loading}
             activeOpacity={0.8}
           >
             {geocoding ? (
               <>
-                <ActivityIndicator
-                  size="small"
-                  color={COLORS.textWhite}
-                />
-                <Text style={styles.verifyBtnText}>
-                  Finding location...
-                </Text>
+                <ActivityIndicator size="small" color="#FFFFFF" />
+                <Text style={styles.verifyBtnText}>Finding location...</Text>
               </>
             ) : coordsFound ? (
               <>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={18}
-                  color={COLORS.textWhite}
-                />
-                <Text style={styles.verifyBtnText}>
-                  ✅ Address Verified
-                </Text>
+                <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                <Text style={styles.verifyBtnText}>✅ Address Verified</Text>
               </>
             ) : (
               <>
-                <Ionicons
-                  name="navigate"
-                  size={18}
-                  color={COLORS.textWhite}
-                />
-                <Text style={styles.verifyBtnText}>
-                  Verify Address on Map
-                </Text>
+                <Ionicons name="navigate" size={18} color="#FFFFFF" />
+                <Text style={styles.verifyBtnText}>Verify Address on Map</Text>
               </>
             )}
           </TouchableOpacity>
 
-          {/* Location hint */}
+          {/* Location Hint */}
           <View style={styles.locationHint}>
             <Ionicons
               name="information-circle-outline"
@@ -593,39 +701,35 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             />
             <Text style={styles.locationHintText}>
               Verifying your address lets customers find you
-              when using "Near Me" search.
+              in "Near Me" search.
             </Text>
           </View>
 
-          {/* ── Cuisine types ──────────────── */}
+          {/* ── Cuisine Types ──────────────── */}
           <Text style={styles.sectionTitle}>🍴 Cuisine Type</Text>
-          <Text style={styles.sectionHint}>
-            Select all that apply
-          </Text>
+          <Text style={styles.sectionHint}>Select all that apply</Text>
+
           <View style={styles.chipGrid}>
-            {CUISINE_OPTIONS.map(cuisine => (
-              <TouchableOpacity
-                key={cuisine}
-                style={[
-                  styles.chip,
-                  form.cuisineTypes.includes(cuisine) &&
-                    styles.chipActive,
-                ]}
-                onPress={() => toggleCuisine(cuisine)}
-                activeOpacity={0.7}
-              >
-                <Text style={[
-                  styles.chipText,
-                  form.cuisineTypes.includes(cuisine) &&
-                    styles.chipTextActive,
-                ]}>
-                  {cuisine.charAt(0).toUpperCase() + cuisine.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {CUISINE_OPTIONS.map(cuisine => {
+              const isSelected = form.cuisineTypes.includes(cuisine);
+              return (
+                <TouchableOpacity
+                  key={cuisine}
+                  style={[styles.chip, isSelected && styles.chipActive]}
+                  onPress={() => toggleCuisine(cuisine)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[
+                    styles.chipText,
+                    isSelected && styles.chipTextActive,
+                  ]}>
+                    {cuisine.charAt(0).toUpperCase() + cuisine.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* ✅ Show selected count */}
           {form.cuisineTypes.length > 0 && (
             <Text style={styles.selectedHint}>
               ✅ {form.cuisineTypes.length} cuisine
@@ -633,8 +737,9 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             </Text>
           )}
 
-          {/* ── Price range ─────────────────── */}
+          {/* ── Price Range ─────────────────── */}
           <Text style={styles.sectionTitle}>💰 Price Range</Text>
+
           <View style={styles.priceRow}>
             {PRICE_OPTIONS.map(p => (
               <TouchableOpacity
@@ -652,64 +757,76 @@ export default function RestaurantSetupScreen({ navigation, route }) {
                 ]}>
                   {p}
                 </Text>
+                <Text style={[
+                  styles.priceBtnLabel,
+                  form.priceRange === p && { color: '#FFFFFF' },
+                ]}>
+                  {PRICE_LABELS[p]}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
 
           {/* ── Services ─────────────────────── */}
           <Text style={styles.sectionTitle}>🛎️ Services Offered</Text>
+
           {[
-            { key: 'hasDineIn',   label: 'Dine In',  icon: '🪑' },
-            { key: 'hasTakeout',  label: 'Takeout',  icon: '🥡' },
-            { key: 'hasDelivery', label: 'Delivery', icon: '🛵' },
+            { key: 'hasDineIn',   label: 'Dine In',  icon: '🪑', desc: 'Customers eat at your restaurant'    },
+            { key: 'hasTakeout',  label: 'Takeout',  icon: '🥡', desc: 'Customers pick up their order'       },
+            { key: 'hasDelivery', label: 'Delivery', icon: '🛵', desc: 'You deliver to customers'            },
           ].map(service => (
             <TouchableOpacity
               key={service.key}
-              style={styles.serviceRow}
-              onPress={() =>
-                updateForm(service.key, !form[service.key])
-              }
+              style={[
+                styles.serviceRow,
+                form[service.key] && styles.serviceRowActive,
+              ]}
+              onPress={() => updateForm(service.key, !form[service.key])}
               activeOpacity={0.7}
             >
               <Text style={styles.serviceEmoji}>{service.icon}</Text>
-              <Text style={styles.serviceLabel}>{service.label}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.serviceLabel}>{service.label}</Text>
+                <Text style={styles.serviceDesc}>{service.desc}</Text>
+              </View>
               <View style={[
                 styles.serviceToggle,
                 form[service.key] && styles.serviceToggleOn,
               ]}>
-                <Text style={styles.serviceToggleText}>
-                  {form[service.key] ? '✅ Yes' : '❌ No'}
+                <Ionicons
+                  name={form[service.key]
+                    ? 'checkmark-circle'
+                    : 'close-circle-outline'}
+                  size={20}
+                  color={form[service.key] ? COLORS.success : COLORS.textMuted}
+                />
+                <Text style={[
+                  styles.serviceToggleText,
+                  form[service.key] && { color: COLORS.success },
+                ]}>
+                  {form[service.key] ? 'Yes' : 'No'}
                 </Text>
               </View>
             </TouchableOpacity>
           ))}
 
-          {/* ── Save button ──────────────────── */}
+          {/* ── Save Button ──────────────────── */}
           <TouchableOpacity
-            style={[
-              styles.saveBtn,
-              loading && styles.saveBtnDisabled,
-            ]}
+            style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
             onPress={handleSave}
             disabled={loading}
             activeOpacity={0.8}
           >
             {loading ? (
-              <>
+              <View style={styles.saveBtnLoading}>
                 <ActivityIndicator color="#FFFFFF" />
-                <Text style={styles.saveBtnText}>Saving...</Text>
-              </>
+                <Text style={styles.saveBtnText}>{loadingStep}</Text>
+              </View>
             ) : (
               <>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={22}
-                  color="#FFFFFF"
-                />
+                <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
                 <Text style={styles.saveBtnText}>
-                  {existingRestaurant
-                    ? 'Update Restaurant'
-                    : 'Create Restaurant'}
+                  {existingRestaurant ? 'Update Restaurant' : 'Create Restaurant'}
                 </Text>
               </>
             )}
@@ -721,301 +838,360 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
 
-  // ── Cover photo ──────────────────────────
+  // ── Cover Photo ───────────────────────────
   coverPicker: {
-    height: 180,
+    height:          180,
     backgroundColor: COLORS.border,
-    position: 'relative',
+    position:        'relative',
   },
   coverImage: {
-    width: '100%',
+    width:  '100%',
     height: '100%',
   },
   coverPlaceholder: {
-    width: '100%',
-    height: '100%',
+    width:          '100%',
+    height:         '100%',
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: SIZES.sm,
+    alignItems:     'center',
+    gap:            SIZES.xs,
   },
   pickerText: {
-    color: COLORS.textMuted,
+    color:    COLORS.textMuted,
     fontSize: FONTS.md,
   },
+  pickerHint: {
+    color:    COLORS.textMuted,
+    fontSize: FONTS.xs,
+  },
   coverEditBadge: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
+    position:        'absolute',
+    bottom:          10,
+    right:           10,
     backgroundColor: COLORS.primary,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width:           30,
+    height:          30,
+    borderRadius:    15,
+    justifyContent:  'center',
+    alignItems:      'center',
+  },
+  removeImageBtn: {
+    position:        'absolute',
+    top:             8,
+    right:           8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius:    12,
+  },
+  newPhotoBadge: {
+    position:          'absolute',
+    top:               8,
+    left:              8,
+    backgroundColor:   COLORS.success,
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
+  },
+  newPhotoBadgeText: {
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xs,
+    fontWeight: '700',
   },
 
-  // ── Logo ─────────────────────────────────
+  // ── Logo ──────────────────────────────────
+  logoRow: {
+    flexDirection: 'row',
+    alignItems:    'flex-end',
+    paddingLeft:   SIZES.lg,
+    paddingRight:  SIZES.md,
+    marginTop:     -40,
+    gap:           SIZES.md,
+  },
   logoPicker: {
-    width: 80,
-    height: 80,
+    width:        80,
+    height:       80,
     borderRadius: 40,
-    marginLeft: SIZES.lg,
-    marginTop: -40,
-    position: 'relative',
+    position:     'relative',
     ...SHADOW,
   },
   logoImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width:       80,
+    height:      80,
+    borderRadius:40,
     borderWidth: 3,
     borderColor: '#FFFFFF',
   },
   logoPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width:           80,
+    height:          80,
+    borderRadius:    40,
     backgroundColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
+    justifyContent:  'center',
+    alignItems:      'center',
+    borderWidth:     3,
+    borderColor:     '#FFFFFF',
   },
   logoEditBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
+    position:        'absolute',
+    bottom:          0,
+    right:           0,
     backgroundColor: COLORS.primary,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    width:           22,
+    height:          22,
+    borderRadius:    11,
+    justifyContent:  'center',
+    alignItems:      'center',
+    borderWidth:     2,
+    borderColor:     '#FFFFFF',
+  },
+  logoHints: {
+    flex:      1,
+    marginBottom: SIZES.xs,
+  },
+  logoHintTitle: {
+    fontSize:   FONTS.md,
+    fontWeight: '700',
+    color:      COLORS.text,
+  },
+  logoHintText: {
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  logoHintNew: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
+    fontWeight: '600',
+    marginTop:  4,
   },
 
-  // ── Form ─────────────────────────────────
+  // ── Form ──────────────────────────────────
   form: {
-    padding: SIZES.md,
-    gap: SIZES.md,
+    padding:   SIZES.md,
+    gap:       SIZES.md,
     marginTop: SIZES.md,
   },
   sectionTitle: {
-    fontSize: FONTS.lg,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginTop: SIZES.sm,
+    fontSize:     FONTS.lg,
+    fontWeight:   'bold',
+    color:        COLORS.text,
+    marginTop:    SIZES.sm,
     marginBottom: SIZES.xs,
+    paddingBottom: SIZES.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   sectionHint: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+    fontSize:    FONTS.sm,
+    color:       COLORS.textMuted,
     marginBottom: SIZES.sm,
-    marginTop: -SIZES.xs,
+    marginTop:   -SIZES.xs,
   },
   field:  { gap: SIZES.xs },
   twoCol: { flexDirection: 'row', gap: SIZES.md },
+
+  // ── Labels ────────────────────────────────
+  labelRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+  },
   label: {
-    fontSize: FONTS.md,
+    fontSize:   FONTS.md,
     fontWeight: '600',
-    color: COLORS.text,
+    color:      COLORS.text,
+  },
+  charCount: {
+    fontSize: FONTS.xs,
+    color:    COLORS.textMuted,
   },
 
-  // ── Inputs ───────────────────────────────
+  // ── Inputs ────────────────────────────────
   input: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
+    backgroundColor:   COLORS.surface,
+    borderRadius:      RADIUS.md,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-    fontSize: FONTS.md,
-    color: COLORS.text,
-    ...SHADOW,
+    paddingVertical:   SIZES.md,
+    fontSize:          FONTS.md,
+    color:             COLORS.text,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
   inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.surface,
+    borderRadius:      RADIUS.md,
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-    gap: SIZES.sm,
-    ...SHADOW,
+    paddingVertical:   SIZES.md,
+    gap:               SIZES.sm,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
   inputFlex: {
-    flex: 1,
+    flex:     1,
     fontSize: FONTS.md,
-    color: COLORS.text,
+    color:    COLORS.text,
   },
   textarea: {
-    height: 80,
+    height:            80,
     textAlignVertical: 'top',
   },
 
-  // ── Verify button ────────────────────────
+  // ── Verify Button ─────────────────────────
   verifyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SIZES.sm,
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             SIZES.sm,
     backgroundColor: COLORS.primary,
     paddingVertical: SIZES.md,
-    borderRadius: RADIUS.md,
-    ...SHADOW,
+    borderRadius:    RADIUS.md,
   },
-  verifyBtnSuccess: {
-    backgroundColor: COLORS.success,
-  },
-  // ✅ Dimmed while geocoding
-  verifyBtnLoading: {
-    opacity: 0.8,
-  },
+  verifyBtnSuccess: { backgroundColor: COLORS.success },
+  verifyBtnLoading: { opacity: 0.8                   },
   verifyBtnText: {
-    color: COLORS.textWhite,
-    fontSize: FONTS.md,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.md,
     fontWeight: '700',
   },
 
-  // ── Location hint ────────────────────────
+  // ── Location Hint ─────────────────────────
   locationHint: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SIZES.xs,
+    flexDirection:   'row',
+    alignItems:      'flex-start',
+    gap:             SIZES.xs,
     backgroundColor: COLORS.primary + '10',
-    padding: SIZES.sm,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.primary + '20',
-    marginTop: -SIZES.xs,
+    padding:         SIZES.sm,
+    borderRadius:    RADIUS.md,
+    borderWidth:     1,
+    borderColor:     COLORS.primary + '20',
+    marginTop:       -SIZES.xs,
   },
   locationHintText: {
-    flex: 1,
-    fontSize: FONTS.xs,
-    color: COLORS.primary,
+    flex:      1,
+    fontSize:  FONTS.xs,
+    color:     COLORS.primary,
     lineHeight: 18,
   },
 
-  // ── Cuisine chips ────────────────────────
+  // ── Cuisine Chips ─────────────────────────
   chipGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SIZES.sm,
+    flexWrap:      'wrap',
+    gap:           SIZES.sm,
   },
   chip: {
     paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.xs,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical:   SIZES.xs,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.surface,
+    borderWidth:       1,
+    borderColor:       COLORS.border,
   },
   chipActive: {
     backgroundColor: COLORS.primary,
     borderColor:     COLORS.primary,
   },
-  chipText: {
-    fontSize: FONTS.sm,
-    color: COLORS.text,
-    fontWeight: '500',
-  },
-  chipTextActive: {
-    color:      '#FFFFFF',
-    fontWeight: '600',
-  },
-  // ✅ Selected cuisine count hint
+  chipText:       { fontSize: FONTS.sm, color: COLORS.text,   fontWeight: '500' },
+  chipTextActive: { color: '#FFFFFF',   fontWeight: '600'                        },
   selectedHint: {
-    fontSize: FONTS.xs,
-    color: COLORS.success,
+    fontSize:   FONTS.xs,
+    color:      COLORS.success,
     fontWeight: '600',
-    marginTop: -SIZES.xs,
+    marginTop:  -SIZES.xs,
   },
 
-  // ── Price range ──────────────────────────
-  priceRow: {
-    flexDirection: 'row',
-    gap: SIZES.md,
-  },
+  // ── Price Range ───────────────────────────
+  priceRow: { flexDirection: 'row', gap: SIZES.sm },
   priceBtn: {
-    flex: 1,
-    paddingVertical: SIZES.md,
-    borderRadius: RADIUS.md,
+    flex:            1,
+    paddingVertical: SIZES.sm,
+    borderRadius:    RADIUS.md,
     backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.border,
-    ...SHADOW,
+    alignItems:      'center',
+    borderWidth:     2,
+    borderColor:     COLORS.border,
+    gap:             2,
   },
   priceBtnActive: {
-    // ✅ Safe color fallback
     backgroundColor: ACCENT_COLOR,
     borderColor:     ACCENT_COLOR,
   },
   priceBtnText: {
-    fontSize: FONTS.xl,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
-  priceBtnTextActive: {
-    color: '#FFFFFF',
+  priceBtnTextActive: { color: '#FFFFFF' },
+  priceBtnLabel: {
+    fontSize: 9,
+    color:    COLORS.textMuted,
   },
 
-  // ── Services ─────────────────────────────
+  // ── Services ──────────────────────────────
   serviceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
     backgroundColor: COLORS.surface,
-    padding: SIZES.md,
-    borderRadius: RADIUS.md,
-    gap: SIZES.md,
-    ...SHADOW,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.md,
+    gap:             SIZES.md,
+    borderWidth:     1,
+    borderColor:     COLORS.border,
+  },
+  serviceRowActive: {
+    borderColor:     COLORS.success + '40',
+    backgroundColor: COLORS.success + '05',
   },
   serviceEmoji: { fontSize: 22 },
   serviceLabel: {
-    flex: 1,
-    fontSize: FONTS.lg,
-    color: COLORS.text,
-    fontWeight: '500',
+    fontSize:   FONTS.md,
+    color:      COLORS.text,
+    fontWeight: '600',
+  },
+  serviceDesc: {
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
+    marginTop: 2,
   },
   serviceToggle: {
-    paddingHorizontal: SIZES.md,
-    paddingVertical: 4,
-    borderRadius: RADIUS.round,
-    backgroundColor: COLORS.error + '15',
-    borderWidth: 1,
-    borderColor: COLORS.error + '30',
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               4,
+    paddingHorizontal: SIZES.sm,
+    paddingVertical:   4,
+    borderRadius:      RADIUS.round,
+    backgroundColor:   COLORS.border,
   },
-  serviceToggleOn: {
-    backgroundColor: COLORS.success + '15',
-    borderColor:     COLORS.success + '30',
-  },
-  serviceToggleText: {
-    fontSize: FONTS.sm,
-    fontWeight: '600',
-    color: COLORS.text,
-  },
+  serviceToggleOn:  { backgroundColor: COLORS.success + '15' },
+  serviceToggleText:{ fontSize: FONTS.sm, fontWeight: '600', color: COLORS.textMuted },
 
-  // ── Save button ──────────────────────────
+  // ── Save Button ───────────────────────────
   saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.primary,
-    padding: SIZES.md,
-    borderRadius: RADIUS.lg,
-    gap: SIZES.sm,
-    marginTop: SIZES.md,
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    marginTop:       SIZES.md,
     ...SHADOW,
   },
-  saveBtnDisabled: { opacity: 0.7 },
+  saveBtnDisabled: { opacity: 0.7                                         },
+  saveBtnLoading:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
   saveBtnText: {
-    color: '#FFFFFF',
-    fontSize: FONTS.xl,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xl,
     fontWeight: 'bold',
   },
 });
