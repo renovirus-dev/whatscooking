@@ -2,8 +2,8 @@
 // FILE: src/hooks/useSubscription.js
 // ============================================
 import { useState } from 'react';
-import { useAuth } from './useAuth';
-import { db } from '../firebase/config';
+import { useAuth }  from './useAuth';
+import { db }       from '../firebase/config';
 import {
   doc,
   updateDoc,
@@ -65,26 +65,15 @@ export const PLANS = {
 
 // ─── PayPal Config ────────────────────────────
 export const PAYPAL_CONFIG = {
-  // ✅ PayPal email (linked to First Century Bank USA)
   BUSINESS_EMAIL: 'renogooden@outlook.com',
-
-  // ✅ Currency
-  CURRENCY: 'USD',
-
-  // ✅ App name shown on PayPal checkout
-  APP_NAME: "What's Cooking",
-
-  // ✅ Return URLs detected by WebView after payment
-  RETURN_URL:  'https://whatscooking.app/payment/success',
-  CANCEL_URL:  'https://whatscooking.app/payment/cancel',
-
-  // ✅ Environment — change to 'sandbox' for testing
-  ENVIRONMENT: 'live',
+  CURRENCY:       'USD',
+  APP_NAME:       "What's Cooking",
+  RETURN_URL:     'https://whatscooking.app/payment/success',
+  CANCEL_URL:     'https://whatscooking.app/payment/cancel',
+  ENVIRONMENT:    'live',
 };
 
 // ─── Bank Transfer Details ────────────────────
-// Shown to users who choose Bank Transfer option
-// They send JMD directly to your Scotiabank account
 export const BANK_TRANSFER_DETAILS = {
   bankName:      'Scotiabank Jamaica',
   accountName:   'Sherwayne Gooden',
@@ -98,8 +87,6 @@ export const BANK_TRANSFER_DETAILS = {
 };
 
 // ─── Build PayPal Checkout URL ────────────────
-// Builds PayPal hosted checkout URL
-// Opens in WebView — user pays securely
 export const buildPayPalCheckoutURL = ({
   orderId,
   amount,
@@ -125,7 +112,6 @@ export const buildPayPalCheckoutURL = ({
     no_note:       '1',
   });
 
-  // Pre-fill customer email if available
   if (customerEmail) {
     params.append('email', customerEmail);
   }
@@ -138,10 +124,15 @@ export const useSubscription = () => {
   const { userProfile } = useAuth();
   const [paymentLoading, setPaymentLoading] = useState(false);
 
-  // ─── Plan Helpers ────────────────────────
+  // ─────────────────────────────────────────
+  // PLAN HELPERS
+  // ─────────────────────────────────────────
+
   const hasAnalytics = (restaurant) => {
     if (!restaurant) return false;
-    return (restaurant?.subscription?.plan || 'free_trial') === 'premium';
+    return (
+      restaurant?.subscription?.plan || 'free_trial'
+    ) === 'premium';
   };
 
   const hasBasic = (restaurant) => {
@@ -150,17 +141,53 @@ export const useSubscription = () => {
     return plan === 'basic' || plan === 'premium';
   };
 
+  // ✅ FIX: handles both Timestamp and ISO string
   const isPlanExpired = (restaurant) => {
     if (!restaurant) return false;
     const plan = restaurant?.subscription?.plan || 'free_trial';
+
     if (plan === 'free_trial') {
       const trialEnds = restaurant?.subscription?.trialEndsAt;
       if (!trialEnds) return false;
-      return new Date(trialEnds) < new Date();
+      // ✅ Handle both Firestore Timestamp and ISO string
+      const trialDate = trialEnds?.toDate
+        ? trialEnds.toDate()
+        : new Date(trialEnds);
+      return trialDate < new Date();
     }
+
     const expiresAt = restaurant?.subscription?.expiresAt;
     if (!expiresAt) return false;
-    return new Date(expiresAt) < new Date();
+    // ✅ Handle both Firestore Timestamp and ISO string
+    const expiryDate = expiresAt?.toDate
+      ? expiresAt.toDate()
+      : new Date(expiresAt);
+    return expiryDate < new Date();
+  };
+
+  // ✅ NEW: days remaining helper
+  const getDaysRemaining = (restaurant) => {
+    if (!restaurant) return 0;
+    const plan = restaurant?.subscription?.plan || 'free_trial';
+
+    const dateField = plan === 'free_trial'
+      ? restaurant?.subscription?.trialEndsAt
+      : restaurant?.subscription?.expiresAt;
+
+    if (!dateField) return 0;
+
+    const endDate = dateField?.toDate
+      ? dateField.toDate()
+      : new Date(dateField);
+
+    const diff = endDate - new Date();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  };
+
+  // ✅ NEW: expiring soon (within 7 days)
+  const isExpiringSoon = (restaurant) => {
+    const days = getDaysRemaining(restaurant);
+    return days > 0 && days <= 7;
   };
 
   const getCurrentPlan = (restaurant) => {
@@ -168,9 +195,11 @@ export const useSubscription = () => {
     return PLANS[planId] || PLANS.free_trial;
   };
 
-  // ─── Create Payment Order ────────────────
-  // Saves order to Firestore BEFORE payment opens
-  // Tracks payment even if user closes app mid-payment
+  // ─────────────────────────────────────────
+  // CREATE PAYMENT ORDER
+  // Saves order BEFORE payment opens
+  // Tracks payment even if user closes app
+  // ─────────────────────────────────────────
   const createPaymentOrder = async (
     restaurantId,
     planId,
@@ -180,6 +209,16 @@ export const useSubscription = () => {
     try {
       setPaymentLoading(true);
       const plan = PLANS[planId];
+
+      // ✅ Validate plan exists
+      if (!plan) {
+        return { success: false, error: `Invalid plan: ${planId}` };
+      }
+
+      // ✅ Validate price > 0 (can't pay for free trial)
+      if (plan.price === 0) {
+        return { success: false, error: 'Cannot create order for free plan' };
+      }
 
       const orderRef = await addDoc(collection(db, 'paymentOrders'), {
         restaurantId,
@@ -207,9 +246,11 @@ export const useSubscription = () => {
     }
   };
 
-  // ─── Confirm Payment ─────────────────────
-  // Called after PayPal WebView redirects to success URL
-  // Activates the restaurant subscription automatically
+  // ─────────────────────────────────────────
+  // CONFIRM PAYMENT
+  // Called after PayPal WebView success redirect
+  // Activates subscription automatically
+  // ─────────────────────────────────────────
   const confirmPayment = async (
     orderId,
     restaurantId,
@@ -218,11 +259,17 @@ export const useSubscription = () => {
   ) => {
     try {
       setPaymentLoading(true);
-      const plan      = PLANS[planId];
+      const plan = PLANS[planId];
+
+      // ✅ Validate plan
+      if (!plan) {
+        return { success: false, error: `Invalid plan: ${planId}` };
+      }
+
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
 
-      // ✅ Mark order as completed
+      // ✅ Mark order completed
       await updateDoc(doc(db, 'paymentOrders', orderId), {
         status:        'completed',
         transactionId,
@@ -253,14 +300,17 @@ export const useSubscription = () => {
     }
   };
 
-  // ─── Mark Bank Transfer Pending ──────────
-  // Called when user says they've done the bank transfer
-  // You then manually verify and activate their plan
+  // ─────────────────────────────────────────
+  // MARK BANK TRANSFER PENDING
+  // Called when user says they've sent transfer
+  // Admin manually verifies then activates
+  // ─────────────────────────────────────────
   const markBankTransferPending = async (orderId) => {
     try {
       await updateDoc(doc(db, 'paymentOrders', orderId), {
-        status:    'awaiting_confirmation',
-        updatedAt: serverTimestamp(),
+        status:              'awaiting_confirmation',
+        transferSubmittedAt: serverTimestamp(),
+        updatedAt:           serverTimestamp(),
       });
       return { success: true };
     } catch (err) {
@@ -269,10 +319,16 @@ export const useSubscription = () => {
     }
   };
 
-  // ─── Upgrade Plan (Admin / Manual) ───────
+  // ─────────────────────────────────────────
+  // UPGRADE PLAN (Admin / Manual)
+  // ─────────────────────────────────────────
   const upgradePlan = async (restaurantId, planId) => {
     try {
-      const plan      = PLANS[planId];
+      const plan = PLANS[planId];
+      if (!plan) {
+        return { success: false, error: `Invalid plan: ${planId}` };
+      }
+
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
 
@@ -291,7 +347,9 @@ export const useSubscription = () => {
     }
   };
 
-  // ─── Cancel Plan ─────────────────────────
+  // ─────────────────────────────────────────
+  // CANCEL PLAN
+  // ─────────────────────────────────────────
   const cancelPlan = async (restaurantId) => {
     try {
       await updateDoc(doc(db, 'restaurants', restaurantId), {
@@ -308,11 +366,16 @@ export const useSubscription = () => {
     }
   };
 
+  // ─────────────────────────────────────────
+  // RETURN
+  // ─────────────────────────────────────────
   return {
     plans:                   PLANS,
     hasAnalytics,
     hasBasic,
     isPlanExpired,
+    isExpiringSoon,          // 🆕
+    getDaysRemaining,        // 🆕
     getCurrentPlan,
     upgradePlan,
     cancelPlan,
