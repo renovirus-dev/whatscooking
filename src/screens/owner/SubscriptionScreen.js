@@ -11,8 +11,8 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  Clipboard,
 } from 'react-native';
+import * as Clipboard        from 'expo-clipboard';  // ✅ Not deprecated
 import { WebView }           from 'react-native-webview';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,6 @@ import {
   PLANS,
   buildPayPalCheckoutURL,
   BANK_TRANSFER_DETAILS,
-  PAYPAL_CONFIG,
 } from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
@@ -36,30 +35,44 @@ export default function SubscriptionScreen({ route, navigation }) {
     createPaymentOrder,
     confirmPayment,
     markBankTransferPending,
+    isPlanExpired,
+    isExpiringSoon,
+    getDaysRemaining,
   } = useSubscription();
 
-  const [loading, setLoading]                   = useState(null);
+  // ── State ─────────────────────────────────
+  const [loading, setLoading]                 = useState(null);
+  const [cancelLoading, setCancelLoading]     = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentURL, setPaymentURL]             = useState('');
-  const [selectedPlan, setSelectedPlan]         = useState(null);
-  const [currentOrderId, setCurrentOrderId]     = useState(null);
-  const [showBankDetails, setShowBankDetails]   = useState(false);
-  const [webViewLoading, setWebViewLoading]     = useState(true);
+  const [paymentURL, setPaymentURL]           = useState('');
+  const [selectedPlan, setSelectedPlan]       = useState(null);
+  const [currentOrderId, setCurrentOrderId]   = useState(null);
+  const [showBankDetails, setShowBankDetails] = useState(false);
+  const [webViewLoading, setWebViewLoading]   = useState(true);
+  const [bankConfirmed, setBankConfirmed]     = useState(false);
 
-  const currentPlan = restaurant?.subscription?.plan || 'free_trial';
+  // ── Current Plan Info ─────────────────────
+  const currentPlan     = restaurant?.subscription?.plan || 'free_trial';
+  const currentPlanData = PLANS[currentPlan] || PLANS.free_trial;
+  const daysRemaining   = getDaysRemaining(restaurant);
+  const expired         = isPlanExpired(restaurant);
+  const expiringSoon    = isExpiringSoon(restaurant);
 
-  // ─── Copy to Clipboard ──────────────────
-  const copyToClipboard = (value, label) => {
-    Clipboard.setString(String(value));
+  // ─────────────────────────────────────────
+  // COPY TO CLIPBOARD
+  // ✅ Uses expo-clipboard (not deprecated)
+  // ─────────────────────────────────────────
+  const copyToClipboard = async (value, label) => {
+    await Clipboard.setStringAsync(String(value));
     Alert.alert('✅ Copied!', `${label} copied to clipboard.`);
   };
 
-  // ─── PayPal Payment ─────────────────────
+  // ─────────────────────────────────────────
+  // PAYPAL PAYMENT
+  // ─────────────────────────────────────────
   const handlePayPalPayment = async (plan) => {
     setLoading(plan.id);
-
     try {
-      // 1. Create Firestore order first
       const orderResult = await createPaymentOrder(
         restaurant.id,
         plan.id,
@@ -75,7 +88,6 @@ export default function SubscriptionScreen({ route, navigation }) {
       setCurrentOrderId(orderResult.orderId);
       setSelectedPlan(plan);
 
-      // 2. Build PayPal checkout URL
       const checkoutURL = buildPayPalCheckoutURL({
         orderId:       orderResult.orderId,
         amount:        plan.price,
@@ -83,11 +95,9 @@ export default function SubscriptionScreen({ route, navigation }) {
         customerEmail: user.email || '',
       });
 
-      // 3. Open WebView
       setPaymentURL(checkoutURL);
       setWebViewLoading(true);
       setShowPaymentModal(true);
-
     } catch (err) {
       console.error('❌ PayPal payment error:', err);
       Alert.alert('Error', 'Failed to start payment. Please try again.');
@@ -96,10 +106,11 @@ export default function SubscriptionScreen({ route, navigation }) {
     }
   };
 
-  // ─── Bank Transfer ──────────────────────
+  // ─────────────────────────────────────────
+  // BANK TRANSFER
+  // ─────────────────────────────────────────
   const handleBankTransfer = async (plan) => {
     setLoading(plan.id);
-
     try {
       const orderResult = await createPaymentOrder(
         restaurant.id,
@@ -115,8 +126,8 @@ export default function SubscriptionScreen({ route, navigation }) {
 
       setCurrentOrderId(orderResult.orderId);
       setSelectedPlan(plan);
+      setBankConfirmed(false); // ✅ Reset confirmation state
       setShowBankDetails(true);
-
     } catch (err) {
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
@@ -124,27 +135,21 @@ export default function SubscriptionScreen({ route, navigation }) {
     }
   };
 
-  // ─── WebView Navigation Handler ─────────
+  // ─────────────────────────────────────────
+  // WEBVIEW NAVIGATION
+  // ─────────────────────────────────────────
   const handleWebViewNavigation = async (navState) => {
     const { url } = navState;
     if (!url) return;
 
-    const lowerUrl = url.toLowerCase();
-
-    // ✅ Detect PayPal success redirect
-    const isSuccess =
-      lowerUrl.includes('whatscooking.app/payment/success') ||
-      lowerUrl.includes('payment/success');
-
-    // ✅ Detect PayPal cancel redirect
-    const isCancelled =
-      lowerUrl.includes('whatscooking.app/payment/cancel') ||
-      lowerUrl.includes('payment/cancel');
+    const lowerUrl  = url.toLowerCase();
+    const isSuccess = lowerUrl.includes('payment/success');
+    const isCancelled = lowerUrl.includes('payment/cancel');
 
     if (isSuccess && currentOrderId && selectedPlan) {
       setShowPaymentModal(false);
 
-      // Extract PayPal transaction ID from redirect URL
+      // Extract PayPal transaction ID
       let txId = `PAYPAL_${Date.now()}`;
       try {
         const urlObj = new URL(url);
@@ -166,14 +171,14 @@ export default function SubscriptionScreen({ route, navigation }) {
         Alert.alert(
           '🎉 Payment Successful!',
           `Welcome to the ${selectedPlan.name} plan!\n\n` +
-          'Your restaurant now has all the features unlocked.',
+          'Your restaurant now has all features unlocked.',
           [{ text: '🚀 Let\'s Go!', onPress: () => navigation.goBack() }]
         );
       } else {
         Alert.alert(
           '⚠️ Activation Issue',
-          'Payment received but plan activation failed.\n\n' +
-          `Please contact us at renogooden@outlook.com\n\n` +
+          'Payment received but activation failed.\n\n' +
+          `Please contact: renogooden@outlook.com\n` +
           `Order ID: ${currentOrderId}`,
           [{ text: 'OK' }]
         );
@@ -193,13 +198,15 @@ export default function SubscriptionScreen({ route, navigation }) {
     }
   };
 
-  // ─── WebView Error ───────────────────────
+  // ─────────────────────────────────────────
+  // WEBVIEW ERROR
+  // ─────────────────────────────────────────
   const handleWebViewError = () => {
     setShowPaymentModal(false);
     Alert.alert(
       '❌ Connection Error',
-      'Could not load the PayPal payment page.\n\n' +
-      'Please check your internet or use Bank Transfer instead.',
+      'Could not load PayPal payment page.\n\n' +
+      'Check your internet or use Bank Transfer instead.',
       [
         {
           text: 'Use Bank Transfer',
@@ -217,18 +224,22 @@ export default function SubscriptionScreen({ route, navigation }) {
     );
   };
 
-  // ─── Cancel Subscription ────────────────
+  // ─────────────────────────────────────────
+  // CANCEL SUBSCRIPTION
+  // ─────────────────────────────────────────
   const handleCancel = () => {
     Alert.alert(
       '⚠️ Cancel Subscription',
-      'Are you sure? You will lose access to all premium features.',
+      `Are you sure you want to cancel your ${currentPlanData.name} plan?\n\nYou will lose access to all premium features immediately.`,
       [
         { text: 'Keep Plan', style: 'cancel' },
         {
           text: 'Yes, Cancel',
           style: 'destructive',
           onPress: async () => {
+            setCancelLoading(true);
             const result = await cancelPlan(restaurant.id);
+            setCancelLoading(false);
             if (result.success) {
               Alert.alert(
                 'Subscription Cancelled',
@@ -244,7 +255,41 @@ export default function SubscriptionScreen({ route, navigation }) {
     );
   };
 
-  // ─── Bank Detail Rows ────────────────────
+  // ─────────────────────────────────────────
+  // BANK TRANSFER CONFIRMED
+  // ─────────────────────────────────────────
+  const handleBankTransferDone = async () => {
+    if (!currentOrderId) return;
+
+    // ✅ Must confirm they actually sent the transfer
+    Alert.alert(
+      '✅ Confirm Transfer Sent',
+      'Have you completed the Scotiabank bank transfer?',
+      [
+        { text: 'Not Yet', style: 'cancel' },
+        {
+          text: 'Yes, I Sent It',
+          onPress: async () => {
+            await markBankTransferPending(currentOrderId);
+            setBankConfirmed(true);
+            setShowBankDetails(false);
+            Alert.alert(
+              '✅ Transfer Noted!',
+              `Thank you! Once we confirm your payment, your ${selectedPlan?.name} plan will be activated.\n\n` +
+              `📧 Email receipt to: renogooden@outlook.com\n` +
+              `📋 Order ID: ${currentOrderId}\n\n` +
+              `⏱️ Activation within 24 hours.`,
+              [{ text: 'Got it!', onPress: () => navigation.goBack() }]
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  // ─────────────────────────────────────────
+  // BANK DETAIL ROWS
+  // ─────────────────────────────────────────
   const getBankRows = () => [
     {
       label:    'Bank Name',
@@ -279,7 +324,7 @@ export default function SubscriptionScreen({ route, navigation }) {
     {
       label:    'Amount (JMD)',
       value:    `J$${selectedPlan?.priceJMD?.toLocaleString() || '0'}`,
-      copyable: false,
+      copyable: true,
     },
     {
       label:    'Reference / Note',
@@ -288,17 +333,73 @@ export default function SubscriptionScreen({ route, navigation }) {
     },
   ];
 
-  // ──────────────────────────────────────────
-  // RENDER
-  // ──────────────────────────────────────────
+  // ─────────────────────────────────────────
+  // RENDER SUBSCRIPTION STATUS BANNER
+  // ─────────────────────────────────────────
+  const renderStatusBanner = () => {
+    if (expired && currentPlan !== 'free_trial') {
+      return (
+        <View style={[styles.statusBanner, styles.statusBannerError]}>
+          <Ionicons name="alert-circle" size={20} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.statusBannerTitle}>
+              Subscription Expired
+            </Text>
+            <Text style={styles.statusBannerSub}>
+              Renew your {currentPlanData.name} plan to restore features
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (expiringSoon && currentPlan !== 'free_trial') {
+      return (
+        <View style={[styles.statusBanner, styles.statusBannerWarning]}>
+          <Ionicons name="time" size={20} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.statusBannerTitle}>
+              Expiring in {daysRemaining} day{daysRemaining !== 1 ? 's' : ''}
+            </Text>
+            <Text style={styles.statusBannerSub}>
+              Renew now to keep your {currentPlanData.name} features
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (currentPlan !== 'free_trial') {
+      return (
+        <View style={[styles.statusBanner, styles.statusBannerSuccess]}>
+          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.statusBannerTitle}>
+              {currentPlanData.name} Plan Active
+            </Text>
+            <Text style={styles.statusBannerSub}>
+              {daysRemaining > 0
+                ? `${daysRemaining} days remaining`
+                : 'Active subscription'}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
+  // ─────────────────────────────────────────
+  // MAIN RENDER
+  // ─────────────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingBottom: insets.bottom + SIZES.xl,
-        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
       >
+
         {/* ── Header ──────────────────────── */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Choose Your Plan</Text>
@@ -306,14 +407,18 @@ export default function SubscriptionScreen({ route, navigation }) {
             Grow your restaurant with the right features
           </Text>
 
+          {/* Current Plan Badge */}
           <View style={styles.currentPlanBadge}>
             <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
             <Text style={styles.currentPlanText}>
-              Current: {PLANS[currentPlan]?.name || 'Free Trial'}
+              Current: {currentPlanData.name}
+              {daysRemaining > 0 && currentPlan !== 'free_trial'
+                ? ` · ${daysRemaining}d left`
+                : ''}
             </Text>
           </View>
 
-          {/* Payment method tags */}
+          {/* Payment Methods */}
           <View style={styles.paymentMethodsRow}>
             <View style={styles.paymentMethodTag}>
               <Ionicons name="logo-paypal" size={14} color="#003087" />
@@ -325,6 +430,9 @@ export default function SubscriptionScreen({ route, navigation }) {
             </View>
           </View>
         </View>
+
+        {/* ── Status Banner ────────────────── */}
+        {renderStatusBanner()}
 
         {/* ── Plan Cards ──────────────────── */}
         {Object.values(PLANS)
@@ -340,7 +448,8 @@ export default function SubscriptionScreen({ route, navigation }) {
                 style={[
                   styles.planCard,
                   isCurrent && styles.planCardActive,
-                  isPremium && styles.planCardPremium,
+                  isPremium && !isCurrent && styles.planCardPremium,
+                  expired && isCurrent && styles.planCardExpired,
                 ]}
               >
                 {/* Popular Badge */}
@@ -379,9 +488,18 @@ export default function SubscriptionScreen({ route, navigation }) {
                     </Text>
                   </View>
 
+                  {/* Active / Expired Badge */}
                   {isCurrent && (
-                    <View style={styles.activeTag}>
-                      <Text style={styles.activeTagText}>Active</Text>
+                    <View style={[
+                      styles.activeTag,
+                      expired && styles.activeTagExpired,
+                    ]}>
+                      <Text style={[
+                        styles.activeTagText,
+                        expired && { color: COLORS.error },
+                      ]}>
+                        {expired ? 'Expired' : 'Active'}
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -401,27 +519,20 @@ export default function SubscriptionScreen({ route, navigation }) {
                 </View>
 
                 {/* Action Buttons */}
-                {!isCurrent ? (
+                {!isCurrent || expired ? (
                   <View style={styles.paymentButtons}>
-                    {/* PayPal Button */}
+                    {/* PayPal */}
                     <TouchableOpacity
-                      style={[
-                        styles.paypalBtn,
-                        isLoading && { opacity: 0.7 },
-                      ]}
+                      style={[styles.paypalBtn, isLoading && { opacity: 0.7 }]}
                       onPress={() => handlePayPalPayment(plan)}
-                      disabled={isLoading}
+                      disabled={!!loading}
                       activeOpacity={0.8}
                     >
                       {isLoading ? (
                         <ActivityIndicator color="#003087" size="small" />
                       ) : (
                         <>
-                          <Ionicons
-                            name="logo-paypal"
-                            size={20}
-                            color="#003087"
-                          />
+                          <Ionicons name="logo-paypal" size={20} color="#003087" />
                           <Text style={styles.paypalBtnText}>
                             Pay with PayPal
                           </Text>
@@ -429,7 +540,7 @@ export default function SubscriptionScreen({ route, navigation }) {
                       )}
                     </TouchableOpacity>
 
-                    {/* Bank Transfer Button */}
+                    {/* Bank Transfer */}
                     <TouchableOpacity
                       style={[
                         styles.bankBtn,
@@ -437,7 +548,7 @@ export default function SubscriptionScreen({ route, navigation }) {
                         isLoading && { opacity: 0.7 },
                       ]}
                       onPress={() => handleBankTransfer(plan)}
-                      disabled={isLoading}
+                      disabled={!!loading}
                       activeOpacity={0.8}
                     >
                       <Ionicons
@@ -445,15 +556,13 @@ export default function SubscriptionScreen({ route, navigation }) {
                         size={18}
                         color={plan.color}
                       />
-                      <Text style={[
-                        styles.bankBtnText,
-                        { color: plan.color },
-                      ]}>
+                      <Text style={[styles.bankBtnText, { color: plan.color }]}>
                         Bank Transfer (Scotiabank JMD)
                       </Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
+                  // Currently active plan
                   <View style={styles.currentBadgeRow}>
                     <Ionicons
                       name="checkmark-circle"
@@ -461,7 +570,9 @@ export default function SubscriptionScreen({ route, navigation }) {
                       color={COLORS.success}
                     />
                     <Text style={styles.currentBadgeText}>
-                      Current Plan — Active
+                      Current Plan · {daysRemaining > 0
+                        ? `${daysRemaining} days remaining`
+                        : 'Active'}
                     </Text>
                   </View>
                 )}
@@ -470,26 +581,33 @@ export default function SubscriptionScreen({ route, navigation }) {
           })}
 
         {/* ── Free Trial Info ──────────────── */}
-        <View style={styles.freeTrialCard}>
-          <Text style={styles.freeTrialTitle}>🆓 Free Trial Includes:</Text>
-          {PLANS.free_trial.features.map((f, i) => (
-            <View key={i} style={styles.featureRow}>
-              <Ionicons name="checkmark" size={16} color={COLORS.textMuted} />
-              <Text style={styles.freeTrialFeature}>{f}</Text>
-            </View>
-          ))}
-        </View>
+        {currentPlan === 'free_trial' && (
+          <View style={styles.freeTrialCard}>
+            <Text style={styles.freeTrialTitle}>🆓 Free Trial Includes:</Text>
+            {PLANS.free_trial.features.map((f, i) => (
+              <View key={i} style={styles.featureRow}>
+                <Ionicons name="checkmark" size={16} color={COLORS.textMuted} />
+                <Text style={styles.freeTrialFeature}>{f}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* ── Cancel Subscription ──────────── */}
-        {currentPlan !== 'free_trial' && (
+        {currentPlan !== 'free_trial' && !expired && (
           <TouchableOpacity
-            style={styles.cancelBtn}
+            style={[styles.cancelBtn, cancelLoading && { opacity: 0.6 }]}
             onPress={handleCancel}
+            disabled={cancelLoading}
             activeOpacity={0.7}
           >
-            <Text style={styles.cancelBtnText}>
-              Cancel Current Subscription
-            </Text>
+            {cancelLoading ? (
+              <ActivityIndicator size="small" color={COLORS.error} />
+            ) : (
+              <Text style={styles.cancelBtnText}>
+                Cancel Current Subscription
+              </Text>
+            )}
           </TouchableOpacity>
         )}
 
@@ -522,7 +640,7 @@ export default function SubscriptionScreen({ route, navigation }) {
         }}
       >
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          {/* WebView Header */}
+          {/* Header */}
           <View style={[
             styles.webViewHeader,
             { paddingTop: insets.top + 8 },
@@ -551,7 +669,7 @@ export default function SubscriptionScreen({ route, navigation }) {
             <View style={{ width: 26 }} />
           </View>
 
-          {/* Order Info Bar */}
+          {/* Order Bar */}
           <View style={styles.orderBar}>
             <Text style={styles.orderBarPlan}>
               {selectedPlan?.emoji} {selectedPlan?.name} Plan
@@ -561,7 +679,7 @@ export default function SubscriptionScreen({ route, navigation }) {
             </Text>
           </View>
 
-          {/* PayPal WebView */}
+          {/* WebView */}
           <WebView
             source={{ uri: paymentURL }}
             onNavigationStateChange={handleWebViewNavigation}
@@ -574,9 +692,7 @@ export default function SubscriptionScreen({ route, navigation }) {
             renderLoading={() => (
               <View style={styles.webViewLoading}>
                 <ActivityIndicator size="large" color="#003087" />
-                <Text style={styles.webViewLoadingText}>
-                  Loading PayPal...
-                </Text>
+                <Text style={styles.webViewLoadingText}>Loading PayPal...</Text>
                 <Text style={styles.webViewLoadingSubtext}>
                   Please wait, do not close this window
                 </Text>
@@ -587,7 +703,7 @@ export default function SubscriptionScreen({ route, navigation }) {
       </Modal>
 
       {/* ════════════════════════════════════
-          Bank Transfer Modal (Scotiabank)
+          Bank Transfer Modal
       ════════════════════════════════════ */}
       <Modal
         visible={showBankDetails}
@@ -599,30 +715,50 @@ export default function SubscriptionScreen({ route, navigation }) {
           <ScrollView
             style={styles.bankModal}
             contentContainerStyle={{
-              padding: SIZES.lg,
+              padding:       SIZES.lg,
               paddingBottom: insets.bottom + SIZES.xl,
             }}
             showsVerticalScrollIndicator={false}
           >
             {/* Title */}
-            <Text style={styles.bankModalTitle}>
-              🏦 Bank Transfer Details
-            </Text>
+            <View style={styles.bankModalHandle} />
+            <Text style={styles.bankModalTitle}>🏦 Bank Transfer Details</Text>
             <Text style={styles.bankModalSubtitle}>
               {selectedPlan?.emoji} {selectedPlan?.name} Plan ·{' '}
               J${selectedPlan?.priceJMD?.toLocaleString()}
             </Text>
+
+            {/* Steps */}
+            <View style={styles.bankSteps}>
+              {[
+                { step: '1', text: 'Copy the details below'              },
+                { step: '2', text: 'Transfer via Scotiabank Jamaica'      },
+                { step: '3', text: 'Use Order ID as reference'           },
+                { step: '4', text: 'Email receipt to confirm'            },
+                { step: '5', text: 'Plan activated within 24 hours'      },
+              ].map((s, i) => (
+                <View key={i} style={styles.bankStep}>
+                  <View style={styles.bankStepNum}>
+                    <Text style={styles.bankStepNumText}>{s.step}</Text>
+                  </View>
+                  <Text style={styles.bankStepText}>{s.text}</Text>
+                </View>
+              ))}
+            </View>
 
             {/* Detail Rows */}
             {getBankRows().map((item, i) => (
               <View key={i} style={styles.bankRow}>
                 <Text style={styles.bankLabel}>{item.label}</Text>
                 <View style={styles.bankValueRow}>
-                  <Text style={styles.bankValue}>{item.value}</Text>
+                  <Text style={styles.bankValue} numberOfLines={1}>
+                    {item.value}
+                  </Text>
                   {item.copyable && (
                     <TouchableOpacity
                       onPress={() => copyToClipboard(item.value, item.label)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={styles.copyBtn}
                     >
                       <Ionicons
                         name="copy-outline"
@@ -635,7 +771,7 @@ export default function SubscriptionScreen({ route, navigation }) {
               </View>
             ))}
 
-            {/* Instruction Note */}
+            {/* Note */}
             <View style={styles.bankNote}>
               <Ionicons
                 name="information-circle"
@@ -651,31 +787,20 @@ export default function SubscriptionScreen({ route, navigation }) {
                 Use your{' '}
                 <Text style={{ fontWeight: 'bold' }}>Order ID</Text>
                 {' '}as the payment reference.{'\n'}
-                Your plan will be activated within{' '}
+                Your plan activates within{' '}
                 <Text style={{ fontWeight: 'bold' }}>24 hours</Text>.
               </Text>
             </View>
 
-            {/* I've Paid Button */}
+            {/* ✅ I've Transferred Button */}
             <TouchableOpacity
               style={styles.bankDoneBtn}
-              onPress={async () => {
-                if (currentOrderId) {
-                  await markBankTransferPending(currentOrderId);
-                }
-                setShowBankDetails(false);
-                Alert.alert(
-                  '✅ Transfer Details Noted',
-                  `Please complete the Scotiabank transfer and email your receipt to renogooden@outlook.com\n\n` +
-                  `Order ID: ${currentOrderId}\n\n` +
-                  `Your ${selectedPlan?.name} plan will be activated within 24 hours.`,
-                  [{ text: 'Got it!', onPress: () => navigation.goBack() }]
-                );
-              }}
+              onPress={handleBankTransferDone}
               activeOpacity={0.8}
             >
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
               <Text style={styles.bankDoneBtnText}>
-                ✅ I've Noted the Details
+                I've Completed the Transfer
               </Text>
             </TouchableOpacity>
 
@@ -684,7 +809,9 @@ export default function SubscriptionScreen({ route, navigation }) {
               style={styles.bankCancelBtn}
               onPress={() => setShowBankDetails(false)}
             >
-              <Text style={styles.bankCancelBtnText}>Close</Text>
+              <Text style={styles.bankCancelBtnText}>
+                Close — I'll do it later
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -693,11 +820,12 @@ export default function SubscriptionScreen({ route, navigation }) {
   );
 }
 
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────
 // STYLES
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
-  // ── Header ──────────────────────────────
+
+  // ── Header ────────────────────────────────
   header: {
     backgroundColor: COLORS.primary,
     padding:         SIZES.xl,
@@ -750,7 +878,31 @@ const styles = StyleSheet.create({
     color:      '#003087',
   },
 
-  // ── Plan Card ────────────────────────────
+  // ── Status Banner ─────────────────────────
+  statusBanner: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    margin:        SIZES.md,
+    marginBottom:  0,
+    padding:       SIZES.md,
+    borderRadius:  RADIUS.lg,
+    gap:           SIZES.sm,
+  },
+  statusBannerError:   { backgroundColor: COLORS.error   },
+  statusBannerWarning: { backgroundColor: '#F39C12'      },
+  statusBannerSuccess: { backgroundColor: COLORS.success },
+  statusBannerTitle: {
+    fontSize:   FONTS.md,
+    fontWeight: 'bold',
+    color:      '#FFFFFF',
+  },
+  statusBannerSub: {
+    fontSize:  FONTS.xs,
+    color:     'rgba(255,255,255,0.9)',
+    marginTop: 2,
+  },
+
+  // ── Plan Cards ────────────────────────────
   planCard: {
     backgroundColor: COLORS.surface,
     margin:          SIZES.md,
@@ -761,10 +913,14 @@ const styles = StyleSheet.create({
     borderColor:     'transparent',
     ...SHADOW,
   },
-  planCardActive:  { borderColor: COLORS.success },
+  planCardActive:  { borderColor: COLORS.success              },
   planCardPremium: {
     borderColor:     COLORS.primary,
     backgroundColor: COLORS.primary + '05',
+  },
+  planCardExpired: {
+    borderColor:     COLORS.error,
+    backgroundColor: COLORS.error + '05',
   },
   popularBadge: {
     backgroundColor:   COLORS.primary,
@@ -793,7 +949,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems:     'center',
   },
-  planEmoji: { fontSize: 28 },
+  planEmoji:    { fontSize: 28 },
   planName: {
     fontSize:     FONTS.xl,
     fontWeight:   'bold',
@@ -805,53 +961,38 @@ const styles = StyleSheet.create({
     alignItems:    'baseline',
     gap:           4,
   },
-  planPrice: {
-    fontSize:   FONTS.xxl,
-    fontWeight: 'bold',
-  },
-  planDuration: {
-    fontSize: FONTS.sm,
-    color:    COLORS.textMuted,
-  },
-  priceJMD: {
-    fontSize:   FONTS.xs,
-    color:      COLORS.textMuted,
-    fontStyle:  'italic',
-  },
+  planPrice:    { fontSize: FONTS.xxl, fontWeight: 'bold'              },
+  planDuration: { fontSize: FONTS.sm,  color: COLORS.textMuted         },
+  priceJMD:     { fontSize: FONTS.xs,  color: COLORS.textMuted, fontStyle: 'italic' },
+
   activeTag: {
-    backgroundColor: COLORS.success + '20',
+    backgroundColor:   COLORS.success + '20',
     paddingHorizontal: SIZES.sm,
     paddingVertical:   4,
     borderRadius:      RADIUS.round,
     borderWidth:       1,
     borderColor:       COLORS.success + '40',
   },
+  activeTagExpired: {
+    backgroundColor: COLORS.error + '20',
+    borderColor:     COLORS.error + '40',
+  },
   activeTagText: {
     fontSize:   FONTS.xs,
     color:      COLORS.success,
     fontWeight: '700',
   },
-  featuresList: {
-    gap:          SIZES.sm,
-    marginBottom: SIZES.lg,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           SIZES.sm,
-  },
-  featureText: {
-    fontSize: FONTS.md,
-    color:    COLORS.text,
-    flex:     1,
-  },
 
-  // ── Payment Buttons ──────────────────────
+  featuresList: { gap: SIZES.sm, marginBottom: SIZES.lg },
+  featureRow:   { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
+  featureText:  { fontSize: FONTS.md, color: COLORS.text, flex: 1 },
+
+  // ── Payment Buttons ───────────────────────
   paymentButtons: { gap: SIZES.sm },
   paypalBtn: {
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     paddingVertical: SIZES.md,
     borderRadius:    RADIUS.lg,
     backgroundColor: '#FFC439',
@@ -874,10 +1015,7 @@ const styles = StyleSheet.create({
     borderWidth:     1.5,
     gap:             SIZES.sm,
   },
-  bankBtnText: {
-    fontSize:   FONTS.md,
-    fontWeight: 'bold',
-  },
+  bankBtnText:    { fontSize: FONTS.md, fontWeight: 'bold'             },
   currentBadgeRow: {
     flexDirection:   'row',
     alignItems:      'center',
@@ -893,7 +1031,7 @@ const styles = StyleSheet.create({
     fontSize:   FONTS.md,
   },
 
-  // ── Free Trial ───────────────────────────
+  // ── Free Trial Card ───────────────────────
   freeTrialCard: {
     backgroundColor: COLORS.surface,
     margin:          SIZES.md,
@@ -914,28 +1052,28 @@ const styles = StyleSheet.create({
     flex:     1,
   },
 
-  // ── Cancel ───────────────────────────────
+  // ── Cancel ────────────────────────────────
   cancelBtn: {
     marginHorizontal: SIZES.md,
     paddingVertical:  SIZES.md,
     alignItems:       'center',
   },
   cancelBtnText: {
-    color:             COLORS.error,
-    fontSize:          FONTS.md,
-    fontWeight:        '600',
+    color:              COLORS.error,
+    fontSize:           FONTS.md,
+    fontWeight:         '600',
     textDecorationLine: 'underline',
   },
 
-  // ── Security Note ────────────────────────
+  // ── Security Note ─────────────────────────
   securityNote: {
-    flexDirection: 'row',
-    alignItems:    'flex-start',
-    gap:           SIZES.sm,
-    margin:        SIZES.md,
-    padding:       SIZES.md,
+    flexDirection:   'row',
+    alignItems:      'flex-start',
+    gap:             SIZES.sm,
+    margin:          SIZES.md,
+    padding:         SIZES.md,
     backgroundColor: COLORS.surface,
-    borderRadius:  RADIUS.lg,
+    borderRadius:    RADIUS.lg,
   },
   securityNoteText: {
     fontSize:   FONTS.xs,
@@ -944,14 +1082,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // ── WebView ──────────────────────────────
+  // ── WebView ───────────────────────────────
   webViewHeader: {
-    flexDirection:    'row',
-    justifyContent:   'space-between',
-    alignItems:       'center',
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
     paddingHorizontal: SIZES.lg,
-    paddingBottom:    SIZES.md,
-    backgroundColor:  '#fff',
+    paddingBottom:     SIZES.md,
+    backgroundColor:   '#fff',
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
@@ -975,16 +1113,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#FFC439' + '60',
   },
-  orderBarPlan: {
-    fontSize:   FONTS.md,
-    fontWeight: '700',
-    color:      '#003087',
-  },
-  orderBarAmount: {
-    fontSize:   FONTS.md,
-    fontWeight: 'bold',
-    color:      '#003087',
-  },
+  orderBarPlan:   { fontSize: FONTS.md, fontWeight: '700', color: '#003087' },
+  orderBarAmount: { fontSize: FONTS.md, fontWeight: 'bold', color: '#003087' },
   webViewLoading: {
     position:        'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
@@ -993,27 +1123,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     gap:             SIZES.md,
   },
-  webViewLoadingText: {
-    fontSize:   FONTS.md,
-    color:      '#003087',
-    fontWeight: '600',
-  },
-  webViewLoadingSubtext: {
-    fontSize: FONTS.sm,
-    color:    COLORS.textMuted,
-  },
+  webViewLoadingText:    { fontSize: FONTS.md, color: '#003087', fontWeight: '600' },
+  webViewLoadingSubtext: { fontSize: FONTS.sm, color: COLORS.textMuted             },
 
-  // ── Bank Modal ───────────────────────────
+  // ── Bank Modal ────────────────────────────
   bankModalOverlay: {
     flex:            1,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent:  'flex-end',
   },
   bankModal: {
-    backgroundColor:     COLORS.surface,
+    backgroundColor:      COLORS.surface,
     borderTopLeftRadius:  24,
     borderTopRightRadius: 24,
-    maxHeight:            '90%',
+    maxHeight:            '92%',
+  },
+  bankModalHandle: {
+    width:           40,
+    height:          4,
+    backgroundColor: COLORS.border,
+    borderRadius:    2,
+    alignSelf:       'center',
+    marginBottom:    SIZES.md,
   },
   bankModalTitle: {
     fontSize:     FONTS.xxl,
@@ -1029,6 +1160,31 @@ const styles = StyleSheet.create({
     fontWeight:   '600',
     marginBottom: SIZES.md,
   },
+
+  // ── Bank Steps ────────────────────────────
+  bankSteps: {
+    backgroundColor: COLORS.primary + '08',
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
+    marginBottom:    SIZES.md,
+    gap:             SIZES.sm,
+  },
+  bankStep: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.sm,
+  },
+  bankStepNum: {
+    width:           24,
+    height:          24,
+    borderRadius:    12,
+    backgroundColor: COLORS.primary,
+    justifyContent:  'center',
+    alignItems:      'center',
+  },
+  bankStepNumText: { color: '#FFFFFF', fontSize: FONTS.xs, fontWeight: 'bold' },
+  bankStepText:    { fontSize: FONTS.sm, color: COLORS.text, flex: 1         },
+
   bankRow: {
     flexDirection:     'row',
     justifyContent:    'space-between',
@@ -1037,12 +1193,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
-  bankLabel: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.textMuted,
-    fontWeight: '600',
-    flex:       1,
-  },
+  bankLabel:    { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '600', flex: 1 },
   bankValueRow: {
     flexDirection:  'row',
     alignItems:     'center',
@@ -1057,6 +1208,11 @@ const styles = StyleSheet.create({
     textAlign:  'right',
     flexShrink: 1,
   },
+  copyBtn: {
+    padding:         4,
+    backgroundColor: COLORS.primary + '10',
+    borderRadius:    RADIUS.sm,
+  },
   bankNote: {
     flexDirection: 'row',
     alignItems:    'flex-start',
@@ -1066,35 +1222,25 @@ const styles = StyleSheet.create({
     borderRadius:  RADIUS.md,
     marginTop:     SIZES.md,
   },
-  bankNoteText: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.text,
-    flex:       1,
-    lineHeight: 22,
-  },
-  bankNoteEmail: {
-    fontWeight: 'bold',
-    color:      COLORS.primary,
-  },
+  bankNoteText:  { fontSize: FONTS.sm, color: COLORS.text, flex: 1, lineHeight: 22 },
+  bankNoteEmail: { fontWeight: 'bold', color: COLORS.primary                       },
+
   bankDoneBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
     backgroundColor: COLORS.primary,
     paddingVertical: SIZES.md,
     borderRadius:    RADIUS.lg,
     alignItems:      'center',
     marginTop:       SIZES.lg,
+    gap:             SIZES.sm,
   },
-  bankDoneBtnText: {
-    color:      '#FFFFFF',
-    fontSize:   FONTS.lg,
-    fontWeight: 'bold',
-  },
+  bankDoneBtnText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
   bankCancelBtn: {
     alignItems:      'center',
     paddingVertical: SIZES.md,
     marginTop:       SIZES.xs,
   },
-  bankCancelBtnText: {
-    color:    COLORS.textMuted,
-    fontSize: FONTS.md,
-  },
+  bankCancelBtnText: { color: COLORS.textMuted, fontSize: FONTS.md },
 });
