@@ -3,45 +3,86 @@
 // ============================================
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
+  View, Text, Image,
+  TouchableOpacity, StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
+import { getThumbUrl, getBannerUrl } from '../utils/uploadToCloudinary';
 
-// ✅ Safe color fallbacks
-// If COLORS.star or COLORS.accent don't exist in theme
-// the card won't crash
-const STAR_COLOR    = COLORS.star    || '#F39C12';
-const ACCENT_COLOR  = COLORS.accent  || COLORS.primary;
+// ─── Safe Color Fallbacks ─────────────────────
+const STAR_COLOR   = COLORS.star   || '#F39C12';
+const ACCENT_COLOR = COLORS.accent || COLORS.primary;
 
-// ✅ Fallback images
-const FALLBACK_COVER =
-  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400&h=300&fit=crop';
-const FALLBACK_COVER_SMALL =
-  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=300&h=200&fit=crop';
+// ─────────────────────────────────────────────
+// GET OPTIMIZED IMAGE URL
+// ✅ Cloudinary → transform
+// ✅ Any other URL → use as-is
+// ✅ Nothing → local placeholder
+// ─────────────────────────────────────────────
+const getCoverImage = (restaurant, isSmall = false) => {
+  const url = restaurant?.coverUrl || restaurant?.logoUrl;
 
+  if (url?.includes('cloudinary')) {
+    return { uri: isSmall ? getThumbUrl(url, 300, 200) : getBannerUrl(url) };
+  }
+  if (url) {
+    return { uri: url };
+  }
+  // ✅ Local placeholder — no internet needed
+  return require('../assets/images/restaurant_placeholder.jpg');
+};
+
+const getLogoImage = (restaurant) => {
+  const url = restaurant?.logoUrl;
+  if (url?.includes('cloudinary')) {
+    return { uri: getThumbUrl(url, 80, 80) };
+  }
+  if (url) return { uri: url };
+  return null;
+};
+
+// ─────────────────────────────────────────────
+// PLAN BADGE
+// ─────────────────────────────────────────────
+const PlanBadge = ({ plan }) => {
+  if (!plan || plan === 'free_trial') return null;
+  return (
+    <View style={[
+      styles.planBadge,
+      { backgroundColor: plan === 'premium' ? '#FFD700' + '30' : COLORS.primary + '20' },
+    ]}>
+      <Text style={[
+        styles.planBadgeText,
+        { color: plan === 'premium' ? '#B8860B' : COLORS.primary },
+      ]}>
+        {plan === 'premium' ? '👑' : '⭐'}
+      </Text>
+    </View>
+  );
+};
+
+// ─────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────
 export default function RestaurantCard({
   restaurant,
   onPress,
   style,
-  horizontal,
+  horizontal = false,
   distance,
 }) {
-  // ✅ Track image error state for fallback
   const [imageError, setImageError] = useState(false);
 
-  // ✅ Build image URI with fallback
-  const coverUri = imageError
-    ? (horizontal ? FALLBACK_COVER_SMALL : FALLBACK_COVER)
-    : (restaurant.coverUrl ||
-       restaurant.logoUrl  ||
-       (horizontal ? FALLBACK_COVER_SMALL : FALLBACK_COVER));
+  const plan      = restaurant?.subscription?.plan || 'free_trial';
+  const coverSrc  = imageError
+    ? require('../assets/images/restaurant_placeholder.jpg')
+    : getCoverImage(restaurant, horizontal);
 
-  // ─── Horizontal Card ─────────────────────
+  // ─────────────────────────────────────────
+  // HORIZONTAL CARD
+  // Used in list views (HomeScreen, ExploreScreen)
+  // ─────────────────────────────────────────
   if (horizontal) {
     return (
       <TouchableOpacity
@@ -49,140 +90,199 @@ export default function RestaurantCard({
         onPress={onPress}
         activeOpacity={0.85}
       >
-        <Image
-          source={{ uri: coverUri }}
-          style={styles.hImage}
-          resizeMode="cover"
-          onError={() => setImageError(true)}
-        />
-
-        <View style={styles.hInfo}>
-
-          {/* Name */}
-          <Text style={styles.name} numberOfLines={1}>
-            {restaurant.name}
-          </Text>
-
-          {/* Rating + Price */}
-          <View style={styles.ratingRow}>
-            <Ionicons
-              name="star"
-              size={14}
-              color={STAR_COLOR}
-            />
-            <Text style={styles.rating}>
-              {restaurant.averageRating?.toFixed(1) || 'New'}
-            </Text>
-            <Text style={styles.dot}>•</Text>
-            <Text style={styles.price}>
-              {restaurant.priceRange || '$$'}
-            </Text>
-          </View>
-
-          {/* Location */}
-          <View style={styles.locationRow}>
-            <Ionicons
-              name="location"
-              size={12}
-              color={COLORS.textMuted}
-            />
-            <Text style={styles.location} numberOfLines={1}>
-              {restaurant.location?.city || 'Location'}
-            </Text>
-          </View>
-
-          {/* Distance badge */}
-          {distance ? (
-            <View style={styles.distanceRow}>
-              <Ionicons
-                name="navigate"
-                size={12}
-                color={COLORS.primary}
-              />
-              <Text style={styles.distanceText}>
-                {distance} away
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Cuisine types */}
-          {restaurant.cuisineTypes?.length > 0 && (
-            <Text style={styles.cuisineText} numberOfLines={1}>
-              {restaurant.cuisineTypes
-                .slice(0, 2)
-                .map(c => c.charAt(0).toUpperCase() + c.slice(1))
-                .join(' • ')}
-            </Text>
-          )}
-
-          {/* Open / Closed status */}
+        {/* Cover Image */}
+        <View style={styles.hImageWrapper}>
+          <Image
+            source={coverSrc}
+            style={styles.hImage}
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+          />
+          {/* Open/Closed overlay */}
           <View style={[
-            styles.statusBadge,
+            styles.hStatusDot,
             {
               backgroundColor: restaurant.isCurrentlyOpen
                 ? COLORS.success
                 : COLORS.error,
             },
-          ]}>
-            <Text style={styles.statusText}>
-              {restaurant.isCurrentlyOpen ? 'Open' : 'Closed'}
+          ]} />
+        </View>
+
+        {/* Info */}
+        <View style={styles.hInfo}>
+
+          {/* Name Row */}
+          <View style={styles.hNameRow}>
+            <Text style={styles.name} numberOfLines={1}>
+              {restaurant.name}
+            </Text>
+            {restaurant.isVerified && (
+              <Ionicons
+                name="checkmark-circle"
+                size={16}
+                color={COLORS.primary}
+              />
+            )}
+            <PlanBadge plan={plan} />
+          </View>
+
+          {/* Rating + Price */}
+          <View style={styles.ratingRow}>
+            <Ionicons name="star" size={13} color={STAR_COLOR} />
+            <Text style={styles.rating}>
+              {restaurant.averageRating?.toFixed(1) || 'New'}
+            </Text>
+            {restaurant.totalReviews > 0 && (
+              <Text style={styles.reviewCount}>
+                ({restaurant.totalReviews})
+              </Text>
+            )}
+            <Text style={styles.dot}>·</Text>
+            <Text style={styles.price}>
+              {restaurant.priceRange || '$$'}
             </Text>
           </View>
 
+          {/* Cuisine */}
+          {restaurant.cuisineTypes?.length > 0 && (
+            <Text style={styles.cuisineText} numberOfLines={1}>
+              {restaurant.cuisineTypes
+                .slice(0, 2)
+                .map(c => c.charAt(0).toUpperCase() + c.slice(1))
+                .join(' · ')}
+            </Text>
+          )}
+
+          {/* Location */}
+          <View style={styles.locationRow}>
+            <Ionicons name="location-outline" size={12} color={COLORS.textMuted} />
+            <Text style={styles.location} numberOfLines={1}>
+              {restaurant.location?.city || 'Location'}
+            </Text>
+          </View>
+
+          {/* Distance */}
+          {!!distance && (
+            <View style={styles.distanceRow}>
+              <Ionicons name="navigate-outline" size={12} color={COLORS.primary} />
+              <Text style={styles.distanceText}>{distance} away</Text>
+            </View>
+          )}
+
+          {/* Bottom row: status + services */}
+          <View style={styles.hBottomRow}>
+            <View style={[
+              styles.statusBadge,
+              {
+                backgroundColor: restaurant.isCurrentlyOpen
+                  ? COLORS.success + '20'
+                  : COLORS.error + '20',
+              },
+            ]}>
+              <Text style={[
+                styles.statusText,
+                {
+                  color: restaurant.isCurrentlyOpen
+                    ? COLORS.success
+                    : COLORS.error,
+                },
+              ]}>
+                {restaurant.isCurrentlyOpen ? '🟢 Open' : '🔴 Closed'}
+              </Text>
+            </View>
+
+            {/* Services */}
+            <View style={styles.servicesRow}>
+              {restaurant.hasDelivery && (
+                <Text style={styles.serviceIcon}>🛵</Text>
+              )}
+              {restaurant.hasTakeout && (
+                <Text style={styles.serviceIcon}>🥡</Text>
+              )}
+              {restaurant.hasDineIn && (
+                <Text style={styles.serviceIcon}>🪑</Text>
+              )}
+            </View>
+          </View>
         </View>
       </TouchableOpacity>
     );
   }
 
-  // ─── Vertical Card (Featured) ─────────────
+  // ─────────────────────────────────────────
+  // VERTICAL CARD (Featured / Wide)
+  // Used in horizontal FlatLists (HomeScreen featured)
+  // ─────────────────────────────────────────
   return (
     <TouchableOpacity
       style={[styles.vCard, style]}
       onPress={onPress}
       activeOpacity={0.85}
     >
+      {/* Cover Image */}
       <Image
-        source={{ uri: coverUri }}
+        source={coverSrc}
         style={styles.vImage}
         resizeMode="cover"
         onError={() => setImageError(true)}
       />
 
-      {/* Open badge */}
-      {restaurant.isCurrentlyOpen && (
-        <View style={styles.openBadge}>
-          <Text style={styles.openBadgeText}>Open</Text>
+      {/* Top badges on image */}
+      <View style={styles.vTopBadges}>
+        {/* Distance */}
+        {!!distance && (
+          <View style={styles.distanceBadge}>
+            <Ionicons name="navigate-outline" size={11} color={COLORS.primary} />
+            <Text style={styles.distanceBadgeText}>{distance}</Text>
+          </View>
+        )}
+        {/* Open badge */}
+        {restaurant.isCurrentlyOpen && (
+          <View style={styles.openBadge}>
+            <View style={styles.openDot} />
+            <Text style={styles.openBadgeText}>Open</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Plan badge top-right */}
+      {plan !== 'free_trial' && (
+        <View style={styles.vPlanBadge}>
+          <Text style={styles.vPlanBadgeText}>
+            {plan === 'premium' ? '👑' : '⭐'}
+          </Text>
         </View>
       )}
 
-      {/* Distance badge on image */}
-      {distance ? (
-        <View style={styles.distanceBadge}>
-          <Ionicons
-            name="navigate"
-            size={11}
-            color={COLORS.primary}
-          />
-          <Text style={styles.distanceBadgeText}>
-            {distance}
-          </Text>
-        </View>
-      ) : null}
-
+      {/* Info */}
       <View style={styles.vInfo}>
-
-        {/* Name */}
-        <Text style={styles.name} numberOfLines={1}>
-          {restaurant.name}
-        </Text>
+        {/* Name + Verified */}
+        <View style={styles.hNameRow}>
+          <Text style={styles.name} numberOfLines={1}>
+            {restaurant.name}
+          </Text>
+          {restaurant.isVerified && (
+            <Ionicons
+              name="checkmark-circle"
+              size={14}
+              color={COLORS.primary}
+            />
+          )}
+        </View>
 
         {/* Rating + Cuisine */}
         <View style={styles.ratingRow}>
-          <Ionicons name="star" size={14} color={STAR_COLOR} />
+          <Ionicons name="star" size={13} color={STAR_COLOR} />
           <Text style={styles.rating}>
             {restaurant.averageRating?.toFixed(1) || 'New'}
           </Text>
-          <Text style={styles.dot}>•</Text>
+          {restaurant.totalReviews > 0 && (
+            <Text style={styles.reviewCount}>
+              ({restaurant.totalReviews})
+            </Text>
+          )}
+          <Text style={styles.dot}>·</Text>
           <Text style={styles.cuisineText}>
             {restaurant.cuisineTypes?.[0]
               ? restaurant.cuisineTypes[0].charAt(0).toUpperCase() +
@@ -191,173 +291,224 @@ export default function RestaurantCard({
           </Text>
         </View>
 
-        {/* Distance row inside card */}
-        {distance ? (
-          <View style={styles.distanceRow}>
-            <Ionicons
-              name="navigate"
-              size={12}
-              color={COLORS.primary}
-            />
-            <Text style={styles.distanceText}>
-              {distance} away
-            </Text>
-          </View>
-        ) : null}
-
         {/* Location */}
-        {restaurant.location?.city ? (
+        {!!restaurant.location?.city && (
           <View style={styles.locationRow}>
-            <Ionicons
-              name="location"
-              size={12}
-              color={COLORS.textMuted}
-            />
+            <Ionicons name="location-outline" size={12} color={COLORS.textMuted} />
             <Text style={styles.location} numberOfLines={1}>
               {restaurant.location.city}
             </Text>
           </View>
-        ) : null}
+        )}
 
+        {/* Services */}
+        <View style={styles.servicesRow}>
+          {restaurant.hasDelivery && (
+            <Text style={styles.serviceIcon}>🛵</Text>
+          )}
+          {restaurant.hasTakeout && (
+            <Text style={styles.serviceIcon}>🥡</Text>
+          )}
+          {restaurant.hasDineIn && (
+            <Text style={styles.serviceIcon}>🪑</Text>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-// ─── Styles ──────────────────────────────────
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
 
-  // ── Vertical card ──────────────────────────
+  // ── Vertical Card ─────────────────────────
   vCard: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    overflow: 'hidden',
+    borderRadius:    RADIUS.lg,
+    overflow:        'hidden',
     ...SHADOW,
   },
-  vImage: {
-    width: '100%',
-    height: 140,
+  vImage: { width: '100%', height: 150 },
+  vTopBadges: {
+    position:      'absolute',
+    top:           SIZES.sm,
+    left:          SIZES.sm,
+    right:         SIZES.sm,
+    flexDirection: 'row',
+    gap:           SIZES.xs,
   },
+  vPlanBadge: {
+    position:        'absolute',
+    top:             SIZES.sm,
+    right:           SIZES.sm,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius:    RADIUS.round,
+    width:           28,
+    height:          28,
+    justifyContent:  'center',
+    alignItems:      'center',
+  },
+  vPlanBadgeText: { fontSize: 14 },
   vInfo: {
     padding: SIZES.md,
-    gap: 4,
+    gap:     4,
   },
+
+  // ── Open Badge ────────────────────────────
   openBadge: {
-    position: 'absolute',
-    top: SIZES.sm,
-    right: SIZES.sm,
-    backgroundColor: COLORS.success,
+    flexDirection:     'row',
+    alignItems:        'center',
+    backgroundColor:   COLORS.success,
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 2,
-    borderRadius: RADIUS.round,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
+    gap:               4,
+  },
+  openDot: {
+    width:           6,
+    height:          6,
+    borderRadius:    3,
+    backgroundColor: '#FFFFFF',
   },
   openBadgeText: {
-    color: COLORS.textWhite,
-    fontSize: FONTS.xs,
+    color:      '#FFFFFF',
+    fontSize:   FONTS.xs,
     fontWeight: 'bold',
   },
 
-  // Distance badge on image (vertical card)
+  // ── Distance Badge ────────────────────────
   distanceBadge: {
-    position: 'absolute',
-    top: SIZES.sm,
-    left: SIZES.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#FFFFFF',
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               3,
+    backgroundColor:   '#FFFFFF',
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.round,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
     ...SHADOW,
   },
   distanceBadgeText: {
-    fontSize: FONTS.xs,
-    color: COLORS.primary,
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
     fontWeight: '700',
   },
 
-  // ── Horizontal card ────────────────────────
+  // ── Plan Badge (horizontal) ───────────────
+  planBadge: {
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    borderRadius:      RADIUS.round,
+  },
+  planBadgeText: { fontSize: 12 },
+
+  // ── Horizontal Card ───────────────────────
   hCard: {
-    flexDirection: 'row',
+    flexDirection:   'row',
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    overflow: 'hidden',
+    borderRadius:    RADIUS.lg,
+    overflow:        'hidden',
     ...SHADOW,
   },
+  hImageWrapper: {
+    position: 'relative',
+  },
   hImage: {
-    width: 110,
-    height: 130,
+    width:  110,
+    height: '100%',
+    minHeight: 130,
+  },
+  hStatusDot: {
+    position:     'absolute',
+    bottom:       SIZES.sm,
+    left:         SIZES.sm,
+    width:        10,
+    height:       10,
+    borderRadius: 5,
+    borderWidth:  1.5,
+    borderColor:  '#FFFFFF',
   },
   hInfo: {
-    flex: 1,
-    padding: SIZES.md,
-    justifyContent: 'space-evenly',
-    gap: 4,
+    flex:           1,
+    padding:        SIZES.md,
+    justifyContent: 'space-between',
+    gap:            4,
+    minHeight:      130,
+  },
+  hNameRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.xs,
+    flexWrap:      'wrap',
+  },
+  hBottomRow: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+    marginTop:      SIZES.xs,
   },
 
-  // ── Shared ─────────────────────────────────
+  // ── Shared ────────────────────────────────
   name: {
-    fontSize: FONTS.lg,
+    flex:       1,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
   ratingRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    alignItems:    'center',
+    gap:           4,
   },
   rating: {
-    fontSize: FONTS.sm,
+    fontSize:   FONTS.sm,
     fontWeight: '600',
-    color: COLORS.text,
+    color:      COLORS.text,
   },
-  dot: {
-    color: COLORS.textMuted,
+  reviewCount: {
+    fontSize: FONTS.xs,
+    color:    COLORS.textMuted,
   },
-  // ✅ Safe fallback for COLORS.accent
-  price: {
-    fontSize: FONTS.sm,
-    color: ACCENT_COLOR,
-    fontWeight: '600',
-  },
+  dot:   { color: COLORS.textMuted },
+  price: { fontSize: FONTS.sm, color: ACCENT_COLOR, fontWeight: '600' },
   cuisineText: {
-    fontSize: FONTS.sm,
-    color: COLORS.textLight,
+    fontSize:      FONTS.sm,
+    color:         COLORS.textLight,
     textTransform: 'capitalize',
+    flexShrink:    1,
   },
   locationRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    alignItems:    'center',
+    gap:           4,
   },
   location: {
     fontSize: FONTS.sm,
-    color: COLORS.textMuted,
-    flex: 1,
+    color:    COLORS.textMuted,
+    flex:     1,
   },
   distanceRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    alignItems:    'center',
+    gap:           4,
   },
   distanceText: {
-    fontSize: FONTS.xs,
-    color: COLORS.primary,
+    fontSize:   FONTS.xs,
+    color:      COLORS.primary,
     fontWeight: '600',
   },
-
-  // Status badge (horizontal card)
   statusBadge: {
-    alignSelf: 'flex-start',
+    alignSelf:         'flex-start',
     paddingHorizontal: SIZES.sm,
-    paddingVertical: 2,
-    borderRadius: RADIUS.round,
-    marginTop: 2,
+    paddingVertical:   3,
+    borderRadius:      RADIUS.round,
   },
-  statusText: {
-    color: COLORS.textWhite,
-    fontSize: FONTS.xs,
-    fontWeight: '600',
+  statusText: { fontSize: FONTS.xs, fontWeight: '600' },
+  servicesRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           4,
   },
+  serviceIcon: { fontSize: 14 },
 });
