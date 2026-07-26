@@ -1,100 +1,155 @@
 // ============================================
 // FILE: src/components/ReviewCard.js
 // ============================================
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  View, Text, StyleSheet,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
 
-// ✅ Safe import of StarRating
-// If the component doesn't exist — use a simple fallback
+// ─── Safe StarRating Import ───────────────────
 let StarRating;
 try {
   StarRating = require('./StarRating').default;
-} catch (e) {
-  // ✅ Fallback — renders plain star icons
+} catch {
   StarRating = ({ rating = 0, size = 16 }) => (
     <View style={{ flexDirection: 'row', gap: 2 }}>
       {[1, 2, 3, 4, 5].map(star => (
         <Ionicons
           key={star}
-          name="star"
+          name={star <= rating ? 'star' : 'star-outline'}
           size={size}
-          color={star <= rating ? '#F39C12' : '#E0E0E0'}
+          color={star <= rating ? '#F39C12' : COLORS.border}
         />
       ))}
     </View>
   );
 }
 
+// ─── Avatar Colors ────────────────────────────
+// ✅ Different color per first letter
+// Makes reviews look more distinct
+const AVATAR_COLORS = [
+  '#FF6B35', '#27AE60', '#3498DB', '#9B59B6',
+  '#E74C3C', '#F39C12', '#1ABC9C', '#2C3E50',
+];
+
+const getAvatarColor = (name) => {
+  if (!name) return AVATAR_COLORS[0];
+  const index = name.charCodeAt(0) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[index];
+};
+
+// ─── Date Formatter ───────────────────────────
+const formatDate = (timestamp) => {
+  if (!timestamp) return 'Recently';
+  try {
+    const date = timestamp?.toDate?.() || new Date(timestamp);
+    const now  = new Date();
+    const diff = now - date;
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    if (days === 0)  return 'Today';
+    if (days === 1)  return 'Yesterday';
+    if (days < 7)   return `${days} days ago`;
+    if (days < 30)  return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? 's' : ''} ago`;
+    if (days < 365) return `${Math.floor(days / 30)} month${Math.floor(days / 30) > 1 ? 's' : ''} ago`;
+
+    return date.toLocaleDateString('en-US', {
+      year:  'numeric',
+      month: 'short',
+      day:   'numeric',
+    });
+  } catch {
+    return 'Recently';
+  }
+};
+
+// ─── Rating Label ─────────────────────────────
+const RATING_LABELS = {
+  1: 'Poor',
+  2: 'Fair',
+  3: 'Good',
+  4: 'Very Good',
+  5: 'Excellent',
+};
+
+// ─────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────
 export default function ReviewCard({
   review,
-  isOwn   = false,
+  isOwn    = false,
   onEdit,
   onDelete,
 }) {
-  // ✅ Safe date formatter
-  const formatDate = (timestamp) => {
-    if (!timestamp) return 'Recently';
-    try {
-      const date = timestamp.toDate?.() || new Date(timestamp);
-      return date.toLocaleDateString('en-US', {
-        year:  'numeric',
-        month: 'short',
-        day:   'numeric',
-      });
-    } catch {
-      return 'Recently';
-    }
-  };
+  const [expanded, setExpanded] = useState(false);
 
-  // ✅ Safe rating — clamp between 0 and 5
+  // ✅ Clamp rating 0-5
   const safeRating = Math.min(
-    5,
-    Math.max(0, Math.round(review.rating || 0))
+    5, Math.max(0, Math.round(review.rating || 0))
   );
 
+  const avatarColor   = getAvatarColor(review.userName);
+  const avatarInitial = review.userName?.[0]?.toUpperCase() || '?';
+  const isEdited      = review.updatedAt &&
+    review.updatedAt !== review.createdAt;
+
+  // ✅ Long comment detection
+  const comment      = review.comment || '';
+  const isLong       = comment.length > 160;
+  const displayText  = isLong && !expanded
+    ? comment.slice(0, 160) + '...'
+    : comment;
+
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
   return (
     <View style={[
       styles.card,
-      // ✅ Own review gets a subtle highlight
       isOwn && styles.cardOwn,
     ]}>
 
       {/* ── Header ──────────────────────────── */}
       <View style={styles.header}>
 
-        {/* Avatar initial */}
-        <View style={styles.avatar}>
+        {/* ✅ Colored avatar */}
+        <View style={[
+          styles.avatar,
+          { backgroundColor: avatarColor },
+        ]}>
           <Text style={styles.avatarText}>
-            {review.userName?.[0]?.toUpperCase() || '👤'}
+            {avatarInitial}
           </Text>
         </View>
 
-        {/* Name + date */}
+        {/* Name + Date */}
         <View style={{ flex: 1 }}>
           <View style={styles.nameRow}>
             <Text style={styles.userName} numberOfLines={1}>
               {review.userName || 'Anonymous'}
             </Text>
-            {/* ✅ "You" badge on own review */}
             {isOwn && (
               <View style={styles.youBadge}>
                 <Text style={styles.youBadgeText}>You</Text>
               </View>
             )}
           </View>
-          <Text style={styles.date}>
-            {formatDate(review.createdAt)}
-          </Text>
+          <View style={styles.dateRow}>
+            <Text style={styles.date}>
+              {formatDate(review.createdAt)}
+            </Text>
+            {/* ✅ Edited indicator */}
+            {isEdited && (
+              <Text style={styles.editedLabel}>(edited)</Text>
+            )}
+          </View>
         </View>
 
-        {/* ✅ Edit / Delete for own review */}
+        {/* Edit / Delete actions */}
         {isOwn && (
           <View style={styles.actions}>
             {onEdit && (
@@ -102,11 +157,7 @@ export default function ReviewCard({
                 onPress={onEdit}
                 style={styles.actionBtn}
                 activeOpacity={0.7}
-                // ✅ Larger tap area
-                hitSlop={{
-                  top: 8, bottom: 8,
-                  left: 8, right: 8,
-                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons
                   name="pencil-outline"
@@ -120,10 +171,7 @@ export default function ReviewCard({
                 onPress={onDelete}
                 style={styles.actionBtn}
                 activeOpacity={0.7}
-                hitSlop={{
-                  top: 8, bottom: 8,
-                  left: 8, right: 8,
-                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Ionicons
                   name="trash-outline"
@@ -136,19 +184,40 @@ export default function ReviewCard({
         )}
       </View>
 
-      {/* ── Star rating ──────────────────────── */}
-      <StarRating
-        rating={safeRating}
-        size={16}
-      />
+      {/* ── Rating ──────────────────────────── */}
+      <View style={styles.ratingRow}>
+        <StarRating rating={safeRating} size={16} />
+        {/* ✅ Rating number + label */}
+        <Text style={styles.ratingNumber}>
+          {safeRating}.0
+        </Text>
+        {RATING_LABELS[safeRating] && (
+          <Text style={styles.ratingLabel}>
+            · {RATING_LABELS[safeRating]}
+          </Text>
+        )}
+      </View>
 
       {/* ── Comment ──────────────────────────── */}
-      {review.comment ? (
-        <Text style={styles.comment}>
-          {review.comment}
-        </Text>
+      {comment ? (
+        <View>
+          <Text style={styles.comment}>
+            {displayText}
+          </Text>
+          {/* ✅ Expand/collapse long comments */}
+          {isLong && (
+            <TouchableOpacity
+              onPress={() => setExpanded(v => !v)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Text style={styles.expandBtn}>
+                {expanded ? 'Show less ▲' : 'Read more ▼'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       ) : (
-        // ✅ Show placeholder if no comment
         <Text style={styles.noComment}>
           No written review
         </Text>
@@ -158,94 +227,122 @@ export default function ReviewCard({
   );
 }
 
+// ─────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    padding: SIZES.md,
-    marginBottom: SIZES.md,
-    gap: SIZES.sm,
+    borderRadius:    RADIUS.lg,
+    padding:         SIZES.md,
+    marginBottom:    SIZES.md,
+    gap:             SIZES.sm,
+    borderWidth:     1,
+    borderColor:     'transparent',
     ...SHADOW,
   },
-  // ✅ Own review subtle highlight
   cardOwn: {
-    borderWidth: 1.5,
-    borderColor: COLORS.primary + '40',
+    borderColor:     COLORS.primary + '40',
     backgroundColor: COLORS.primary + '04',
   },
 
-  // ── Header ───────────────────────────────
+  // ── Header ────────────────────────────────
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.sm,
+    alignItems:    'center',
+    gap:           SIZES.sm,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.primary + '20',
+    width:          40,
+    height:         40,
+    borderRadius:   20,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems:     'center',
   },
   avatarText: {
-    fontSize: FONTS.lg,
+    fontSize:   FONTS.lg,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color:      '#FFFFFF',
   },
   nameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.xs,
+    alignItems:    'center',
+    gap:           SIZES.xs,
   },
   userName: {
-    fontSize: FONTS.md,
+    fontSize:   FONTS.md,
     fontWeight: '600',
-    color: COLORS.text,
+    color:      COLORS.text,
+    flexShrink: 1,
   },
-  // ✅ "You" badge
   youBadge: {
-    backgroundColor: COLORS.primary,
+    backgroundColor:   COLORS.primary,
     paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: RADIUS.round,
+    paddingVertical:   1,
+    borderRadius:      RADIUS.round,
   },
   youBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
+    color:      '#FFFFFF',
+    fontSize:   10,
     fontWeight: '700',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           4,
+    marginTop:     2,
   },
   date: {
     fontSize: FONTS.xs,
-    color: COLORS.textMuted,
-    marginTop: 2,
+    color:    COLORS.textMuted,
+  },
+  editedLabel: {
+    fontSize:  FONTS.xs,
+    color:     COLORS.textMuted,
+    fontStyle: 'italic',
   },
 
-  // ── Actions ──────────────────────────────
-  actions: {
-    flexDirection: 'row',
-    gap: SIZES.sm,
-  },
+  // ── Actions ───────────────────────────────
+  actions: { flexDirection: 'row', gap: SIZES.sm },
   actionBtn: {
-    padding: SIZES.xs,
-    // ✅ Minimum tap target size
-    minWidth: 32,
-    minHeight: 32,
+    padding:    SIZES.xs,
+    minWidth:   32,
+    minHeight:  32,
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems:     'center',
   },
 
-  // ── Comment ──────────────────────────────
+  // ── Rating ────────────────────────────────
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.xs,
+  },
+  ratingNumber: {
+    fontSize:   FONTS.sm,
+    fontWeight: '700',
+    color:      COLORS.text,
+  },
+  ratingLabel: {
+    fontSize: FONTS.xs,
+    color:    COLORS.textMuted,
+  },
+
+  // ── Comment ───────────────────────────────
   comment: {
-    fontSize: FONTS.md,
-    color: COLORS.textLight,
+    fontSize:  FONTS.md,
+    color:     COLORS.textLight,
     lineHeight: 22,
-    marginTop: SIZES.xs,
+  },
+  expandBtn: {
+    fontSize:   FONTS.sm,
+    color:      COLORS.primary,
+    fontWeight: '600',
+    marginTop:  SIZES.xs,
   },
   noComment: {
-    fontSize: FONTS.sm,
-    color: COLORS.textMuted,
+    fontSize:  FONTS.sm,
+    color:     COLORS.textMuted,
     fontStyle: 'italic',
-    marginTop: SIZES.xs,
   },
 });
