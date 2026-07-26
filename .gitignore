@@ -1,15 +1,15 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# dependencies
+# ─── Dependencies ────────────────────────────
 node_modules/
 
-# Expo
+# ─── Expo ────────────────────────────────────
 .expo/
 dist/
 web-build/
 expo-env.d.ts
 
-# Native
+# ─── Native ──────────────────────────────────
 .kotlin/
 *.orig.*
 *.jks
@@ -18,24 +18,41 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
-# Metro
+# ─── Metro ───────────────────────────────────
 .metro-health-check*
 
-# debug
+# ─── Debug ───────────────────────────────────
 npm-debug.*
 yarn-debug.*
 yarn-error.*
 
-# macOS
+# ─── macOS ───────────────────────────────────
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# ─── Environment Variables ───────────────────
+# ✅ ALL .env files protected
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+.env.test
 
-# typescript
+# ─── TypeScript ──────────────────────────────
 *.tsbuildinfo
 
-# generated native folders
+# ─── Generated Native Folders ────────────────
 /ios
 /android
+
+# ─── Cloudinary ──────────────────────────────
+# Safety net - never commit credentials
+cloudinary.config.js
+
+# ─── IDE ─────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
