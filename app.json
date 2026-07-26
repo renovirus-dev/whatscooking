@@ -7,9 +7,7 @@
     "userInterfaceStyle": "light",
     "scheme": "whatscooking",
 
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
 
     "icon": "./assets/icon.png",
 
