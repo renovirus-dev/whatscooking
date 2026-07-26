@@ -6,33 +6,39 @@ import {
   initializeFirestore,
   getFirestore,
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
-import { Platform }   from 'react-native';
+import { Platform } from 'react-native';
 
+// ✅ Credentials from environment variables
+// Never commit real keys to Git
 const firebaseConfig = {
-  apiKey:            "AIzaSyCj-h8xEa1Hnd4YoC5Wx47_sZW4ChPgP9w",
-  authDomain:        "whats-cooking-5fd93.firebaseapp.com",
-  projectId:         "whats-cooking-5fd93",
-  storageBucket:     "whats-cooking-5fd93.firebasestorage.app",
-  messagingSenderId: "287609653948",
-  appId:             "1:287609653948:web:43226c2db2ae8d5e3a1eb9",
-  measurementId:     "G-TX2146N6NB",
+  apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain:        process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId:         process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  // ✅ storageBucket removed - we use Cloudinary now
+  // ✅ measurementId removed - Analytics not needed
 };
 
-// ── Initialize app (safe — only once) ────────
+// ─────────────────────────────────────────────
+// INITIALIZE APP
+// ✅ Safe — only initializes once
+// ─────────────────────────────────────────────
 const app = getApps().length === 0
   ? initializeApp(firebaseConfig)
   : getApp();
 
-// ── Auth with persistence ─────────────────────
+// ─────────────────────────────────────────────
+// AUTH WITH PERSISTENCE
+// ✅ Web → browser persistence
+// ✅ React Native → AsyncStorage persistence
+// ─────────────────────────────────────────────
 let auth;
 
 if (Platform.OS === 'web') {
-  // Web uses default browser persistence
   const { getAuth } = require('firebase/auth');
   auth = getAuth(app);
 } else {
-  // React Native uses AsyncStorage persistence
   const {
     initializeAuth,
     getReactNativePersistence,
@@ -46,26 +52,21 @@ if (Platform.OS === 'web') {
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
-  } catch (e) {
-    // Already initialized — just get the existing instance
+  } catch {
+    // ✅ Already initialized — get existing instance
     auth = getAuth(app);
   }
 }
 
-// ── Firestore ─────────────────────────────────
-// ✅ KEY FIX:
-// persistentLocalCache uses IndexedDB which does NOT
-// exist in React Native — causes the warning/crash.
-//
-// Solution:
-// - On React Native → use experimentalForceLongPolling
-//   (no offline cache but stable and no warnings)
-// - On Web → use persistentLocalCache (IndexedDB works fine)
+// ─────────────────────────────────────────────
+// FIRESTORE
+// ✅ Web → IndexedDB offline cache
+// ✅ React Native → longPolling (no IndexedDB warning)
+// ─────────────────────────────────────────────
 let db;
 
 try {
   if (Platform.OS === 'web') {
-    // ✅ Web — use IndexedDB offline cache
     const {
       persistentLocalCache,
       CACHE_SIZE_UNLIMITED,
@@ -77,20 +78,21 @@ try {
       }),
     });
   } else {
-    // ✅ React Native (Android + iOS)
-    // experimentalForceLongPolling fixes WebSocket issues
-    // No IndexedDB = no warning
+    // ✅ React Native — experimentalForceLongPolling
+    // fixes WebSocket issues on Android/iOS
+    // No IndexedDB = no console warnings
     db = initializeFirestore(app, {
       experimentalForceLongPolling: true,
     });
   }
-} catch (e) {
-  // Already initialized — get existing instance
+} catch {
+  // ✅ Already initialized — get existing instance
   db = getFirestore(app);
 }
 
-// ── Storage ───────────────────────────────────
-const storage = getStorage(app);
-
-export { auth, db, storage };
+// ─────────────────────────────────────────────
+// EXPORTS
+// ✅ storage removed — using Cloudinary instead
+// ─────────────────────────────────────────────
+export { auth, db };
 export default app;
