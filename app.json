@@ -5,15 +5,14 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-
     "scheme": "whatscooking",
 
     "assetBundlePatterns": [
-      "**/*",
-      "assets/food/**"
+      "**/*"
     ],
 
-    "icon":  "./assets/icon.png",
+    "icon": "./assets/icon.png",
+
     "splash": {
       "image":           "./assets/splash.png",
       "resizeMode":      "contain",
@@ -88,29 +87,15 @@
       [
         "expo-notifications",
         {
-          "icon":  "./assets/icon.png",
-          "color": "#FF6B35",
-          "defaultChannel": "default",
-          "sounds": []
+          "icon":           "./assets/icon.png",
+          "color":          "#FF6B35",
+          "defaultChannel": "default"
         }
       ],
       [
         "expo-system-ui",
         {
           "userInterfaceStyle": "light"
-        }
-      ],
-      [
-        "expo-splash-screen",
-        {
-          "backgroundColor": "#FF6B35",
-          "image":           "./assets/splash.png",
-          "imageWidth":      200,
-          "resizeMode":      "contain",
-          "dark": {
-            "backgroundColor": "#FF6B35",
-            "image":           "./assets/splash.png"
-          }
         }
       ],
       [
@@ -123,7 +108,7 @@
             "kotlinVersion":     "1.8.0"
           },
           "ios": {
-            "deploymentTarget": "13.0"
+            "deploymentTarget": "16.4"
           }
         }
       ]
