@@ -50,7 +50,7 @@
 
     "ios": {
       "supportsTablet":   true,
-      "bundleIdentifier": "com.sherwayne.whatscooking",
+      "bundleIdentifier": "com.yourname.whatscooking",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "What's Cooking uses your location to find restaurants near you.",
         "NSLocationAlwaysUsageDescription":    "What's Cooking uses your location to find restaurants near you.",
