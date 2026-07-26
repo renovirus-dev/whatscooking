@@ -20,7 +20,7 @@
     },
 
     "android": {
-      "package":            "com.sherwayne.whatscooking",
+      "package":            "com.yourname.whatscooking",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
