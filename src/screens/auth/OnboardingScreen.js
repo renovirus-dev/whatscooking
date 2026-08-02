@@ -14,11 +14,8 @@ import AsyncStorage          from '@react-native-async-storage/async-storage';
 import { COLORS, SIZES, FONTS, RADIUS } from '../../theme';
 
 const { width } = Dimensions.get('window');
-
-// ✅ FONTS.title fallback
 const TITLE_SIZE = FONTS.title || FONTS.xxl || 28;
 
-// ─── Onboarding Slides ────────────────────────
 const SLIDES = [
   {
     id:       '1',
@@ -75,7 +72,7 @@ const ONBOARDING_KEY = '@whatscooking_onboarding_complete';
 // ─────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────
-export default function OnboardingScreen({ navigation }) {
+export default function OnboardingScreen({ navigation, onGuestPress }) {
   const insets      = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef(null);
@@ -123,6 +120,16 @@ export default function OnboardingScreen({ navigation }) {
     navigation.replace('Login');
   }, [completeOnboarding, navigation]);
 
+  // ✅ Browse as Guest - sets guest mode directly in AppNavigator
+  const handleGuest = useCallback(async () => {
+    await completeOnboarding();
+    if (onGuestPress) {
+      onGuestPress(); // ← directly sets isGuest(true) in AppNavigator
+    } else {
+      navigation.replace('Login');
+    }
+  }, [completeOnboarding, navigation, onGuestPress]);
+
   const handleDotPress = useCallback((index) => {
     flatListRef.current?.scrollToIndex({ index, animated: true });
     setCurrentIndex(index);
@@ -137,16 +144,9 @@ export default function OnboardingScreen({ navigation }) {
         styles.slideInner,
         { paddingTop: insets.top + SIZES.xl },
       ]}>
-        {/* Big emoji */}
         <Text style={styles.emoji}>{item.emoji}</Text>
-
-        {/* Title */}
         <Text style={styles.title}>{item.title}</Text>
-
-        {/* Subtitle */}
         <Text style={styles.subtitle}>{item.subtitle}</Text>
-
-        {/* ✅ Feature list */}
         <View style={styles.featureList}>
           {item.features.map((feature, i) => (
             <View key={i} style={styles.featureRow}>
@@ -162,7 +162,7 @@ export default function OnboardingScreen({ navigation }) {
   ), [insets.top]);
 
   // ─────────────────────────────────────────
-  // ANIMATED DOT
+  // DOT COMPONENT
   // ─────────────────────────────────────────
   const Dot = useCallback(({ index }) => {
     const isActive = index === currentIndex;
@@ -172,10 +172,7 @@ export default function OnboardingScreen({ navigation }) {
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         activeOpacity={0.7}
       >
-        <View style={[
-          styles.dot,
-          isActive && styles.dotActive,
-        ]} />
+        <View style={[styles.dot, isActive && styles.dotActive]} />
       </TouchableOpacity>
     );
   }, [currentIndex, handleDotPress]);
@@ -235,6 +232,7 @@ export default function OnboardingScreen({ navigation }) {
         styles.bottomPanel,
         { paddingBottom: insets.bottom + SIZES.lg },
       ]}>
+
         {/* Slide counter */}
         <Text style={styles.slideCounter}>
           {currentIndex + 1} / {SLIDES.length}
@@ -247,7 +245,7 @@ export default function OnboardingScreen({ navigation }) {
           ))}
         </View>
 
-        {/* ✅ Next / Get Started button */}
+        {/* Next / Create Account */}
         <TouchableOpacity
           style={styles.nextBtn}
           onPress={handleNext}
@@ -256,7 +254,7 @@ export default function OnboardingScreen({ navigation }) {
           {isLastSlide ? (
             <>
               <Ionicons name="rocket-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.nextBtnText}>Get Started</Text>
+              <Text style={styles.nextBtnText}>Create Account</Text>
             </>
           ) : (
             <>
@@ -266,13 +264,23 @@ export default function OnboardingScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {/* ✅ Sign in link */}
+        {/* Sign In link */}
         <View style={styles.loginRow}>
           <Text style={styles.loginLabel}>Already have an account?</Text>
           <TouchableOpacity onPress={handleLogin} activeOpacity={0.7}>
             <Text style={styles.loginLink}> Sign In</Text>
           </TouchableOpacity>
         </View>
+
+        {/* ✅ Browse as Guest */}
+        <TouchableOpacity
+          onPress={handleGuest}
+          activeOpacity={0.7}
+          style={{ paddingVertical: 4 }}
+        >
+          <Text style={styles.guestLink}>Browse as Guest</Text>
+        </TouchableOpacity>
+
       </View>
     </View>
   );
@@ -284,7 +292,6 @@ export default function OnboardingScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
 
-  // ── Skip Button ───────────────────────────
   skipBtn: {
     position:          'absolute',
     right:             SIZES.lg,
@@ -300,7 +307,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ── Slides ────────────────────────────────
   slide:      { width, flex: 1 },
   slideInner: {
     flex:              1,
@@ -317,14 +323,12 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.md,
   },
   subtitle: {
-    fontSize:   FONTS.lg,
-    color:      'rgba(255,255,255,0.85)',
-    textAlign:  'center',
-    lineHeight: 26,
+    fontSize:     FONTS.lg,
+    color:        'rgba(255,255,255,0.85)',
+    textAlign:    'center',
+    lineHeight:   26,
     marginBottom: SIZES.lg,
   },
-
-  // ── Feature List ──────────────────────────
   featureList: {
     gap:             SIZES.sm,
     alignSelf:       'stretch',
@@ -351,7 +355,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // ── Bottom Panel ──────────────────────────
   bottomPanel: {
     backgroundColor:   COLORS.background,
     paddingTop:        SIZES.lg,
@@ -360,12 +363,10 @@ const styles = StyleSheet.create({
     alignItems:        'center',
   },
   slideCounter: {
-    fontSize: FONTS.xs,
-    color:    COLORS.textMuted,
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
     fontWeight: '600',
   },
-
-  // ── Dots ──────────────────────────────────
   dots: {
     flexDirection: 'row',
     gap:           8,
@@ -382,25 +383,21 @@ const styles = StyleSheet.create({
     width:           24,
     borderRadius:    4,
   },
-
-  // ── Next Button ───────────────────────────
   nextBtn: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    justifyContent:    'center',
-    backgroundColor:   COLORS.primary,
-    paddingVertical:   SIZES.md,
-    borderRadius:      RADIUS.lg,
-    gap:               SIZES.sm,
-    alignSelf:         'stretch',
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: COLORS.primary,
+    paddingVertical: SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    alignSelf:       'stretch',
   },
   nextBtnText: {
     color:      '#FFFFFF',
     fontSize:   FONTS.xl,
     fontWeight: 'bold',
   },
-
-  // ── Login Row ─────────────────────────────
   loginRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -410,5 +407,11 @@ const styles = StyleSheet.create({
     color:      COLORS.primary,
     fontSize:   FONTS.md,
     fontWeight: 'bold',
+  },
+  // ✅ NEW
+  guestLink: {
+    color:              COLORS.textMuted,
+    fontSize:           FONTS.sm,
+    textDecorationLine: 'underline',
   },
 });

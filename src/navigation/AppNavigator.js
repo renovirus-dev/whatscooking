@@ -17,13 +17,11 @@ import AsyncStorage                   from '@react-native-async-storage/async-st
 import { useAuth }                    from '../hooks/useAuth';
 import { useNotifications }           from '../context/NotificationContext';
 
-// ─── Brand Colors ─────────────────────────────
 const PRIMARY = '#FF6B35';
 const DARK    = '#2C3E50';
 const MUTED   = '#7F8C8D';
 const BG      = '#F8F9FA';
 
-// ─── AsyncStorage Key ─────────────────────────
 const ONBOARDING_KEY = '@whatscooking_onboarding_complete';
 
 // ─────────────────────────────────────────────
@@ -67,11 +65,11 @@ function makePlaceholder(name) {
 // ── Auth ──────────────────────────────────────
 let LoginScreen, RegisterScreen, OnboardingScreen;
 try { LoginScreen      = require('../screens/auth/LoginScreen').default;      }
-catch { LoginScreen      = makePlaceholder('Login');      }
+catch (e) { console.log('❌ LoginScreen:', e.message); LoginScreen = makePlaceholder('Login'); }
 try { RegisterScreen   = require('../screens/auth/RegisterScreen').default;   }
-catch { RegisterScreen   = makePlaceholder('Register');   }
+catch (e) { console.log('❌ RegisterScreen:', e.message); RegisterScreen = makePlaceholder('Register'); }
 try { OnboardingScreen = require('../screens/auth/OnboardingScreen').default; }
-catch { OnboardingScreen = makePlaceholder('Onboarding'); }
+catch (e) { console.log('❌ OnboardingScreen:', e.message); OnboardingScreen = makePlaceholder('Onboarding'); }
 
 // ── User ──────────────────────────────────────
 let HomeScreen, ExploreScreen, RestaurantDetailScreen,
@@ -79,21 +77,21 @@ let HomeScreen, ExploreScreen, RestaurantDetailScreen,
     FavoriteDishesScreen, NotificationsScreen;
 
 try { HomeScreen             = require('../screens/user/HomeScreen').default;             }
-catch { HomeScreen             = makePlaceholder('Home');              }
+catch (e) { console.log('❌ HomeScreen:', e.message); HomeScreen = makePlaceholder('Home'); }
 try { ExploreScreen          = require('../screens/user/ExploreScreen').default;          }
-catch { ExploreScreen          = makePlaceholder('Explore');           }
+catch (e) { console.log('❌ ExploreScreen:', e.message); ExploreScreen = makePlaceholder('Explore'); }
 try { RestaurantDetailScreen = require('../screens/user/RestaurantDetailScreen').default; }
-catch { RestaurantDetailScreen = makePlaceholder('Restaurant Detail'); }
+catch (e) { console.log('❌ RestaurantDetailScreen:', e.message); RestaurantDetailScreen = makePlaceholder('Restaurant Detail'); }
 try { FavoritesScreen        = require('../screens/user/FavoritesScreen').default;        }
-catch { FavoritesScreen        = makePlaceholder('Favorites');         }
+catch (e) { console.log('❌ FavoritesScreen:', e.message); FavoritesScreen = makePlaceholder('Favorites'); }
 try { ProfileScreen          = require('../screens/user/ProfileScreen').default;          }
-catch { ProfileScreen          = makePlaceholder('Profile');           }
+catch (e) { console.log('❌ ProfileScreen:', e.message); ProfileScreen = makePlaceholder('Profile'); }
 try { EditProfileScreen      = require('../screens/user/EditProfileScreen').default;      }
-catch { EditProfileScreen      = makePlaceholder('Edit Profile');      }
+catch (e) { console.log('❌ EditProfileScreen:', e.message); EditProfileScreen = makePlaceholder('Edit Profile'); }
 try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').default;   }
-catch { FavoriteDishesScreen   = makePlaceholder('Favourite Dishes');  }
+catch (e) { console.log('❌ FavoriteDishesScreen:', e.message); FavoriteDishesScreen = makePlaceholder('Favourite Dishes'); }
 try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
-catch { NotificationsScreen    = makePlaceholder('Notifications');     }
+catch (e) { console.log('❌ NotificationsScreen:', e.message); NotificationsScreen = makePlaceholder('Notifications'); }
 
 // ── Owner ─────────────────────────────────────
 let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
@@ -101,36 +99,35 @@ let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
     SubscriptionScreen, AnalyticsScreen, MenuScannerScreen;
 
 try { OwnerDashboardScreen  = require('../screens/owner/OwnerDashboardScreen').default;  }
-catch { OwnerDashboardScreen  = makePlaceholder('Dashboard');      }
+catch (e) { console.log('❌ OwnerDashboardScreen:', e.message); OwnerDashboardScreen = makePlaceholder('Dashboard'); }
 try { ManageMenuScreen      = require('../screens/owner/ManageMenuScreen').default;      }
-catch { ManageMenuScreen      = makePlaceholder('Manage Menu');    }
+catch (e) { console.log('❌ ManageMenuScreen:', e.message); ManageMenuScreen = makePlaceholder('Manage Menu'); }
 try { AddMenuItemScreen     = require('../screens/owner/AddMenuItemScreen').default;     }
-catch { AddMenuItemScreen     = makePlaceholder('Add Item');       }
+catch (e) { console.log('❌ AddMenuItemScreen:', e.message); AddMenuItemScreen = makePlaceholder('Add Item'); }
 try { DailyMenuScreen       = require('../screens/owner/DailyMenuScreen').default;       }
-catch { DailyMenuScreen       = makePlaceholder('Daily Menu');     }
+catch (e) { console.log('❌ DailyMenuScreen:', e.message); DailyMenuScreen = makePlaceholder('Daily Menu'); }
 try { RestaurantSetupScreen = require('../screens/owner/RestaurantSetupScreen').default; }
-catch { RestaurantSetupScreen = makePlaceholder('Setup');          }
+catch (e) { console.log('❌ RestaurantSetupScreen:', e.message); RestaurantSetupScreen = makePlaceholder('Setup'); }
 try { SubscriptionScreen    = require('../screens/owner/SubscriptionScreen').default;    }
-catch { SubscriptionScreen    = makePlaceholder('Subscription');   }
+catch (e) { console.log('❌ SubscriptionScreen:', e.message); SubscriptionScreen = makePlaceholder('Subscription'); }
 try { AnalyticsScreen       = require('../screens/owner/AnalyticsScreen').default;       }
-catch { AnalyticsScreen       = makePlaceholder('Analytics');      }
+catch (e) { console.log('❌ AnalyticsScreen:', e.message); AnalyticsScreen = makePlaceholder('Analytics'); }
 try { MenuScannerScreen     = require('../screens/owner/MenuScannerScreen').default;     }
-catch { MenuScannerScreen     = makePlaceholder('Menu Scanner');   }
+catch (e) { console.log('❌ MenuScannerScreen:', e.message); MenuScannerScreen = makePlaceholder('Menu Scanner'); }
 
 // ── Admin ─────────────────────────────────────
 let AdminDashboardScreen, ImageDownloadScreen;
 
 try { AdminDashboardScreen = require('../screens/admin/AdminDashboardScreen').default; }
-catch { AdminDashboardScreen = makePlaceholder('Admin Dashboard'); }
+catch (e) { console.log('❌ AdminDashboardScreen:', e.message); AdminDashboardScreen = makePlaceholder('Admin Dashboard'); }
 try { ImageDownloadScreen  = require('../screens/admin/ImageDownloadScreen').default;  }
-catch { ImageDownloadScreen  = makePlaceholder('Image Manager');   }
+catch (e) { console.log('❌ ImageDownloadScreen:', e.message); ImageDownloadScreen = makePlaceholder('Image Manager'); }
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
 
 // ─────────────────────────────────────────────
 // LOADING SCREEN
-// ✅ Has 8-second timeout → Continue as Guest
 // ─────────────────────────────────────────────
 function LoadingScreen({ onTimeout }) {
   const insets = useSafeAreaInsets();
@@ -182,7 +179,6 @@ function LoadingScreen({ onTimeout }) {
 
 // ─────────────────────────────────────────────
 // WELCOME SCREEN
-// Shown after onboarding on return visits
 // ─────────────────────────────────────────────
 function WelcomeScreen({ onGuest, onLogin, onRegister }) {
   const insets = useSafeAreaInsets();
@@ -207,7 +203,6 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
         showsVerticalScrollIndicator={false}
       >
         <Text style={{ fontSize: 80 }}>🍳</Text>
-
         <Text style={{
           fontSize:   32,
           fontWeight: 'bold',
@@ -216,7 +211,6 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
         }}>
           What's Cooking
         </Text>
-
         <Text style={{
           fontSize:     16,
           color:        'rgba(255,255,255,0.85)',
@@ -238,20 +232,16 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
         }}>
           {[
             { icon: '🍽️', text: 'Browse daily menus from local restaurants' },
-            { icon: '📍', text: 'Find restaurants near you'                 },
-            { icon: '⭐', text: 'Save favorites and write reviews'           },
-            { icon: '🔔', text: 'Get notified about daily specials'          },
+            { icon: '📍', text: 'Find restaurants near you'                  },
+            { icon: '⭐', text: 'Save favorites and write reviews'            },
+            { icon: '🔔', text: 'Get notified about daily specials'           },
           ].map((item, i) => (
             <View
               key={i}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
             >
               <Text style={{ fontSize: 20 }}>{item.icon}</Text>
-              <Text style={{
-                color:    'rgba(255,255,255,0.9)',
-                fontSize: 14,
-                flex:     1,
-              }}>
+              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, flex: 1 }}>
                 {item.text}
               </Text>
             </View>
@@ -294,7 +284,7 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           </Text>
         </TouchableOpacity>
 
-        {/* Guest */}
+        {/* Browse as Guest */}
         <TouchableOpacity
           style={{ paddingVertical: 12 }}
           onPress={onGuest}
@@ -333,12 +323,7 @@ function GuestFavoritesScreen({ onLogin }) {
       <Text style={{ fontSize: 22, fontWeight: 'bold', color: DARK }}>
         Save Your Favorites
       </Text>
-      <Text style={{
-        fontSize:   14,
-        color:      MUTED,
-        textAlign:  'center',
-        lineHeight: 22,
-      }}>
+      <Text style={{ fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 22 }}>
         Sign in to save restaurants and track your favorite meals
       </Text>
       <TouchableOpacity
@@ -386,17 +371,10 @@ function GuestProfileScreen({ onLogin, onRegister }) {
       <Text style={{ fontSize: 24, fontWeight: 'bold', color: DARK }}>
         Guest Mode
       </Text>
-      <Text style={{
-        fontSize:     14,
-        color:        MUTED,
-        textAlign:    'center',
-        lineHeight:   22,
-        marginBottom: 8,
-      }}>
+      <Text style={{ fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 22, marginBottom: 8 }}>
         Sign in to access all features
       </Text>
 
-      {/* Benefits */}
       {[
         '⭐ Save favorite restaurants',
         '🍽️ Track favorite dishes',
@@ -406,13 +384,13 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         <View
           key={i}
           style={{
-            flexDirection:     'row',
-            alignItems:        'center',
-            backgroundColor:   '#FFFFFF',
-            padding:           12,
-            borderRadius:      10,
-            width:             '100%',
-            gap:               12,
+            flexDirection:   'row',
+            alignItems:      'center',
+            backgroundColor: '#FFFFFF',
+            padding:         12,
+            borderRadius:    10,
+            width:           '100%',
+            gap:             12,
           }}
         >
           <Text style={{ fontSize: 20 }}>{benefit.split(' ')[0]}</Text>
@@ -422,7 +400,6 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         </View>
       ))}
 
-      {/* Sign In */}
       <TouchableOpacity
         style={{
           backgroundColor: PRIMARY,
@@ -440,7 +417,6 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         </Text>
       </TouchableOpacity>
 
-      {/* Create Account */}
       <TouchableOpacity
         style={{
           backgroundColor: '#FFFFFF',
@@ -467,13 +443,13 @@ function GuestProfileScreen({ onLogin, onRegister }) {
 // ─────────────────────────────────────────────
 function getTabIcon(routeName, focused) {
   const icons = {
-    Home:      focused ? 'home'            : 'home-outline',
-    Explore:   focused ? 'compass'         : 'compass-outline',
-    Favorites: focused ? 'heart'           : 'heart-outline',
-    Profile:   focused ? 'person'          : 'person-outline',
-    Dashboard: focused ? 'grid'            : 'grid-outline',
-    Menu:      focused ? 'restaurant'      : 'restaurant-outline',
-    Daily:     focused ? 'today'           : 'today-outline',
+    Home:      focused ? 'home'       : 'home-outline',
+    Explore:   focused ? 'compass'    : 'compass-outline',
+    Favorites: focused ? 'heart'      : 'heart-outline',
+    Profile:   focused ? 'person'     : 'person-outline',
+    Dashboard: focused ? 'grid'       : 'grid-outline',
+    Menu:      focused ? 'restaurant' : 'restaurant-outline',
+    Daily:     focused ? 'today'      : 'today-outline',
   };
   return icons[routeName] || 'ellipse-outline';
 }
@@ -531,11 +507,7 @@ function ProfileTabIcon({ color, size, focused }) {
           alignItems:        'center',
           paddingHorizontal: 3,
         }}>
-          <Text style={{
-            color:      '#FFFFFF',
-            fontSize:   9,
-            fontWeight: 'bold',
-          }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: 'bold' }}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </Text>
         </View>
@@ -562,7 +534,6 @@ const adminHeaderStyle = {
 
 // ─────────────────────────────────────────────
 // AUTH STACK
-// ✅ Includes Onboarding screen
 // ─────────────────────────────────────────────
 function AuthStack({ initialRoute = 'Login' }) {
   return (
@@ -612,9 +583,7 @@ function UserTabs() {
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{
-          tabBarIcon: (props) => <ProfileTabIcon {...props} />,
-        }}
+        options={{ tabBarIcon: (props) => <ProfileTabIcon {...props} /> }}
       />
     </Tab.Navigator>
   );
@@ -667,9 +636,7 @@ function UserNavigator() {
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
-        options={({ route }) => ({
-          title: route.params?.name || 'Restaurant',
-        })}
+        options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
       />
       <Stack.Screen
         name="EditProfile"
@@ -715,9 +682,7 @@ function OwnerNavigator() {
         name="RestaurantSetup"
         component={RestaurantSetupScreen}
         options={({ route }) => ({
-          title: route.params?.restaurant
-            ? 'Edit Restaurant'
-            : 'Setup Restaurant',
+          title: route.params?.restaurant ? 'Edit Restaurant' : 'Setup Restaurant',
         })}
       />
       <Stack.Screen
@@ -727,7 +692,6 @@ function OwnerNavigator() {
           title: route.params?.item ? 'Edit Item' : 'Add Menu Item',
         })}
       />
-      {/* ✅ Menu Scanner — no header (scanner has own UI) */}
       <Stack.Screen
         name="MenuScanner"
         component={MenuScannerScreen}
@@ -736,9 +700,7 @@ function OwnerNavigator() {
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
-        options={({ route }) => ({
-          title: route.params?.name || 'Restaurant',
-        })}
+        options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
       />
       <Stack.Screen
         name="Subscription"
@@ -782,10 +744,7 @@ function AdminNavigator() {
       <Stack.Screen
         name="ImageDownload"
         component={ImageDownloadScreen}
-        options={{
-          ...adminHeaderStyle,
-          title: '🖼️ Image Manager',
-        }}
+        options={{ ...adminHeaderStyle, title: '🖼️ Image Manager' }}
       />
       <Stack.Screen
         name="RestaurantDetail"
@@ -804,7 +763,10 @@ function AdminNavigator() {
 // ─────────────────────────────────────────────
 function GuestNavigator({ onLogin, onRegister }) {
   return (
-    <Stack.Navigator screenOptions={headerStyle}>
+    <Stack.Navigator
+      screenOptions={headerStyle}
+      initialRouteName="GuestTabs"
+    >
       <Stack.Screen
         name="GuestTabs"
         options={{ headerShown: false }}
@@ -819,9 +781,7 @@ function GuestNavigator({ onLogin, onRegister }) {
       <Stack.Screen
         name="RestaurantDetail"
         component={RestaurantDetailScreen}
-        options={({ route }) => ({
-          title: route.params?.name || 'Restaurant',
-        })}
+        options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
       />
       <Stack.Screen
         name="Login"
@@ -843,20 +803,18 @@ function GuestNavigator({ onLogin, onRegister }) {
 export default function AppNavigator() {
   const { user, userProfile, loading } = useAuth();
 
-  // ── State ─────────────────────────────────
-  const [isGuest, setIsGuest]           = useState(false);
-  const [authScreen, setAuthScreen]     = useState(null);
+  const [isGuest, setIsGuest]               = useState(false);
+  const [authScreen, setAuthScreen]         = useState(null);
   const [onboardingDone, setOnboardingDone] = useState(null);
-  // null = still checking, true = done, false = not done
 
-  // ── Check onboarding on mount ──────────────
+  // ── Check onboarding ──────────────────────
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY)
       .then(value => setOnboardingDone(value === 'true'))
       .catch(() => setOnboardingDone(false));
   }, []);
 
-  // ── Reset guest/auth when user logs in ─────
+  // ── Reset on login ────────────────────────
   useEffect(() => {
     if (user) {
       setIsGuest(false);
@@ -864,62 +822,51 @@ export default function AppNavigator() {
     }
   }, [user]);
 
-  // ── Timeout handler ────────────────────────
   const handleLoadingTimeout = useCallback(() => {
     setIsGuest(true);
   }, []);
 
-  // ─────────────────────────────────────────
-  // LOADING STATES
-  // ─────────────────────────────────────────
+  // ✅ Guest handler for Onboarding screen
+  const handleOnboardingGuest = useCallback(() => {
+    AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+    setOnboardingDone(true);
+    setIsGuest(true);
+  }, []);
 
-  // Still checking AsyncStorage for onboarding
-  if (onboardingDone === null) {
+  // ─────────────────────────────────────────
+  // LOADING
+  // ─────────────────────────────────────────
+  if (onboardingDone === null || loading) {
     return <LoadingScreen onTimeout={handleLoadingTimeout} />;
   }
 
-  // Firebase auth still loading
-  if (loading) {
-    return <LoadingScreen onTimeout={handleLoadingTimeout} />;
-  }
-
   // ─────────────────────────────────────────
-  // NAVIGATION ROUTING
+  // ROUTING
   // ─────────────────────────────────────────
   return (
     <NavigationContainer>
       {(() => {
 
-        // ── 1. Logged in ───────────────────────
+        // ── 1. Logged in ───────────────────
         if (user) {
-          // Wait for profile
           if (!userProfile) {
             return <LoadingScreen onTimeout={handleLoadingTimeout} />;
           }
-
-          // Route by role
-          if (userProfile.role === 'admin') {
-            return <AdminNavigator />;
-          }
-          if (userProfile.role === 'restaurant_owner') {
-            return <OwnerNavigator />;
-          }
-          // customer or any other role
+          if (userProfile.role === 'admin')            return <AdminNavigator />;
+          if (userProfile.role === 'restaurant_owner') return <OwnerNavigator />;
           return <UserNavigator />;
         }
 
-        // ── 2. Auth screens ────────────────────
+        // ── 2. Auth screens ────────────────
         if (authScreen) {
           return (
             <AuthStack
-              initialRoute={
-                authScreen === 'login' ? 'Login' : 'Register'
-              }
+              initialRoute={authScreen === 'login' ? 'Login' : 'Register'}
             />
           );
         }
 
-        // ── 3. Guest mode ──────────────────────
+        // ── 3. Guest mode ──────────────────
         if (isGuest) {
           return (
             <GuestNavigator
@@ -935,18 +882,33 @@ export default function AppNavigator() {
           );
         }
 
-        // ── 4. First launch → Onboarding ───────
+        // ── 4. First launch → Onboarding ───
         if (!onboardingDone) {
           return (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-              <Stack.Screen name="Login"      component={LoginScreen}      />
-              <Stack.Screen name="Register"   component={RegisterScreen}   />
+              <Stack.Screen name="Onboarding">
+                {() => (
+                  // ✅ Pass onGuestPress so guest works from Onboarding
+                  <OnboardingScreen
+                    navigation={{
+                      replace: (screen) => {
+                        AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+                        setOnboardingDone(true);
+                        if (screen === 'Login')    setAuthScreen('login');
+                        if (screen === 'Register') setAuthScreen('register');
+                      },
+                    }}
+                    onGuestPress={handleOnboardingGuest}
+                  />
+                )}
+              </Stack.Screen>
+              <Stack.Screen name="Login"    component={LoginScreen}    />
+              <Stack.Screen name="Register" component={RegisterScreen} />
             </Stack.Navigator>
           );
         }
 
-        // ── 5. Return visit → Welcome screen ───
+        // ── 5. Return visit → Welcome ──────
         return (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Welcome">
