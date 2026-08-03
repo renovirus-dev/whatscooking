@@ -18,7 +18,6 @@ import { db }      from '../firebase/config';
 import { useAuth } from '../hooks/useAuth';
 
 // ─── Notification Handler ─────────────────────
-// ✅ How notifications appear when app is foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -35,16 +34,16 @@ const EXPO_PROJECT_ID =
 
 // ─── Context ──────────────────────────────────
 const NotificationContext = createContext({
-  notifications:               [],
-  unreadCount:                 0,
-  loading:                     false,
-  expoPushToken:               null,
-  permissionStatus:            null,
-  markAsRead:                  async () => {},
-  markAllAsRead:               async () => {},
-  deleteNotification:          async () => {},
-  sendNotificationToUser:      async () => {},
-  sendLocalNotification:       async () => {},
+  notifications:                [],
+  unreadCount:                  0,
+  loading:                      false,
+  expoPushToken:                null,
+  permissionStatus:             null,
+  markAsRead:                   async () => {},
+  markAllAsRead:                async () => {},
+  deleteNotification:           async () => {},
+  sendNotificationToUser:       async () => {},
+  sendLocalNotification:        async () => {},
   registerForPushNotifications: async () => {},
 });
 
@@ -62,26 +61,23 @@ export function NotificationProvider({ children }) {
   const [permissionStatus, setPermissionStatus] = useState(null);
 
   // ── Refs ──────────────────────────────────
-  const notificationListener = useRef();
-  const responseListener     = useRef();
-  const registeredForUid     = useRef(null);
-  const androidChannelsSetup = useRef(false); // ✅ Only setup once
+  const notificationListener  = useRef();
+  const responseListener      = useRef();
+  const registeredForUid      = useRef(null);
+  const androidChannelsSetup  = useRef(false);
 
   // ─────────────────────────────────────────
   // PUSH NOTIFICATION LISTENERS
-  // Set up once — independent of user
   // ─────────────────────────────────────────
   useEffect(() => {
-    // ✅ Clear badge when app opens
+    // ✅ Skip on web
+    if (Platform.OS === 'web') return;
+
     Notifications.setBadgeCountAsync(0).catch(() => {});
 
     notificationListener.current =
       Notifications.addNotificationReceivedListener(notification => {
-        console.log(
-          '🔔 Received:',
-          notification.request.content.title
-        );
-        // ✅ Update badge count
+        console.log('🔔 Received:', notification.request.content.title);
         Notifications.setBadgeCountAsync(
           (notification.request.content.badge || 0) + 1
         ).catch(() => {});
@@ -91,53 +87,34 @@ export function NotificationProvider({ children }) {
       Notifications.addNotificationResponseReceivedListener(response => {
         const data = response.notification.request.content.data;
         console.log('👆 Tapped notification:', data);
-
-        // ✅ Navigation from notification tap
-        // Add your navigation ref here if you have one
-        // e.g.:
-        // if (data?.type === 'subscription_activated') {
-        //   navigationRef.current?.navigate('OwnerDashboard');
-        // }
-        // if (data?.restaurantId) {
-        //   navigationRef.current?.navigate('RestaurantDetail', {
-        //     restaurantId: data.restaurantId,
-        //   });
-        // }
+        // Handle navigation here if needed
       });
 
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(
-          notificationListener.current
-        );
+        Notifications.removeNotificationSubscription(notificationListener.current);
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(
-          responseListener.current
-        );
+        Notifications.removeNotificationSubscription(responseListener.current);
       }
     };
   }, []);
 
   // ─────────────────────────────────────────
   // REGISTER PUSH WHEN USER LOGS IN
-  // ✅ Only registers once per user session
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) return;
     if (registeredForUid.current === user.uid) return;
-
     registeredForUid.current = user.uid;
     registerForPushNotifications();
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
   // FIRESTORE NOTIFICATIONS LISTENER
-  // ✅ Lives at context level - never destroyed on navigation
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) {
-      // ✅ Clear on logout
       setNotifications([]);
       setUnreadCount(0);
       setLoading(false);
@@ -186,6 +163,13 @@ export function NotificationProvider({ children }) {
   // REGISTER FOR PUSH NOTIFICATIONS
   // ─────────────────────────────────────────
   const registerForPushNotifications = useCallback(async () => {
+    // ✅ Skip on web
+    if (Platform.OS === 'web') {
+      console.log('ℹ️ Push notifications not supported on web');
+      return null;
+    }
+
+    // ✅ Skip on simulator
     if (!Device.isDevice) {
       console.log('ℹ️ Push notifications require a physical device');
       return null;
@@ -228,6 +212,7 @@ export function NotificationProvider({ children }) {
       }
 
       // ── Android notification channels ─────
+      // ✅ Remove sound: 'default' — not bundled in app
       // ✅ Only set up once per app session
       if (Platform.OS === 'android' && !androidChannelsSetup.current) {
         androidChannelsSetup.current = true;
@@ -237,23 +222,23 @@ export function NotificationProvider({ children }) {
             importance:       Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
             lightColor:       '#FF6B35',
-            sound:            'default',
+            // ✅ No sound field - uses system default
           }),
           Notifications.setNotificationChannelAsync('menu-updates', {
             name:       'Menu Updates',
             importance: Notifications.AndroidImportance.HIGH,
-            sound:      'default',
             lightColor: '#FF6B35',
+            // ✅ No sound field
           }),
           Notifications.setNotificationChannelAsync('promotions', {
             name:       'Promotions & Deals',
             importance: Notifications.AndroidImportance.DEFAULT,
-            sound:      'default',
+            // ✅ No sound field
           }),
           Notifications.setNotificationChannelAsync('system', {
             name:       'System Alerts',
             importance: Notifications.AndroidImportance.HIGH,
-            sound:      'default',
+            // ✅ No sound field
           }),
         ]);
       }
@@ -262,7 +247,6 @@ export function NotificationProvider({ children }) {
       return token;
 
     } catch (err) {
-      // ✅ Never crash app if push registration fails
       console.error('Push registration error:', err);
       return null;
     }
@@ -270,14 +254,10 @@ export function NotificationProvider({ children }) {
 
   // ─────────────────────────────────────────
   // MARK SINGLE AS READ
-  // ✅ Optimistic update + useCallback
   // ─────────────────────────────────────────
   const markAsRead = useCallback(async (notificationId) => {
-    // ✅ Optimistic update — instant UI response
     setNotifications(prev =>
-      prev.map(n =>
-        n.id === notificationId ? { ...n, isRead: true } : n
-      )
+      prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
     );
     setUnreadCount(prev => Math.max(0, prev - 1));
 
@@ -286,12 +266,9 @@ export function NotificationProvider({ children }) {
         isRead: true,
       });
     } catch (err) {
-      // ✅ Revert on error
       console.error('markAsRead error:', err);
       setNotifications(prev =>
-        prev.map(n =>
-          n.id === notificationId ? { ...n, isRead: false } : n
-        )
+        prev.map(n => n.id === notificationId ? { ...n, isRead: false } : n)
       );
       setUnreadCount(prev => prev + 1);
     }
@@ -299,13 +276,11 @@ export function NotificationProvider({ children }) {
 
   // ─────────────────────────────────────────
   // MARK ALL AS READ
-  // ✅ Optimistic update + useCallback
   // ─────────────────────────────────────────
   const markAllAsRead = useCallback(async () => {
     const unread = notifications.filter(n => !n.isRead);
     if (unread.length === 0) return;
 
-    // ✅ Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setUnreadCount(0);
 
@@ -316,7 +291,6 @@ export function NotificationProvider({ children }) {
         )
       );
     } catch (err) {
-      // ✅ Revert on error - reload from Firestore
       console.error('markAllAsRead error:', err);
       setNotifications(prev =>
         prev.map(n => {
@@ -330,10 +304,8 @@ export function NotificationProvider({ children }) {
 
   // ─────────────────────────────────────────
   // DELETE NOTIFICATION
-  // ✅ Optimistic update + useCallback
   // ─────────────────────────────────────────
   const deleteNotification = useCallback(async (id) => {
-    // ✅ Optimistic update
     const deleted = notifications.find(n => n.id === id);
     setNotifications(prev => prev.filter(n => n.id !== id));
     if (deleted && !deleted.isRead) {
@@ -343,35 +315,23 @@ export function NotificationProvider({ children }) {
     try {
       await deleteDoc(doc(db, 'notifications', id));
     } catch (err) {
-      // ✅ Revert on error
       console.error('deleteNotification error:', err);
       if (deleted) {
         setNotifications(prev => [deleted, ...prev]);
-        if (!deleted.isRead) {
-          setUnreadCount(prev => prev + 1);
-        }
+        if (!deleted.isRead) setUnreadCount(prev => prev + 1);
       }
     }
   }, [notifications]);
 
   // ─────────────────────────────────────────
   // SEND NOTIFICATION TO USER
-  // Saves to Firestore → appears in Notifications screen
   // ─────────────────────────────────────────
   const sendNotificationToUser = useCallback(async ({
-    userId,
-    title,
-    body,
-    data = {},
-    type = 'general',
+    userId, title, body, data = {}, type = 'general',
   }) => {
     try {
       await addDoc(collection(db, 'notifications'), {
-        userId,
-        title,
-        body,
-        data,
-        type,
+        userId, title, body, data, type,
         isRead:    false,
         createdAt: serverTimestamp(),
       });
@@ -384,15 +344,20 @@ export function NotificationProvider({ children }) {
 
   // ─────────────────────────────────────────
   // SEND LOCAL NOTIFICATION
-  // Shows immediately on device (no Firestore)
+  // ✅ Removed sound: 'default' - not bundled
   // ─────────────────────────────────────────
   const sendLocalNotification = useCallback(async (
     title, body, data = {}
   ) => {
     try {
       await Notifications.scheduleNotificationAsync({
-        content: { title, body, data, sound: 'default' },
-        trigger: null, // show immediately
+        content: {
+          title,
+          body,
+          data,
+          // ✅ No sound field - uses channel default
+        },
+        trigger: null,
       });
     } catch (err) {
       console.error('sendLocalNotification error:', err);

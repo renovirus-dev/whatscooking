@@ -14,12 +14,10 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImageManipulator from 'expo-image-manipulator';
-import {
-  doc, getDoc,
-} from 'firebase/firestore';
-import { db }            from '../../firebase/config';
-import { useMenu }       from '../../hooks/useMenu';
-import { useSubscription } from '../../hooks/useSubscription';
+import { doc, getDoc }       from 'firebase/firestore';
+import { db }                from '../../firebase/config';
+import { useMenu }           from '../../hooks/useMenu';
+import { useSubscription }   from '../../hooks/useSubscription';
 import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 
@@ -48,21 +46,18 @@ const CATEGORY_KEYWORDS = {
   snack:       ['snack', 'snacks', 'bite', 'bites'],
 };
 
-// ─── Max pages by plan ────────────────────────
 const MAX_PAGES = {
   free_trial: 0,
   basic:      2,
   premium:    20,
 };
 
-// ─── Steps ───────────────────────────────────
 const STEPS = {
   CAPTURE:    'capture',
   PROCESSING: 'processing',
   REVIEW:     'review',
 };
 
-// ─── Categories ──────────────────────────────
 const CATEGORIES = [
   { id: 'appetizer',   label: '🥗 Appetizer'  },
   { id: 'soup',        label: '🍲 Soup'        },
@@ -77,15 +72,10 @@ const CATEGORIES = [
 ];
 
 // ─────────────────────────────────────────────
-// OCR FUNCTION
+// OCR
 // ─────────────────────────────────────────────
 const runOCR = async (imageUri) => {
-  // ✅ If ML Kit not available (web/simulator)
-  // return empty string gracefully
-  if (!TextRecognition) {
-    console.log('ML Kit not available on this platform');
-    return '';
-  }
+  if (!TextRecognition) return '';
   try {
     const compressed = await ImageManipulator.manipulateAsync(
       imageUri,
@@ -105,7 +95,6 @@ const runOCR = async (imageUri) => {
 // ─────────────────────────────────────────────
 const parseMenuText = (rawText) => {
   if (!rawText?.trim()) return [];
-
   const lines         = rawText.split('\n').map(l => l.trim()).filter(Boolean);
   const items         = [];
   let currentCategory = 'main_course';
@@ -113,11 +102,9 @@ const parseMenuText = (rawText) => {
   const isSectionHeader = (line) => {
     const lower   = line.toLowerCase().trim();
     const isShort = line.split(' ').length <= 5;
-    const isAllCaps = line === line.toUpperCase() &&
-                      line.length > 2 && /[A-Z]/.test(line);
-    const isKeyword = Object.values(CATEGORY_KEYWORDS).flat()
-      .some(kw => lower.includes(kw));
-    const hasPrice = /\d+\.\d{2}/.test(line) || /\$\d+/.test(line);
+    const isAllCaps = line === line.toUpperCase() && line.length > 2 && /[A-Z]/.test(line);
+    const isKeyword = Object.values(CATEGORY_KEYWORDS).flat().some(kw => lower.includes(kw));
+    const hasPrice  = /\d+\.\d{2}/.test(line) || /\$\d+/.test(line);
     return (isAllCaps || isKeyword) && isShort && !hasPrice;
   };
 
@@ -155,34 +142,21 @@ const parseMenuText = (rawText) => {
   while (i < lines.length) {
     const line = lines[i].trim();
     if (!line || line.length < 2) { i++; continue; }
-
     if (isSectionHeader(line)) {
       currentCategory = detectCategory(line);
       i++;
       continue;
     }
-
     const price = extractPrice(line);
     if (price !== null) {
       const namePart = stripPrice(line);
-      const isValidName =
-        namePart.length >= 2 &&
-        !/^\d+$/.test(namePart) &&
-        !/^[^a-zA-Z]*$/.test(namePart);
-
+      const isValidName = namePart.length >= 2 && !/^\d+$/.test(namePart) && !/^[^a-zA-Z]*$/.test(namePart);
       if (isValidName) {
         let description = '';
-        if (
-          i + 1 < lines.length &&
-          extractPrice(lines[i + 1]) === null &&
-          !isSectionHeader(lines[i + 1]) &&
-          lines[i + 1].length > 3 &&
-          lines[i + 1].length < 150
-        ) {
+        if (i + 1 < lines.length && extractPrice(lines[i + 1]) === null && !isSectionHeader(lines[i + 1]) && lines[i + 1].length > 3 && lines[i + 1].length < 150) {
           description = lines[i + 1].trim();
           i++;
         }
-
         items.push({
           id:          `scan_${Date.now()}_${Math.random().toString(36).slice(2)}`,
           name:        namePart.replace(/^[-•*·]+\s*/, '').replace(/\s+/g, ' ').trim(),
@@ -208,7 +182,7 @@ const parseMenuText = (rawText) => {
 };
 
 // ─────────────────────────────────────────────
-// UPLOAD SCAN TO CLOUDINARY
+// UPLOAD TO CLOUDINARY
 // ─────────────────────────────────────────────
 const uploadScanToCloudinary = async (imageUri, pageNum) => {
   try {
@@ -217,34 +191,18 @@ const uploadScanToCloudinary = async (imageUri, pageNum) => {
       [{ resize: { width: 1600 } }],
       { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
     );
-
     const formData = new FormData();
-    formData.append('file', {
-      uri:  compressed.uri,
-      type: 'image/jpeg',
-      name: `menu_scan_p${pageNum}_${Date.now()}.jpg`,
-    });
+    formData.append('file', { uri: compressed.uri, type: 'image/jpeg', name: `menu_scan_p${pageNum}_${Date.now()}.jpg` });
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', folders.menus);
-
     const response = await fetch(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method:  'POST',
-        body:    formData,
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
+      { method: 'POST', body: formData, headers: { 'Content-Type': 'multipart/form-data' } }
     );
-
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || 'Upload failed');
-    }
-
+    if (!response.ok) { const err = await response.json(); throw new Error(err.error?.message || 'Upload failed'); }
     const data = await response.json();
     return { success: true, url: data.secure_url };
   } catch (err) {
-    console.error('Scan upload error:', err);
     return { success: false, error: err.message };
   }
 };
@@ -256,163 +214,60 @@ export default function MenuScannerScreen({ route, navigation }) {
   const insets     = useSafeAreaInsets();
   const { restaurantId, restaurant: passedRestaurant } = route.params || {};
 
+  // ─────────────────────────────────────────
+  // ✅ ALL HOOKS FIRST — NO EARLY RETURNS BEFORE THIS
+  // ─────────────────────────────────────────
+
+  // Hook 1-2: subscription
   const { addScannedMenuItems }          = useMenu(restaurantId);
   const { getCurrentPlan, hasBasic }     = useSubscription();
+
+  // Hook 3: camera permission
   const [permission, requestPermission]  = useCameraPermissions();
 
-  // ✅ Restaurant state - load if not passed
-  const [restaurant, setRestaurant]   = useState(passedRestaurant || null);
+  // Hook 4-5: restaurant state
+  const [restaurant, setRestaurant]     = useState(passedRestaurant || null);
   const [loadingResto, setLoadingResto] = useState(!passedRestaurant);
 
+  // Hook 6-14: scanner state
+  const [step, setStep]                     = useState(STEPS.CAPTURE);
+  const [scannedPages, setScannedPages]     = useState([]);
+  const [extractedItems, setExtractedItems] = useState([]);
+  const [processingMsg, setProcessingMsg]   = useState('');
+  const [processingPct, setProcessingPct]   = useState(0);
+  const [saving, setSaving]                 = useState(false);
+  const [editingItem, setEditingItem]       = useState(null);
+  const [showEditModal, setShowEditModal]   = useState(false);
+  const [facing, setFacing]                 = useState('back');
+  const [torchOn, setTorchOn]               = useState(false);
+
+  // Hook 15: camera ref
   const cameraRef = useRef(null);
 
-  // ─────────────────────────────────────────
-  // ✅ LOAD RESTAURANT IF NOT PASSED
-  // This fixes the issue where ManageMenuScreen
-  // only passes restaurantId not the full object
-  // ─────────────────────────────────────────
+  // Hook 16: Load restaurant if not passed
   useEffect(() => {
     if (passedRestaurant) {
       setRestaurant(passedRestaurant);
       setLoadingResto(false);
       return;
     }
-
     if (!restaurantId) {
       setLoadingResto(false);
       return;
     }
-
-    // ✅ Fetch restaurant from Firestore
     getDoc(doc(db, 'restaurants', restaurantId))
       .then(snap => {
-        if (snap.exists()) {
-          setRestaurant({ id: snap.id, ...snap.data() });
-        }
+        if (snap.exists()) setRestaurant({ id: snap.id, ...snap.data() });
         setLoadingResto(false);
       })
-      .catch(err => {
-        console.error('Failed to load restaurant:', err);
-        setLoadingResto(false);
-      });
+      .catch(() => setLoadingResto(false));
   }, [restaurantId, passedRestaurant]);
 
-  // ── State ─────────────────────────────────
-  const [step, setStep]                   = useState(STEPS.CAPTURE);
-  const [scannedPages, setScannedPages]   = useState([]);
-  const [extractedItems, setExtractedItems] = useState([]);
-  const [processingMsg, setProcessingMsg] = useState('');
-  const [processingPct, setProcessingPct] = useState(0);
-  const [saving, setSaving]               = useState(false);
-  const [editingItem, setEditingItem]     = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [facing, setFacing]               = useState('back');
-  const [torchOn, setTorchOn]             = useState(false);
-
-  // ── Loading restaurant ────────────────────
-  if (loadingResto) {
-    return (
-      <View style={[
-        styles.lockedContainer,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{ color: COLORS.textMuted, marginTop: SIZES.sm }}>
-          Loading...
-        </Text>
-      </View>
-    );
-  }
-
-  // ── Plan check ────────────────────────────
-  const currentPlan = getCurrentPlan(restaurant);
-  const maxPages    = MAX_PAGES[currentPlan?.id || 'free_trial'];
-
-  // ✅ Show locked if not basic/premium
-  if (!hasBasic(restaurant)) {
-    return (
-      <View style={[
-        styles.lockedContainer,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
-        <View style={styles.lockedIconBg}>
-          <Ionicons name="scan-outline" size={50} color={COLORS.primary} />
-        </View>
-        <Text style={styles.lockedTitle}>Menu Scanner</Text>
-        <Text style={styles.lockedDesc}>
-          Scan your physical menu pages to automatically
-          extract and upload items — no typing needed!
-        </Text>
-
-        <View style={styles.planCompare}>
-          {[
-            { plan: '🆓 Free Trial', scan: '❌ Not available',  color: COLORS.error   },
-            { plan: '⭐ Basic',      scan: '✅ Up to 2 pages',  color: COLORS.success },
-            { plan: '👑 Premium',   scan: '✅ Up to 20 pages', color: COLORS.success },
-          ].map((row, i) => (
-            <View
-              key={i}
-              style={[
-                styles.planCompareRow,
-                i === 2 && { borderBottomWidth: 0 },
-              ]}
-            >
-              <Text style={styles.planComparePlan}>{row.plan}</Text>
-              <Text style={[styles.planCompareScan, { color: row.color }]}>
-                {row.scan}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <TouchableOpacity
-          style={styles.lockedUpgradeBtn}
-          onPress={() => navigation.navigate('Subscription', { restaurant })}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="diamond-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.lockedUpgradeBtnText}>
-            Upgrade to Basic — $9.99/mo
-          </Text>
-        </TouchableOpacity>
-        <Text style={styles.lockedPayText}>
-          PayPal · Scotiabank Bank Transfer
-        </Text>
-      </View>
-    );
-  }
-
-  // ── No camera permission ──────────────────
-  if (!permission?.granted) {
-    return (
-      <View style={[
-        styles.lockedContainer,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
-        <Ionicons name="camera-outline" size={60} color={COLORS.textMuted} />
-        <Text style={styles.lockedTitle}>Camera Access Needed</Text>
-        <Text style={styles.lockedDesc}>
-          Please allow camera access to scan your menu pages
-        </Text>
-        <TouchableOpacity
-          style={styles.lockedUpgradeBtn}
-          onPress={requestPermission}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.lockedUpgradeBtnText}>
-            Allow Camera Access
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // ─────────────────────────────────────────
-  // CAPTURE PHOTO
-  // ─────────────────────────────────────────
+  // Hook 17: handleCapture
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current) return;
+    const currentPlan = getCurrentPlan(restaurant);
+    const maxPages    = MAX_PAGES[currentPlan?.id || 'free_trial'];
 
     if (scannedPages.length >= maxPages) {
       Alert.alert(
@@ -426,33 +281,21 @@ export default function MenuScannerScreen({ route, navigation }) {
       );
       return;
     }
-
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality:        0.9,
-        base64:         false,
-        skipProcessing: false,
-      });
-
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.9, base64: false, skipProcessing: false });
       const pageNum = scannedPages.length + 1;
-      setScannedPages(prev => [
-        ...prev,
-        { uri: photo.uri, pageNum, cloudinaryUrl: null },
-      ]);
+      setScannedPages(prev => [...prev, { uri: photo.uri, pageNum, cloudinaryUrl: null }]);
     } catch (err) {
       Alert.alert('Error', 'Failed to capture. Please try again.');
     }
-  }, [cameraRef, scannedPages, maxPages, currentPlan]);
+  }, [cameraRef, scannedPages, restaurant, getCurrentPlan]);
 
-  // ─────────────────────────────────────────
-  // PROCESS PAGES
-  // ─────────────────────────────────────────
+  // Hook 18: handleDoneScanning
   const handleDoneScanning = useCallback(async () => {
     if (scannedPages.length === 0) {
       Alert.alert('No Pages Scanned', 'Please scan at least one menu page first.');
       return;
     }
-
     setStep(STEPS.PROCESSING);
     let allItems = [];
 
@@ -461,15 +304,13 @@ export default function MenuScannerScreen({ route, navigation }) {
       const pageNum = i + 1;
       const total   = scannedPages.length;
 
-      setProcessingMsg(`Uploading page ${pageNum}/${total} to cloud...`);
+      setProcessingMsg(`Uploading page ${pageNum}/${total}...`);
       setProcessingPct(Math.round(((i * 3) / (total * 3)) * 100));
 
       uploadScanToCloudinary(page.uri, pageNum).then(result => {
         if (result.success) {
           setScannedPages(prev =>
-            prev.map((p, idx) =>
-              idx === i ? { ...p, cloudinaryUrl: result.url } : p
-            )
+            prev.map((p, idx) => idx === i ? { ...p, cloudinaryUrl: result.url } : p)
           );
         }
       });
@@ -486,7 +327,6 @@ export default function MenuScannerScreen({ route, navigation }) {
         const pageItems = parseMenuText(rawText);
         allItems = [...allItems, ...pageItems];
       }
-
       await new Promise(r => setTimeout(r, 300));
     }
 
@@ -506,8 +346,7 @@ export default function MenuScannerScreen({ route, navigation }) {
     if (unique.length === 0) {
       Alert.alert(
         '⚠️ No Items Found',
-        'Could not extract menu items.\n\n' +
-        'Tips:\n• Ensure good lighting 💡\n• Hold camera steady 📷\n• Make sure text is sharp 🔍',
+        'Could not extract menu items.\n\nTips:\n• Ensure good lighting 💡\n• Hold camera steady 📷\n• Make sure text is sharp 🔍',
         [
           { text: '📷 Try Again', onPress: () => { setStep(STEPS.CAPTURE); setScannedPages([]); } },
           { text: '✏️ Add Manually', onPress: () => navigation.navigate('AddMenuItem', { restaurantId }) },
@@ -521,78 +360,59 @@ export default function MenuScannerScreen({ route, navigation }) {
     setStep(STEPS.REVIEW);
   }, [scannedPages, restaurantId]);
 
-  // ─────────────────────────────────────────
-  // REVIEW ACTIONS
-  // ─────────────────────────────────────────
+  // Hook 19: toggleSelected
   const toggleSelected = useCallback((id) => {
-    setExtractedItems(prev =>
-      prev.map(i => i.id === id ? { ...i, isSelected: !i.isSelected } : i)
-    );
+    setExtractedItems(prev => prev.map(i => i.id === id ? { ...i, isSelected: !i.isSelected } : i));
   }, []);
 
+  // Hook 20: deleteItem
   const deleteItem = useCallback((id) => {
     setExtractedItems(prev => prev.filter(i => i.id !== id));
   }, []);
 
+  // Hook 21: openEdit
   const openEdit = useCallback((item) => {
     setEditingItem({ ...item, price: item.price?.toString() });
     setShowEditModal(true);
   }, []);
 
+  // Hook 22: openAddNew
   const openAddNew = useCallback(() => {
     setEditingItem({
-      id:          `manual_${Date.now()}`,
-      name:        '',
-      price:       '',
-      description: '',
-      category:    'main_course',
-      confidence:  1,
-      isEdited:    true,
-      isSelected:  true,
-      isNew:       true,
+      id: `manual_${Date.now()}`, name: '', price: '',
+      description: '', category: 'main_course',
+      confidence: 1, isEdited: true, isSelected: true, isNew: true,
     });
     setShowEditModal(true);
   }, []);
 
+  // Hook 23: saveItem
   const saveItem = useCallback(() => {
-    if (!editingItem?.name?.trim()) {
-      Alert.alert('Required', 'Please enter an item name');
-      return;
-    }
+    if (!editingItem?.name?.trim()) { Alert.alert('Required', 'Please enter an item name'); return; }
     const price = parseFloat(editingItem.price);
-    if (isNaN(price) || price < 0) {
-      Alert.alert('Required', 'Please enter a valid price');
-      return;
-    }
-
+    if (isNaN(price) || price < 0) { Alert.alert('Required', 'Please enter a valid price'); return; }
     const updated = { ...editingItem, price: Math.round(price * 100) / 100, isEdited: true };
     delete updated.isNew;
-
     const exists = extractedItems.some(i => i.id === updated.id);
     if (exists) {
       setExtractedItems(prev => prev.map(i => i.id === updated.id ? updated : i));
     } else {
       setExtractedItems(prev => [...prev, updated]);
     }
-
     setShowEditModal(false);
     setEditingItem(null);
   }, [editingItem, extractedItems]);
 
-  // ─────────────────────────────────────────
-  // SAVE TO MENU
-  // ─────────────────────────────────────────
+  // Hook 24: handleAddToMenu
   const handleAddToMenu = useCallback(async () => {
     const selected = extractedItems.filter(i => i.isSelected);
-
     if (selected.length === 0) {
-      Alert.alert('Nothing Selected', 'Please select at least one item to add to your menu.');
+      Alert.alert('Nothing Selected', 'Please select at least one item.');
       return;
     }
-
     Alert.alert(
       '✅ Add to Menu',
-      `Add ${selected.length} item${selected.length !== 1 ? 's' : ''} to your menu?\n\nYou can add photos later from Manage Menu.`,
+      `Add ${selected.length} item${selected.length !== 1 ? 's' : ''} to your menu?\n\nYou can add photos later.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -602,30 +422,22 @@ export default function MenuScannerScreen({ route, navigation }) {
             try {
               const results = await addScannedMenuItems(
                 selected.map(item => ({
-                  name:        item.name.trim(),
-                  price:       item.price,
+                  name: item.name.trim(), price: item.price,
                   description: item.description?.trim() || '',
-                  category:    item.category || 'main_course',
-                  dietaryInfo: {},
-                  tags:        [],
-                  servingSize: '',
+                  category: item.category || 'main_course',
+                  dietaryInfo: {}, tags: [], servingSize: '',
                 }))
               );
-
               const ok   = results.success.length;
               const fail = results.failed.length;
-
               Alert.alert(
                 '🎉 Menu Updated!',
                 `✅ ${ok} item${ok !== 1 ? 's' : ''} added.\n` +
-                (fail > 0 ? `⚠️ ${fail} failed — add them manually.\n\n` : '\n') +
+                (fail > 0 ? `⚠️ ${fail} failed — add manually.\n\n` : '\n') +
                 'Add photos from Manage Menu.',
                 [
                   { text: '📋 View Menu', onPress: () => navigation.navigate('ManageMenu') },
-                  {
-                    text: '📷 Scan More',
-                    onPress: () => { setStep(STEPS.CAPTURE); setScannedPages([]); setExtractedItems([]); },
-                  },
+                  { text: '📷 Scan More', onPress: () => { setStep(STEPS.CAPTURE); setScannedPages([]); setExtractedItems([]); } },
                 ]
               );
             } catch (err) {
@@ -640,7 +452,77 @@ export default function MenuScannerScreen({ route, navigation }) {
   }, [extractedItems, addScannedMenuItems, navigation]);
 
   // ─────────────────────────────────────────
-  // RENDER: STEP 1 — CAPTURE
+  // NOW WE CAN DO EARLY RETURNS
+  // All hooks are above — safe to return early
+  // ─────────────────────────────────────────
+
+  // Derived values from state
+  const currentPlan = getCurrentPlan(restaurant);
+  const maxPages    = MAX_PAGES[currentPlan?.id || 'free_trial'];
+
+  // Loading restaurant
+  if (loadingResto) {
+    return (
+      <View style={[styles.lockedContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={{ color: COLORS.textMuted, marginTop: SIZES.sm }}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // Not subscribed
+  if (!hasBasic(restaurant)) {
+    return (
+      <View style={[styles.lockedContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <View style={styles.lockedIconBg}>
+          <Ionicons name="scan-outline" size={50} color={COLORS.primary} />
+        </View>
+        <Text style={styles.lockedTitle}>Menu Scanner</Text>
+        <Text style={styles.lockedDesc}>
+          Scan your physical menu pages to automatically extract and upload items.
+        </Text>
+        <View style={styles.planCompare}>
+          {[
+            { plan: '🆓 Free Trial', scan: '❌ Not available',  color: COLORS.error   },
+            { plan: '⭐ Basic',      scan: '✅ Up to 2 pages',  color: COLORS.success },
+            { plan: '👑 Premium',   scan: '✅ Up to 20 pages', color: COLORS.success },
+          ].map((row, i) => (
+            <View key={i} style={[styles.planCompareRow, i === 2 && { borderBottomWidth: 0 }]}>
+              <Text style={styles.planComparePlan}>{row.plan}</Text>
+              <Text style={[styles.planCompareScan, { color: row.color }]}>{row.scan}</Text>
+            </View>
+          ))}
+        </View>
+        <TouchableOpacity
+          style={styles.lockedUpgradeBtn}
+          onPress={() => navigation.navigate('Subscription', { restaurant })}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="diamond-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.lockedUpgradeBtnText}>Upgrade to Basic — $9.99/mo</Text>
+        </TouchableOpacity>
+        <Text style={styles.lockedPayText}>PayPal · Scotiabank Bank Transfer</Text>
+      </View>
+    );
+  }
+
+  // No camera permission
+  if (!permission?.granted) {
+    return (
+      <View style={[styles.lockedContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <Ionicons name="camera-outline" size={60} color={COLORS.textMuted} />
+        <Text style={styles.lockedTitle}>Camera Access Needed</Text>
+        <Text style={styles.lockedDesc}>Please allow camera access to scan your menu pages</Text>
+        <TouchableOpacity style={styles.lockedUpgradeBtn} onPress={requestPermission} activeOpacity={0.8}>
+          <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.lockedUpgradeBtnText}>Allow Camera Access</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ─────────────────────────────────────────
+  // RENDER FUNCTIONS (not hooks — safe here)
   // ─────────────────────────────────────────
   const renderCapture = () => (
     <View style={styles.container}>
@@ -650,13 +532,11 @@ export default function MenuScannerScreen({ route, navigation }) {
         facing={facing}
         enableTorch={torchOn}
       />
-
       {/* Top Bar */}
       <View style={[styles.cameraTopBar, { paddingTop: insets.top + SIZES.sm }]}>
         <TouchableOpacity style={styles.camIconBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
         </TouchableOpacity>
-
         <View style={styles.cameraTopCenter}>
           <Text style={styles.cameraTitle}>📷 Scan Menu</Text>
           <Text style={styles.cameraSubtitle}>
@@ -665,17 +545,12 @@ export default function MenuScannerScreen({ route, navigation }) {
               : 'Point at a menu page'}
           </Text>
         </View>
-
         <View style={styles.camTopRight}>
           <TouchableOpacity
             style={[styles.camIconBtn, torchOn && { backgroundColor: '#FFD700' + '60' }]}
             onPress={() => setTorchOn(t => !t)}
           >
-            <Ionicons
-              name={torchOn ? 'flashlight' : 'flashlight-outline'}
-              size={20}
-              color="#FFFFFF"
-            />
+            <Ionicons name={torchOn ? 'flashlight' : 'flashlight-outline'} size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.camIconBtn}
@@ -704,11 +579,7 @@ export default function MenuScannerScreen({ route, navigation }) {
       {/* Thumbnails */}
       {scannedPages.length > 0 && (
         <View style={styles.thumbnailStrip}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.thumbnailContent}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnailContent}>
             {scannedPages.map((page, idx) => (
               <View key={idx} style={styles.thumbnail}>
                 <Image source={{ uri: page.uri }} style={styles.thumbnailImg} resizeMode="cover" />
@@ -729,9 +600,7 @@ export default function MenuScannerScreen({ route, navigation }) {
 
       {/* Tips */}
       <View style={styles.cameraTips}>
-        <Text style={styles.cameraTipText}>
-          💡 Good lighting · 📐 Keep flat · 🔍 Stay focused
-        </Text>
+        <Text style={styles.cameraTipText}>💡 Good lighting · 📐 Keep flat · 🔍 Stay focused</Text>
       </View>
 
       {/* Controls */}
@@ -751,9 +620,6 @@ export default function MenuScannerScreen({ route, navigation }) {
     </View>
   );
 
-  // ─────────────────────────────────────────
-  // RENDER: STEP 2 — PROCESSING
-  // ─────────────────────────────────────────
   const renderProcessing = () => (
     <View style={[styles.processingContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <View style={styles.processingIconBg}>
@@ -781,9 +647,6 @@ export default function MenuScannerScreen({ route, navigation }) {
     </View>
   );
 
-  // ─────────────────────────────────────────
-  // RENDER: STEP 3 — REVIEW
-  // ─────────────────────────────────────────
   const renderReview = () => {
     const selectedCount = extractedItems.filter(i => i.isSelected).length;
     const editedCount   = extractedItems.filter(i => i.isEdited).length;
@@ -793,13 +656,8 @@ export default function MenuScannerScreen({ route, navigation }) {
         {/* Header */}
         <View style={[styles.reviewHeader, { paddingTop: insets.top + SIZES.sm }]}>
           <TouchableOpacity
-            onPress={() => Alert.alert(
-              'Go Back?',
-              'Extracted items will be lost.',
-              [
-                { text: 'Stay', style: 'cancel' },
-                { text: 'Go Back', onPress: () => { setStep(STEPS.CAPTURE); setExtractedItems([]); } },
-              ]
+            onPress={() => Alert.alert('Go Back?', 'Extracted items will be lost.',
+              [{ text: 'Stay', style: 'cancel' }, { text: 'Go Back', onPress: () => { setStep(STEPS.CAPTURE); setExtractedItems([]); } }]
             )}
           >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
@@ -816,12 +674,10 @@ export default function MenuScannerScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Info */}
+        {/* Info Banner */}
         <View style={styles.reviewBanner}>
           <Ionicons name="information-circle-outline" size={16} color={COLORS.primary} />
-          <Text style={styles.reviewBannerText}>
-            Tap ✏️ to fix any errors · Tap + to add missed items
-          </Text>
+          <Text style={styles.reviewBannerText}>Tap ✏️ to fix errors · Tap + to add missed items</Text>
         </View>
 
         {/* Controls */}
@@ -837,7 +693,7 @@ export default function MenuScannerScreen({ route, navigation }) {
           <Text style={styles.reviewCtrlCount}>{selectedCount}/{extractedItems.length}</Text>
         </View>
 
-        {/* Items */}
+        {/* Items List */}
         <FlatList
           data={extractedItems}
           keyExtractor={item => item.id}
@@ -864,10 +720,7 @@ export default function MenuScannerScreen({ route, navigation }) {
               </TouchableOpacity>
               <View style={{ flex: 1 }}>
                 <View style={styles.reviewItemTop}>
-                  <Text
-                    style={[styles.reviewItemName, !item.isSelected && { color: COLORS.textMuted }]}
-                    numberOfLines={1}
-                  >
+                  <Text style={[styles.reviewItemName, !item.isSelected && { color: COLORS.textMuted }]} numberOfLines={1}>
                     {item.name || 'Unnamed Item'}
                   </Text>
                   {item.isEdited && (
@@ -927,9 +780,6 @@ export default function MenuScannerScreen({ route, navigation }) {
     );
   };
 
-  // ─────────────────────────────────────────
-  // RENDER: EDIT MODAL
-  // ─────────────────────────────────────────
   const renderEditModal = () => (
     <Modal
       visible={showEditModal}
@@ -937,15 +787,10 @@ export default function MenuScannerScreen({ route, navigation }) {
       transparent
       onRequestClose={() => { setShowEditModal(false); setEditingItem(null); }}
     >
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.editModal, { paddingBottom: insets.bottom + SIZES.md }]}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>
-            {editingItem?.isNew ? '➕ Add Item' : '✏️ Edit Item'}
-          </Text>
+          <Text style={styles.modalTitle}>{editingItem?.isNew ? '➕ Add Item' : '✏️ Edit Item'}</Text>
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalLabel}>Name <Text style={{ color: COLORS.error }}>*</Text></Text>
             <TextInput
@@ -956,7 +801,6 @@ export default function MenuScannerScreen({ route, navigation }) {
               placeholderTextColor={COLORS.textMuted}
               autoCapitalize="words"
               autoFocus
-              returnKeyType="next"
             />
             <Text style={styles.modalLabel}>Price ($) <Text style={{ color: COLORS.error }}>*</Text></Text>
             <TextInput
@@ -966,14 +810,13 @@ export default function MenuScannerScreen({ route, navigation }) {
               placeholder="0.00"
               placeholderTextColor={COLORS.textMuted}
               keyboardType="decimal-pad"
-              returnKeyType="next"
             />
             <Text style={styles.modalLabel}>Description</Text>
             <TextInput
               style={[styles.modalInput, styles.modalTextarea]}
               value={editingItem?.description || ''}
               onChangeText={v => setEditingItem(p => ({ ...p, description: v }))}
-              placeholder="Optional description..."
+              placeholder="Optional..."
               placeholderTextColor={COLORS.textMuted}
               multiline
               numberOfLines={3}
@@ -1012,7 +855,7 @@ export default function MenuScannerScreen({ route, navigation }) {
   );
 
   // ─────────────────────────────────────────
-  // MAIN RENDER
+  // MAIN RETURN
   // ─────────────────────────────────────────
   return (
     <>
@@ -1031,419 +874,259 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
 
   lockedContainer: {
-    flex:            1,
-    justifyContent:  'center',
-    alignItems:      'center',
-    padding:         SIZES.xl,
-    backgroundColor: COLORS.background,
-    gap:             SIZES.md,
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    padding: SIZES.xl, backgroundColor: COLORS.background, gap: SIZES.md,
   },
   lockedIconBg: {
-    width:           100,
-    height:          100,
-    borderRadius:    50,
+    width: 100, height: 100, borderRadius: 50,
     backgroundColor: COLORS.primary + '15',
-    justifyContent:  'center',
-    alignItems:      'center',
+    justifyContent: 'center', alignItems: 'center',
   },
-  lockedTitle: {
-    fontSize:   FONTS.xxl,
-    fontWeight: 'bold',
-    color:      COLORS.text,
-    textAlign:  'center',
-  },
-  lockedDesc: {
-    fontSize:   FONTS.md,
-    color:      COLORS.textMuted,
-    textAlign:  'center',
-    lineHeight: 22,
-  },
+  lockedTitle: { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' },
+  lockedDesc:  { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center', lineHeight: 22 },
   planCompare: {
-    backgroundColor: COLORS.surface,
-    borderRadius:    RADIUS.lg,
-    padding:         SIZES.md,
-    width:           '100%',
-    gap:             SIZES.sm,
-    ...SHADOW,
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg,
+    padding: SIZES.md, width: '100%', gap: SIZES.sm, ...SHADOW,
   },
   planCompareRow: {
-    flexDirection:     'row',
-    justifyContent:    'space-between',
-    alignItems:        'center',
-    paddingVertical:   SIZES.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: SIZES.xs, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   planComparePlan: { fontSize: FONTS.md, color: COLORS.text, fontWeight: '600' },
   planCompareScan: { fontSize: FONTS.sm, fontWeight: '600' },
   lockedUpgradeBtn: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               SIZES.sm,
-    backgroundColor:   COLORS.primary,
-    paddingHorizontal: SIZES.xl,
-    paddingVertical:   SIZES.md,
-    borderRadius:      RADIUS.lg,
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    backgroundColor: COLORS.primary, paddingHorizontal: SIZES.xl,
+    paddingVertical: SIZES.md, borderRadius: RADIUS.lg,
   },
   lockedUpgradeBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
-  lockedPayText: { fontSize: FONTS.sm, color: COLORS.textMuted },
+  lockedPayText:        { fontSize: FONTS.sm, color: COLORS.textMuted },
 
   cameraTopBar: {
-    flexDirection:     'row',
-    justifyContent:    'space-between',
-    alignItems:        'center',
-    paddingHorizontal: SIZES.md,
-    paddingBottom:     SIZES.md,
-    backgroundColor:   'rgba(0,0,0,0.55)',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: SIZES.md, paddingBottom: SIZES.md,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   camIconBtn: {
-    width:           40,
-    height:          40,
-    borderRadius:    20,
+    width: 40, height: 40, borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent:  'center',
-    alignItems:      'center',
+    justifyContent: 'center', alignItems: 'center',
   },
   camTopRight:     { flexDirection: 'row', gap: SIZES.sm },
   cameraTopCenter: { alignItems: 'center' },
-  cameraTitle: { fontSize: FONTS.lg, fontWeight: 'bold', color: '#FFFFFF' },
-  cameraSubtitle: { fontSize: FONTS.xs, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  cameraTitle:     { fontSize: FONTS.lg, fontWeight: 'bold', color: '#FFFFFF' },
+  cameraSubtitle:  { fontSize: FONTS.xs, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
 
   guideOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   guideFrame:   { width: '88%', height: '65%', position: 'relative' },
-  guideCorner: {
-    position:     'absolute',
-    width:        28,
-    height:       28,
-    borderRadius: 4,
-  },
+  guideCorner:  { position: 'absolute', width: 28, height: 28, borderRadius: 4 },
   guideText: {
-    color:             'rgba(255,255,255,0.85)',
-    fontSize:          FONTS.sm,
-    marginTop:         SIZES.md,
-    textAlign:         'center',
-    backgroundColor:   'rgba(0,0,0,0.45)',
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   6,
-    borderRadius:      RADIUS.round,
+    color: 'rgba(255,255,255,0.85)', fontSize: FONTS.sm, marginTop: SIZES.md,
+    textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: SIZES.md, paddingVertical: 6, borderRadius: RADIUS.round,
   },
 
   thumbnailStrip:   { backgroundColor: 'rgba(0,0,0,0.65)', paddingVertical: SIZES.sm },
   thumbnailContent: { paddingHorizontal: SIZES.md, gap: SIZES.sm, alignItems: 'center' },
   thumbnail: {
-    width:        56,
-    height:       76,
-    borderRadius: RADIUS.md,
-    overflow:     'hidden',
-    position:     'relative',
-    borderWidth:  2,
-    borderColor:  COLORS.primary,
+    width: 56, height: 76, borderRadius: RADIUS.md,
+    overflow: 'hidden', position: 'relative',
+    borderWidth: 2, borderColor: COLORS.primary,
   },
-  thumbnailImg:  { width: '100%', height: '100%' },
+  thumbnailImg:       { width: '100%', height: '100%' },
   thumbnailBadge: {
-    position:        'absolute',
-    bottom:          3,
-    left:            3,
-    backgroundColor: COLORS.primary,
-    borderRadius:    8,
-    width:           16,
-    height:          16,
-    justifyContent:  'center',
-    alignItems:      'center',
+    position: 'absolute', bottom: 3, left: 3,
+    backgroundColor: COLORS.primary, borderRadius: 8,
+    width: 16, height: 16, justifyContent: 'center', alignItems: 'center',
   },
   thumbnailBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: 'bold' },
   thumbnailRemove:    { position: 'absolute', top: 2, right: 2 },
 
   cameraTips: {
-    backgroundColor:   'rgba(0,0,0,0.6)',
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
-    alignItems:        'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm, alignItems: 'center',
   },
   cameraTipText: { color: 'rgba(255,255,255,0.8)', fontSize: FONTS.xs, textAlign: 'center' },
 
   cameraControls: {
-    alignItems:        'center',
-    paddingTop:        SIZES.md,
-    paddingHorizontal: SIZES.md,
-    backgroundColor:   'rgba(0,0,0,0.75)',
-    gap:               SIZES.md,
+    alignItems: 'center', paddingTop: SIZES.md,
+    paddingHorizontal: SIZES.md, backgroundColor: 'rgba(0,0,0,0.75)', gap: SIZES.md,
   },
   captureBtn: {
-    width:           76,
-    height:          76,
-    borderRadius:    38,
-    borderWidth:     4,
-    borderColor:     '#FFFFFF',
-    justifyContent:  'center',
-    alignItems:      'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: '#FFFFFF',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)',
   },
   captureBtnInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FFFFFF' },
   processBtn: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               SIZES.sm,
-    backgroundColor:   COLORS.success,
-    paddingHorizontal: SIZES.xl,
-    paddingVertical:   SIZES.md,
-    borderRadius:      RADIUS.lg,
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    backgroundColor: COLORS.success, paddingHorizontal: SIZES.xl,
+    paddingVertical: SIZES.md, borderRadius: RADIUS.lg,
   },
   processBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
 
   processingContainer: {
-    flex:            1,
-    justifyContent:  'center',
-    alignItems:      'center',
-    backgroundColor: COLORS.background,
-    padding:         SIZES.xl,
-    gap:             SIZES.md,
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: COLORS.background, padding: SIZES.xl, gap: SIZES.md,
   },
   processingIconBg: {
-    width:           100,
-    height:          100,
-    borderRadius:    50,
+    width: 100, height: 100, borderRadius: 50,
     backgroundColor: COLORS.primary + '15',
-    justifyContent:  'center',
-    alignItems:      'center',
-    marginBottom:    SIZES.sm,
+    justifyContent: 'center', alignItems: 'center', marginBottom: SIZES.sm,
   },
   processingTitle: { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' },
   processingMsg:   { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center' },
   progressBg: {
-    width:           '100%',
-    height:          8,
-    backgroundColor: COLORS.border,
-    borderRadius:    RADIUS.round,
-    overflow:        'hidden',
+    width: '100%', height: 8, backgroundColor: COLORS.border,
+    borderRadius: RADIUS.round, overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: RADIUS.round },
-  progressPct:  { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
-  processingPages: { gap: SIZES.sm, paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm },
-  processingPage:    { alignItems: 'center', gap: 4 },
+  progressFill:        { height: '100%', backgroundColor: COLORS.primary, borderRadius: RADIUS.round },
+  progressPct:         { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
+  processingPages:     { gap: SIZES.sm, paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm },
+  processingPage:      { alignItems: 'center', gap: 4 },
   processingPageImg: {
-    width:        56,
-    height:       76,
-    borderRadius: RADIUS.md,
-    borderWidth:  1,
-    borderColor:  COLORS.border,
+    width: 56, height: 76, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   processingPageLabel: { fontSize: FONTS.xs, color: COLORS.textMuted },
   processingNote: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               SIZES.xs,
-    backgroundColor:   COLORS.primary + '10',
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
-    borderRadius:      RADIUS.round,
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.xs,
+    backgroundColor: COLORS.primary + '10', paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm, borderRadius: RADIUS.round,
   },
   processingNoteText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '600' },
   processingHint:     { fontSize: FONTS.sm, color: COLORS.textMuted, textAlign: 'center' },
 
   reviewHeader: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    backgroundColor:   COLORS.surface,
-    paddingHorizontal: SIZES.md,
-    paddingBottom:     SIZES.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    ...SHADOW,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: COLORS.surface, paddingHorizontal: SIZES.md,
+    paddingBottom: SIZES.md, borderBottomWidth: 1,
+    borderBottomColor: COLORS.border, ...SHADOW,
   },
   reviewTitle:    { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text },
   reviewSubtitle: { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 2 },
   addManualBtn: {
-    width:           36,
-    height:          36,
-    borderRadius:    18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.primary + '15',
-    justifyContent:  'center',
-    alignItems:      'center',
-    borderWidth:     1,
-    borderColor:     COLORS.primary + '30',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: COLORS.primary + '30',
   },
   reviewBanner: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               SIZES.sm,
-    backgroundColor:   COLORS.primary + '08',
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
-    borderBottomWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    backgroundColor: COLORS.primary + '08', paddingHorizontal: SIZES.md,
+    paddingVertical: SIZES.sm, borderBottomWidth: 1,
     borderBottomColor: COLORS.primary + '20',
   },
   reviewBannerText: { flex: 1, fontSize: FONTS.xs, color: COLORS.primary, lineHeight: 18 },
   reviewControls: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               SIZES.sm,
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
-    backgroundColor:   COLORS.surface,
-    borderBottomWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
+    backgroundColor: COLORS.surface, borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
   reviewCtrlBtn:   { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '600' },
   reviewCtrlDot:   { color: COLORS.textMuted },
   reviewCtrlCount: { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '600' },
   reviewList:      { padding: SIZES.md, gap: SIZES.sm },
-  reviewEmpty: { alignItems: 'center', padding: SIZES.xl, gap: SIZES.sm },
+  reviewEmpty:     { alignItems: 'center', padding: SIZES.xl, gap: SIZES.sm },
   reviewEmptyText:    { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text },
   reviewEmptySubtext: { fontSize: FONTS.md, color: COLORS.textMuted },
 
   reviewItem: {
-    flexDirection:   'row',
-    alignItems:      'flex-start',
-    backgroundColor: COLORS.surface,
-    borderRadius:    RADIUS.lg,
-    padding:         SIZES.md,
-    gap:             SIZES.sm,
-    borderWidth:     1,
-    borderColor:     COLORS.border,
-    ...SHADOW,
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: COLORS.surface, borderRadius: RADIUS.lg,
+    padding: SIZES.md, gap: SIZES.sm,
+    borderWidth: 1, borderColor: COLORS.border, ...SHADOW,
   },
   reviewItemOff:    { opacity: 0.45 },
   reviewItemEdited: { borderColor: COLORS.primary + '50', backgroundColor: COLORS.primary + '04' },
   checkbox: {
-    width:          24,
-    height:         24,
-    borderRadius:   6,
-    borderWidth:    2,
-    borderColor:    COLORS.border,
-    justifyContent: 'center',
-    alignItems:     'center',
-    marginTop:      2,
+    width: 24, height: 24, borderRadius: 6, borderWidth: 2,
+    borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center', marginTop: 2,
   },
   checkboxOn: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   reviewItemTop: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           SIZES.xs,
-    flexWrap:      'wrap',
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.xs, flexWrap: 'wrap',
   },
-  reviewItemName: { fontSize: FONTS.md, fontWeight: '700', color: COLORS.text, flex: 1 },
+  reviewItemName:  { fontSize: FONTS.md, fontWeight: '700', color: COLORS.text, flex: 1 },
   editedTag: {
-    backgroundColor:   COLORS.primary + '20',
-    paddingHorizontal: 6,
-    paddingVertical:   2,
-    borderRadius:      RADIUS.round,
+    backgroundColor: COLORS.primary + '20', paddingHorizontal: 6,
+    paddingVertical: 2, borderRadius: RADIUS.round,
   },
   editedTagText:    { fontSize: 9, color: COLORS.primary, fontWeight: '700' },
   reviewItemRow:    { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm, marginTop: 4 },
   reviewItemPrice:  { fontSize: FONTS.md, fontWeight: 'bold', color: COLORS.primary },
   reviewItemCat: {
-    backgroundColor:   COLORS.border,
-    paddingHorizontal: SIZES.sm,
-    paddingVertical:   2,
-    borderRadius:      RADIUS.round,
+    backgroundColor: COLORS.border, paddingHorizontal: SIZES.sm,
+    paddingVertical: 2, borderRadius: RADIUS.round,
   },
   reviewItemCatText: { fontSize: FONTS.xs, color: COLORS.textMuted, textTransform: 'capitalize' },
   reviewItemDesc:    { fontSize: FONTS.xs, color: COLORS.textMuted, marginTop: 4 },
   reviewItemWarn:    { fontSize: FONTS.xs, color: '#F39C12', marginTop: 4, fontWeight: '600' },
   reviewActions:     { gap: SIZES.sm },
   reviewEditBtn: {
-    padding:         SIZES.sm,
-    backgroundColor: COLORS.primary + '15',
-    borderRadius:    RADIUS.md,
+    padding: SIZES.sm, backgroundColor: COLORS.primary + '15', borderRadius: RADIUS.md,
   },
   reviewDeleteBtn: {
-    padding:         SIZES.sm,
-    backgroundColor: COLORS.error + '15',
-    borderRadius:    RADIUS.md,
+    padding: SIZES.sm, backgroundColor: COLORS.error + '15', borderRadius: RADIUS.md,
   },
 
   reviewFooter: {
-    position:          'absolute',
-    bottom:            0,
-    left:              0,
-    right:             0,
-    flexDirection:     'row',
-    alignItems:        'center',
-    justifyContent:    'space-between',
-    backgroundColor:   COLORS.surface,
-    paddingHorizontal: SIZES.md,
-    paddingTop:        SIZES.md,
-    borderTopWidth:    1,
-    borderTopColor:    COLORS.border,
-    ...SHADOW,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: COLORS.surface, paddingHorizontal: SIZES.md,
+    paddingTop: SIZES.md, borderTopWidth: 1, borderTopColor: COLORS.border, ...SHADOW,
   },
   reviewFooterCount: { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
   reviewFooterSub:   { fontSize: FONTS.xs, color: COLORS.textMuted },
   addToMenuBtn: {
-    flexDirection:     'row',
-    alignItems:        'center',
-    gap:               SIZES.sm,
-    backgroundColor:   COLORS.primary,
-    paddingHorizontal: SIZES.xl,
-    paddingVertical:   SIZES.md,
-    borderRadius:      RADIUS.lg,
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    backgroundColor: COLORS.primary, paddingHorizontal: SIZES.xl,
+    paddingVertical: SIZES.md, borderRadius: RADIUS.lg,
   },
   addToMenuBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.lg },
 
   modalOverlay: {
-    flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent:  'flex-end',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end',
   },
   editModal: {
-    backgroundColor:      COLORS.surface,
-    borderTopLeftRadius:  24,
-    borderTopRightRadius: 24,
-    padding:              SIZES.lg,
-    maxHeight:            '88%',
+    backgroundColor: COLORS.surface, borderTopLeftRadius: 24,
+    borderTopRightRadius: 24, padding: SIZES.lg, maxHeight: '88%',
   },
   modalHandle: {
-    width:           40,
-    height:          4,
-    backgroundColor: COLORS.border,
-    borderRadius:    2,
-    alignSelf:       'center',
-    marginBottom:    SIZES.md,
+    width: 40, height: 4, backgroundColor: COLORS.border,
+    borderRadius: 2, alignSelf: 'center', marginBottom: SIZES.md,
   },
   modalTitle:  { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text, marginBottom: SIZES.md },
-  modalLabel:  { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text, marginBottom: SIZES.xs, marginTop: SIZES.sm },
+  modalLabel: {
+    fontSize: FONTS.md, fontWeight: '600', color: COLORS.text,
+    marginBottom: SIZES.xs, marginTop: SIZES.sm,
+  },
   modalInput: {
-    backgroundColor:   COLORS.background,
-    borderRadius:      RADIUS.md,
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.md,
-    fontSize:          FONTS.md,
-    color:             COLORS.text,
-    borderWidth:       1,
-    borderColor:       COLORS.border,
+    backgroundColor: COLORS.background, borderRadius: RADIUS.md,
+    paddingHorizontal: SIZES.md, paddingVertical: SIZES.md,
+    fontSize: FONTS.md, color: COLORS.text,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   modalTextarea: { height: 80, textAlignVertical: 'top' },
   modalCats:     { gap: SIZES.sm, paddingVertical: SIZES.sm },
   modalCatBtn: {
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
-    borderRadius:      RADIUS.round,
-    backgroundColor:   COLORS.background,
-    borderWidth:       1,
-    borderColor:       COLORS.border,
+    paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
+    borderRadius: RADIUS.round, backgroundColor: COLORS.background,
+    borderWidth: 1, borderColor: COLORS.border,
   },
   modalCatBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   modalCatText:       { fontSize: FONTS.sm, color: COLORS.textMuted },
   modalCatTextActive: { color: '#FFFFFF', fontWeight: '600' },
   modalBtns: { flexDirection: 'row', gap: SIZES.md, marginTop: SIZES.lg },
   modalCancelBtn: {
-    flex:            1,
-    paddingVertical: SIZES.md,
-    borderRadius:    RADIUS.lg,
-    alignItems:      'center',
-    backgroundColor: COLORS.border,
+    flex: 1, paddingVertical: SIZES.md, borderRadius: RADIUS.lg,
+    alignItems: 'center', backgroundColor: COLORS.border,
   },
   modalCancelText: { fontSize: FONTS.md, color: COLORS.textMuted, fontWeight: '600' },
   modalSaveBtn: {
-    flex:            2,
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'center',
-    gap:             SIZES.sm,
-    paddingVertical: SIZES.md,
-    borderRadius:    RADIUS.lg,
-    backgroundColor: COLORS.primary,
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SIZES.sm, paddingVertical: SIZES.md,
+    borderRadius: RADIUS.lg, backgroundColor: COLORS.primary,
   },
   modalSaveText: { color: '#FFFFFF', fontSize: FONTS.md, fontWeight: 'bold' },
 });
