@@ -9,8 +9,10 @@ import { AuthProvider }         from './src/hooks/useAuth';
 import { NotificationProvider } from './src/context/NotificationContext';
 import AppNavigator             from './src/navigation/AppNavigator';
 
-// ✅ Keep splash screen visible until we explicitly hide it
-SplashScreen.preventAutoHideAsync();
+// ✅ Prevent auto-hide — we control when it hides
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Already hidden or not available - ignore
+});
 
 export default function App() {
   const [appReady, setAppReady] = useState(false);
@@ -18,9 +20,9 @@ export default function App() {
   useEffect(() => {
     const prepare = async () => {
       try {
-        // ✅ Just wait for Firebase auth to initialise
-        // Image cache removed - using Cloudinary now
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // ✅ Give splash screen time to show
+        // AND give Firebase auth time to initialise
+        await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (err) {
         console.warn('App prepare error:', err);
       } finally {
@@ -32,10 +34,15 @@ export default function App() {
 
   const onLayoutRootView = useCallback(async () => {
     if (appReady) {
-      await SplashScreen.hideAsync();
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        // Splash already hidden - ignore
+      }
     }
   }, [appReady]);
 
+  // ✅ Return null keeps native splash visible
   if (!appReady) return null;
 
   return (

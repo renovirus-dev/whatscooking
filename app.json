@@ -37,7 +37,7 @@
       "statusBar": {
         "backgroundColor": "transparent",
         "translucent":     true,
-        "barStyle":        "dark-content",
+        "barStyle":        "light-content",
         "hidden":          false
       },
       "navigationBar": {
@@ -107,6 +107,19 @@
           },
           "ios": {
             "deploymentTarget": "16.4"
+          }
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FF6B35",
+          "image":           "./assets/splash.png",
+          "imageWidth":      200,
+          "resizeMode":      "contain",
+          "dark": {
+            "backgroundColor": "#FF6B35",
+            "image":           "./assets/splash.png"
           }
         }
       ]
