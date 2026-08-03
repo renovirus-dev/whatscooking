@@ -1,18 +1,19 @@
 // ============================================
 // FILE: App.js
 // ============================================
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text }     from 'react-native';
-import { SafeAreaProvider }           from 'react-native-safe-area-context';
-import * as SplashScreen              from 'expo-splash-screen';
-import { AuthProvider }               from './src/hooks/useAuth';
-import { NotificationProvider }       from './src/context/NotificationContext';
-import AppNavigator                   from './src/navigation/AppNavigator';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, Text }                  from 'react-native';
+import { SafeAreaProvider }                        from 'react-native-safe-area-context';
+import * as SplashScreen                           from 'expo-splash-screen';
+import { AuthProvider }                            from './src/hooks/useAuth';
+import { NotificationProvider }                    from './src/context/NotificationContext';
+import AppNavigator                                from './src/navigation/AppNavigator';
 
-// ✅ Prevent auto-hide
-try {
-  SplashScreen.preventAutoHideAsync();
-} catch {}
+// ✅ Prevent splash from auto-hiding
+// Called outside component so it runs immediately
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Already prevented or unavailable — ignore
+});
 
 export default function App() {
   const [appReady, setAppReady] = useState(false);
@@ -21,31 +22,39 @@ export default function App() {
   useEffect(() => {
     const prepare = async () => {
       try {
-        // ✅ Short delay for Firebase auth init
+        // ✅ Short delay for Firebase auth to initialise
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (err) {
         console.warn('App prepare error:', err);
         setError(err.message);
       } finally {
+        // ✅ Always mark ready — never get stuck on splash
         setAppReady(true);
-        // ✅ Hide splash as soon as app is ready
-        try {
-          await SplashScreen.hideAsync();
-        } catch {}
       }
     };
     prepare();
   }, []);
 
-  // ✅ Show nothing while preparing
-  // Native splash stays visible
+  // ✅ Hide splash once root view renders
+  const onLayoutRootView = useCallback(async () => {
+    if (appReady) {
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        // Already hidden — ignore
+      }
+    }
+  }, [appReady]);
+
+  // ✅ Return null = keeps native splash visible
   if (!appReady) return null;
 
-  // ✅ Show error if something crashed on startup
+  // ✅ Show error screen if startup crashed
   if (error) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>⚠️ Startup Error</Text>
+        <Text style={styles.errorEmoji}>⚠️</Text>
+        <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorText}>{error}</Text>
       </View>
     );
@@ -55,7 +64,10 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <NotificationProvider>
-          <View style={styles.container}>
+          <View
+            style={styles.container}
+            onLayout={onLayoutRootView}
+          >
             <AppNavigator />
           </View>
         </NotificationProvider>
@@ -73,20 +85,23 @@ const styles = StyleSheet.create({
     flex:            1,
     justifyContent:  'center',
     alignItems:      'center',
-    padding:         20,
+    padding:         24,
     backgroundColor: '#FF6B35',
+    gap:             12,
+  },
+  errorEmoji: {
+    fontSize: 48,
   },
   errorTitle: {
-    fontSize:     24,
-    fontWeight:   'bold',
-    color:        '#FFFFFF',
-    marginBottom: 12,
-    textAlign:    'center',
+    fontSize:   22,
+    fontWeight: 'bold',
+    color:      '#FFFFFF',
+    textAlign:  'center',
   },
   errorText: {
-    fontSize:  14,
-    color:     'rgba(255,255,255,0.9)',
-    textAlign: 'center',
-    lineHeight: 22,
+    fontSize:   13,
+    color:      'rgba(255,255,255,0.85)',
+    textAlign:  'center',
+    lineHeight: 20,
   },
 });
