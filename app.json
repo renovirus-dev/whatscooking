@@ -11,12 +11,6 @@
 
     "icon": "./assets/icon.png",
 
-    "splash": {
-      "image":           "./assets/splash.png",
-      "resizeMode":      "contain",
-      "backgroundColor": "#FF6B35"
-    },
-
     "android": {
       "package":            "com.yourname.whatscooking",
       "googleServicesFile": "./google-services.json",
@@ -107,19 +101,6 @@
           },
           "ios": {
             "deploymentTarget": "16.4"
-          }
-        }
-      ],
-      [
-        "expo-splash-screen",
-        {
-          "backgroundColor": "#FF6B35",
-          "image":           "./assets/splash.png",
-          "imageWidth":      200,
-          "resizeMode":      "contain",
-          "dark": {
-            "backgroundColor": "#FF6B35",
-            "image":           "./assets/splash.png"
           }
         }
       ]
