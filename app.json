@@ -6,11 +6,15 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "whatscooking",
-
-    "assetBundlePatterns": ["**/*"],
-
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "icon": "./assets/icon.png",
-
+    "splash": {
+      "image":           "./assets/splash.png",
+      "resizeMode":      "contain",
+      "backgroundColor": "#FF6B35"
+    },
     "android": {
       "package":            "com.yourname.whatscooking",
       "googleServicesFile": "./google-services.json",
@@ -39,7 +43,6 @@
         "barStyle":        "dark-content"
       }
     },
-
     "ios": {
       "supportsTablet":   true,
       "bundleIdentifier": "com.yourname.whatscooking",
@@ -51,11 +54,9 @@
         "NSPhotoLibraryAddUsageDescription":   "What's Cooking needs permission to save photos."
       }
     },
-
     "web": {
       "bundler": "metro"
     },
-
     "plugins": [
       [
         "expo-location",
@@ -103,9 +104,21 @@
             "deploymentTarget": "16.4"
           }
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FF6B35",
+          "image":           "./assets/splash.png",
+          "imageWidth":      200,
+          "resizeMode":      "contain",
+          "dark": {
+            "backgroundColor": "#FF6B35",
+            "image":           "./assets/splash.png"
+          }
+        }
       ]
     ],
-
     "extra": {
       "eas": {
         "projectId": "15062ebe-c1c0-4d13-9bf4-bcce99cc9e62"
