@@ -11,7 +11,7 @@
     ],
     "icon": "./assets/icon.png",
     "android": {
-      "package":            "com.yourname.whatscooking",
+      "package": "com.yourname.whatscooking",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -29,14 +29,14 @@
       "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
-      "supportsTablet":   true,
+      "supportsTablet": true,
       "bundleIdentifier": "com.yourname.whatscooking",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "What's Cooking uses your location to find restaurants near you.",
-        "NSLocationAlwaysUsageDescription":    "What's Cooking uses your location to find restaurants near you.",
-        "NSCameraUsageDescription":            "What's Cooking needs camera access to scan menus and update your profile photo.",
-        "NSPhotoLibraryUsageDescription":      "What's Cooking needs photo access to upload restaurant and menu images.",
-        "NSPhotoLibraryAddUsageDescription":   "What's Cooking needs permission to save photos."
+        "NSLocationAlwaysUsageDescription": "What's Cooking uses your location to find restaurants near you.",
+        "NSCameraUsageDescription": "What's Cooking needs camera access to scan menus and update your profile photo.",
+        "NSPhotoLibraryUsageDescription": "What's Cooking needs photo access to upload restaurant and menu images.",
+        "NSPhotoLibraryAddUsageDescription": "What's Cooking needs permission to save photos."
       }
     },
     "web": {
@@ -65,8 +65,8 @@
       [
         "expo-notifications",
         {
-          "icon":           "./assets/icon.png",
-          "color":          "#FF6B35",
+          "icon": "./assets/icon.png",
+          "color": "#FF6B35",
           "defaultChannel": "default"
         }
       ],
@@ -81,9 +81,9 @@
         {
           "android": {
             "compileSdkVersion": 36,
-            "targetSdkVersion":  36,
+            "targetSdkVersion": 36,
             "buildToolsVersion": "35.0.0",
-            "kotlinVersion":     "2.1.20"
+            "kotlinVersion": "2.1.20"
           },
           "ios": {
             "deploymentTarget": "16.4"
@@ -94,11 +94,14 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FF6B35",
-          "image":           "./assets/splash.png",
-          "imageWidth":      200,
-          "resizeMode":      "contain"
+          "image": "./assets/splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
