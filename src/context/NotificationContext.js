@@ -5,10 +5,9 @@ import React, {
   createContext, useContext, useState,
   useEffect, useRef, useCallback,
 } from 'react';
-import * as Notifications from 'expo-notifications';
-import * as Device        from 'expo-device';
-import Constants          from 'expo-constants';
-import { Platform }       from 'react-native';
+import * as Device   from 'expo-device';
+import Constants     from 'expo-constants';
+import { Platform }  from 'react-native';
 import {
   doc, updateDoc, deleteDoc,
   collection, addDoc, serverTimestamp,
@@ -20,15 +19,22 @@ import { useAuth } from '../hooks/useAuth';
 // ✅ Check if running in Expo Go
 const isExpoGo = Constants.appOwnership === 'expo';
 
-// ✅ Only set notification handler on dev builds (not Expo Go)
+// ✅ Safely import expo-notifications
+// Completely skip in Expo Go to prevent crash
+let Notifications = null;
 if (!isExpoGo) {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge:  true,
-    }),
-  });
+  try {
+    Notifications = require('expo-notifications');
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge:  true,
+      }),
+    });
+  } catch (err) {
+    console.log('expo-notifications not available:', err.message);
+  }
 }
 
 const EXPO_PROJECT_ID =
@@ -64,31 +70,36 @@ export function NotificationProvider({ children }) {
   const androidChannelsSetup  = useRef(false);
 
   // ─────────────────────────────────────────
-  // PUSH LISTENERS
-  // ✅ Skip entirely in Expo Go
+  // PUSH LISTENERS — Skip in Expo Go
   // ─────────────────────────────────────────
   useEffect(() => {
-    if (Platform.OS === 'web' || isExpoGo) return;
+    if (!Notifications || isExpoGo || Platform.OS === 'web') return;
 
-    Notifications.setBadgeCountAsync(0).catch(() => {});
+    try {
+      Notifications.setBadgeCountAsync(0).catch(() => {});
 
-    notificationListener.current =
-      Notifications.addNotificationReceivedListener(notification => {
-        console.log('🔔 Received:', notification.request.content.title);
-      });
+      notificationListener.current =
+        Notifications.addNotificationReceivedListener(notification => {
+          console.log('🔔 Received:', notification.request.content.title);
+        });
 
-    responseListener.current =
-      Notifications.addNotificationResponseReceivedListener(response => {
-        console.log('👆 Tapped:', response.notification.request.content.data);
-      });
+      responseListener.current =
+        Notifications.addNotificationResponseReceivedListener(response => {
+          console.log('👆 Tapped:', response.notification.request.content.data);
+        });
+    } catch (err) {
+      console.log('Notification listeners skipped:', err.message);
+    }
 
     return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
-      }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
-      }
+      try {
+        if (notificationListener.current) {
+          Notifications.removeNotificationSubscription(notificationListener.current);
+        }
+        if (responseListener.current) {
+          Notifications.removeNotificationSubscription(responseListener.current);
+        }
+      } catch {}
     };
   }, []);
 
@@ -96,18 +107,14 @@ export function NotificationProvider({ children }) {
   // REGISTER PUSH — Skip in Expo Go
   // ─────────────────────────────────────────
   useEffect(() => {
-    if (!user?.uid) return;
-    if (isExpoGo) {
-      console.log('ℹ️ Push notifications not available in Expo Go');
-      return;
-    }
+    if (!user?.uid || isExpoGo || !Notifications) return;
     if (registeredForUid.current === user.uid) return;
     registeredForUid.current = user.uid;
     registerForPushNotifications();
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // FIRESTORE LISTENER (works in Expo Go)
+  // FIRESTORE LISTENER (works everywhere)
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) {
@@ -139,12 +146,10 @@ export function NotificationProvider({ children }) {
         if (err.code === 'failed-precondition') {
           console.warn(
             '⚠️ Missing Firestore index for notifications.\n' +
-            'Firebase Console → Firestore → Indexes → Add:\n' +
-            '  Collection: notifications\n' +
-            '  Fields: userId ASC, createdAt DESC'
+            'Add: userId ASC, createdAt DESC'
           );
         } else {
-          console.error('Notifications listener error:', err);
+          console.error('Notifications error:', err);
         }
         setNotifications([]);
         setUnreadCount(0);
@@ -156,11 +161,10 @@ export function NotificationProvider({ children }) {
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // REGISTER FOR PUSH
+  // REGISTER PUSH
   // ─────────────────────────────────────────
   const registerForPushNotifications = useCallback(async () => {
-    // ✅ Skip in Expo Go, web, or simulator
-    if (isExpoGo || Platform.OS === 'web' || !Device.isDevice) {
+    if (isExpoGo || !Notifications || Platform.OS === 'web' || !Device.isDevice) {
       console.log('ℹ️ Push not available in this environment');
       return null;
     }
@@ -176,10 +180,7 @@ export function NotificationProvider({ children }) {
         setPermissionStatus(status);
       }
 
-      if (finalStatus !== 'granted') {
-        console.log('⚠️ Push notification permission denied');
-        return null;
-      }
+      if (finalStatus !== 'granted') return null;
 
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: EXPO_PROJECT_ID,
@@ -193,40 +194,38 @@ export function NotificationProvider({ children }) {
           pushEnabled:    true,
           deviceOS:       Platform.OS,
           tokenUpdatedAt: serverTimestamp(),
-        }).catch(err => {
-          console.warn('Could not save push token:', err.message);
-        });
+        }).catch(() => {});
       }
 
       if (Platform.OS === 'android' && !androidChannelsSetup.current) {
         androidChannelsSetup.current = true;
         await Promise.all([
           Notifications.setNotificationChannelAsync('default', {
-            name:             'General',
-            importance:       Notifications.AndroidImportance.MAX,
+            name: 'General',
+            importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
-            lightColor:       '#FF6B35',
+            lightColor: '#FF6B35',
           }),
           Notifications.setNotificationChannelAsync('menu-updates', {
-            name:       'Menu Updates',
+            name: 'Menu Updates',
             importance: Notifications.AndroidImportance.HIGH,
             lightColor: '#FF6B35',
           }),
           Notifications.setNotificationChannelAsync('promotions', {
-            name:       'Promotions & Deals',
+            name: 'Promotions & Deals',
             importance: Notifications.AndroidImportance.DEFAULT,
           }),
           Notifications.setNotificationChannelAsync('system', {
-            name:       'System Alerts',
+            name: 'System Alerts',
             importance: Notifications.AndroidImportance.HIGH,
           }),
         ]);
       }
 
-      console.log('✅ Push token registered:', token);
+      console.log('✅ Push token:', token);
       return token;
     } catch (err) {
-      console.error('Push registration error:', err);
+      console.error('Push error:', err);
       return null;
     }
   }, [user?.uid]);
@@ -243,7 +242,6 @@ export function NotificationProvider({ children }) {
     try {
       await updateDoc(doc(db, 'notifications', notificationId), { isRead: true });
     } catch (err) {
-      console.error('markAsRead error:', err);
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, isRead: false } : n)
       );
@@ -266,7 +264,6 @@ export function NotificationProvider({ children }) {
         unread.map(n => updateDoc(doc(db, 'notifications', n.id), { isRead: true }))
       );
     } catch (err) {
-      console.error('markAllAsRead error:', err);
       setNotifications(prev =>
         prev.map(n => {
           const wasUnread = unread.find(u => u.id === n.id);
@@ -290,7 +287,6 @@ export function NotificationProvider({ children }) {
     try {
       await deleteDoc(doc(db, 'notifications', id));
     } catch (err) {
-      console.error('deleteNotification error:', err);
       if (deleted) {
         setNotifications(prev => [deleted, ...prev]);
         if (!deleted.isRead) setUnreadCount(prev => prev + 1);
@@ -299,7 +295,7 @@ export function NotificationProvider({ children }) {
   }, [notifications]);
 
   // ─────────────────────────────────────────
-  // SEND NOTIFICATION TO USER
+  // SEND TO USER (Firestore — works everywhere)
   // ─────────────────────────────────────────
   const sendNotificationToUser = useCallback(async ({
     userId, title, body, data = {}, type = 'general',
@@ -311,27 +307,23 @@ export function NotificationProvider({ children }) {
       });
       return { success: true };
     } catch (err) {
-      console.error('sendNotificationToUser error:', err);
       return { success: false, error: err.message };
     }
   }, []);
 
   // ─────────────────────────────────────────
-  // SEND LOCAL NOTIFICATION
-  // ✅ Skip in Expo Go
+  // LOCAL NOTIFICATION — Skip in Expo Go
   // ─────────────────────────────────────────
   const sendLocalNotification = useCallback(async (
     title, body, data = {}
   ) => {
-    if (isExpoGo) return;
+    if (isExpoGo || !Notifications) return;
     try {
       await Notifications.scheduleNotificationAsync({
         content: { title, body, data },
         trigger: null,
       });
-    } catch (err) {
-      console.error('sendLocalNotification error:', err);
-    }
+    } catch {}
   }, []);
 
   const value = {
