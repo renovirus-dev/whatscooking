@@ -16,15 +16,16 @@ import {
 import { db }      from '../firebase/config';
 import { useAuth } from '../hooks/useAuth';
 
-// ✅ Check if running in Expo Go
-const isExpoGo = Constants.appOwnership === 'expo';
-
-// ✅ Safely import expo-notifications
-// Completely skip in Expo Go to prevent crash
+// ✅ Safely load expo-notifications
+// Wrap EVERYTHING in try/catch at module level
 let Notifications = null;
-if (!isExpoGo) {
-  try {
-    Notifications = require('expo-notifications');
+let notificationsAvailable = false;
+
+try {
+  Notifications = require('expo-notifications');
+
+  // ✅ Test if it actually works by calling a safe method
+  if (Notifications && typeof Notifications.setNotificationHandler === 'function') {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
@@ -32,9 +33,13 @@ if (!isExpoGo) {
         shouldSetBadge:  true,
       }),
     });
-  } catch (err) {
-    console.log('expo-notifications not available:', err.message);
+    notificationsAvailable = true;
+    console.log('✅ expo-notifications loaded');
   }
+} catch (err) {
+  console.log('ℹ️ expo-notifications not available:', err.message);
+  Notifications = null;
+  notificationsAvailable = false;
 }
 
 const EXPO_PROJECT_ID =
@@ -70,10 +75,10 @@ export function NotificationProvider({ children }) {
   const androidChannelsSetup  = useRef(false);
 
   // ─────────────────────────────────────────
-  // PUSH LISTENERS — Skip in Expo Go
+  // PUSH LISTENERS
   // ─────────────────────────────────────────
   useEffect(() => {
-    if (!Notifications || isExpoGo || Platform.OS === 'web') return;
+    if (!notificationsAvailable || Platform.OS === 'web') return;
 
     try {
       Notifications.setBadgeCountAsync(0).catch(() => {});
@@ -88,33 +93,31 @@ export function NotificationProvider({ children }) {
           console.log('👆 Tapped:', response.notification.request.content.data);
         });
     } catch (err) {
-      console.log('Notification listeners skipped:', err.message);
+      console.log('Notification listeners error:', err.message);
     }
 
     return () => {
       try {
-        if (notificationListener.current) {
+        if (notificationListener.current)
           Notifications.removeNotificationSubscription(notificationListener.current);
-        }
-        if (responseListener.current) {
+        if (responseListener.current)
           Notifications.removeNotificationSubscription(responseListener.current);
-        }
       } catch {}
     };
   }, []);
 
   // ─────────────────────────────────────────
-  // REGISTER PUSH — Skip in Expo Go
+  // REGISTER PUSH
   // ─────────────────────────────────────────
   useEffect(() => {
-    if (!user?.uid || isExpoGo || !Notifications) return;
+    if (!user?.uid || !notificationsAvailable) return;
     if (registeredForUid.current === user.uid) return;
     registeredForUid.current = user.uid;
     registerForPushNotifications();
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // FIRESTORE LISTENER (works everywhere)
+  // FIRESTORE LISTENER
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) {
@@ -144,12 +147,7 @@ export function NotificationProvider({ children }) {
       },
       (err) => {
         if (err.code === 'failed-precondition') {
-          console.warn(
-            '⚠️ Missing Firestore index for notifications.\n' +
-            'Add: userId ASC, createdAt DESC'
-          );
-        } else {
-          console.error('Notifications error:', err);
+          console.warn('⚠️ Missing Firestore index for notifications');
         }
         setNotifications([]);
         setUnreadCount(0);
@@ -161,11 +159,10 @@ export function NotificationProvider({ children }) {
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // REGISTER PUSH
+  // REGISTER FOR PUSH
   // ─────────────────────────────────────────
   const registerForPushNotifications = useCallback(async () => {
-    if (isExpoGo || !Notifications || Platform.OS === 'web' || !Device.isDevice) {
-      console.log('ℹ️ Push not available in this environment');
+    if (!notificationsAvailable || Platform.OS === 'web' || !Device.isDevice) {
       return null;
     }
 
@@ -230,18 +227,14 @@ export function NotificationProvider({ children }) {
     }
   }, [user?.uid]);
 
-  // ─────────────────────────────────────────
-  // MARK AS READ
-  // ─────────────────────────────────────────
   const markAsRead = useCallback(async (notificationId) => {
     setNotifications(prev =>
       prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n)
     );
     setUnreadCount(prev => Math.max(0, prev - 1));
-
     try {
       await updateDoc(doc(db, 'notifications', notificationId), { isRead: true });
-    } catch (err) {
+    } catch {
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, isRead: false } : n)
       );
@@ -249,21 +242,16 @@ export function NotificationProvider({ children }) {
     }
   }, []);
 
-  // ─────────────────────────────────────────
-  // MARK ALL AS READ
-  // ─────────────────────────────────────────
   const markAllAsRead = useCallback(async () => {
     const unread = notifications.filter(n => !n.isRead);
     if (unread.length === 0) return;
-
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     setUnreadCount(0);
-
     try {
       await Promise.all(
         unread.map(n => updateDoc(doc(db, 'notifications', n.id), { isRead: true }))
       );
-    } catch (err) {
+    } catch {
       setNotifications(prev =>
         prev.map(n => {
           const wasUnread = unread.find(u => u.id === n.id);
@@ -274,19 +262,13 @@ export function NotificationProvider({ children }) {
     }
   }, [notifications]);
 
-  // ─────────────────────────────────────────
-  // DELETE NOTIFICATION
-  // ─────────────────────────────────────────
   const deleteNotification = useCallback(async (id) => {
     const deleted = notifications.find(n => n.id === id);
     setNotifications(prev => prev.filter(n => n.id !== id));
-    if (deleted && !deleted.isRead) {
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    }
-
+    if (deleted && !deleted.isRead) setUnreadCount(prev => Math.max(0, prev - 1));
     try {
       await deleteDoc(doc(db, 'notifications', id));
-    } catch (err) {
+    } catch {
       if (deleted) {
         setNotifications(prev => [deleted, ...prev]);
         if (!deleted.isRead) setUnreadCount(prev => prev + 1);
@@ -294,9 +276,6 @@ export function NotificationProvider({ children }) {
     }
   }, [notifications]);
 
-  // ─────────────────────────────────────────
-  // SEND TO USER (Firestore — works everywhere)
-  // ─────────────────────────────────────────
   const sendNotificationToUser = useCallback(async ({
     userId, title, body, data = {}, type = 'general',
   }) => {
@@ -311,13 +290,8 @@ export function NotificationProvider({ children }) {
     }
   }, []);
 
-  // ─────────────────────────────────────────
-  // LOCAL NOTIFICATION — Skip in Expo Go
-  // ─────────────────────────────────────────
-  const sendLocalNotification = useCallback(async (
-    title, body, data = {}
-  ) => {
-    if (isExpoGo || !Notifications) return;
+  const sendLocalNotification = useCallback(async (title, body, data = {}) => {
+    if (!notificationsAvailable) return;
     try {
       await Notifications.scheduleNotificationAsync({
         content: { title, body, data },
