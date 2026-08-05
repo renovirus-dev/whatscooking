@@ -14,32 +14,19 @@ import { getThumbUrl, getBannerUrl } from '../utils/uploadToCloudinary';
 const STAR_COLOR   = COLORS.star   || '#F39C12';
 const ACCENT_COLOR = COLORS.accent || COLORS.primary;
 
+// ─── Local Placeholder ───────────────────────
+const PLACEHOLDER = require('../assets/images/restaurant_placeholder.png');
+
 // ─────────────────────────────────────────────
 // GET OPTIMIZED IMAGE URL
-// ✅ Cloudinary → transform
-// ✅ Any other URL → use as-is
-// ✅ Nothing → local placeholder
 // ─────────────────────────────────────────────
 const getCoverImage = (restaurant, isSmall = false) => {
   const url = restaurant?.coverUrl || restaurant?.logoUrl;
-
   if (url?.includes('cloudinary')) {
     return { uri: isSmall ? getThumbUrl(url, 300, 200) : getBannerUrl(url) };
   }
-  if (url) {
-    return { uri: url };
-  }
-  // ✅ Local placeholder — no internet needed
-  return require('../assets/images/restaurant_placeholder.jpg');
-};
-
-const getLogoImage = (restaurant) => {
-  const url = restaurant?.logoUrl;
-  if (url?.includes('cloudinary')) {
-    return { uri: getThumbUrl(url, 80, 80) };
-  }
   if (url) return { uri: url };
-  return null;
+  return PLACEHOLDER;
 };
 
 // ─────────────────────────────────────────────
@@ -74,14 +61,13 @@ export default function RestaurantCard({
 }) {
   const [imageError, setImageError] = useState(false);
 
-  const plan      = restaurant?.subscription?.plan || 'free_trial';
-  const coverSrc  = imageError
-    ? require('../assets/images/restaurant_placeholder.jpg')
+  const plan     = restaurant?.subscription?.plan || 'free_trial';
+  const coverSrc = imageError
+    ? PLACEHOLDER
     : getCoverImage(restaurant, horizontal);
 
   // ─────────────────────────────────────────
   // HORIZONTAL CARD
-  // Used in list views (HomeScreen, ExploreScreen)
   // ─────────────────────────────────────────
   if (horizontal) {
     return (
@@ -98,7 +84,7 @@ export default function RestaurantCard({
             resizeMode="cover"
             onError={() => setImageError(true)}
           />
-          {/* Open/Closed overlay */}
+          {/* Open/Closed dot */}
           <View style={[
             styles.hStatusDot,
             {
@@ -112,17 +98,13 @@ export default function RestaurantCard({
         {/* Info */}
         <View style={styles.hInfo}>
 
-          {/* Name Row */}
+          {/* Name + Verified + Plan */}
           <View style={styles.hNameRow}>
             <Text style={styles.name} numberOfLines={1}>
               {restaurant.name}
             </Text>
             {restaurant.isVerified && (
-              <Ionicons
-                name="checkmark-circle"
-                size={16}
-                color={COLORS.primary}
-              />
+              <Ionicons name="checkmark-circle" size={16} color={COLORS.primary} />
             )}
             <PlanBadge plan={plan} />
           </View>
@@ -170,14 +152,14 @@ export default function RestaurantCard({
             </View>
           )}
 
-          {/* Bottom row: status + services */}
+          {/* Bottom: Status + Services */}
           <View style={styles.hBottomRow}>
             <View style={[
               styles.statusBadge,
               {
                 backgroundColor: restaurant.isCurrentlyOpen
                   ? COLORS.success + '20'
-                  : COLORS.error + '20',
+                  : COLORS.error   + '20',
               },
             ]}>
               <Text style={[
@@ -192,17 +174,10 @@ export default function RestaurantCard({
               </Text>
             </View>
 
-            {/* Services */}
             <View style={styles.servicesRow}>
-              {restaurant.hasDelivery && (
-                <Text style={styles.serviceIcon}>🛵</Text>
-              )}
-              {restaurant.hasTakeout && (
-                <Text style={styles.serviceIcon}>🥡</Text>
-              )}
-              {restaurant.hasDineIn && (
-                <Text style={styles.serviceIcon}>🪑</Text>
-              )}
+              {restaurant.hasDelivery && <Text style={styles.serviceIcon}>🛵</Text>}
+              {restaurant.hasTakeout  && <Text style={styles.serviceIcon}>🥡</Text>}
+              {restaurant.hasDineIn   && <Text style={styles.serviceIcon}>🪑</Text>}
             </View>
           </View>
         </View>
@@ -211,8 +186,7 @@ export default function RestaurantCard({
   }
 
   // ─────────────────────────────────────────
-  // VERTICAL CARD (Featured / Wide)
-  // Used in horizontal FlatLists (HomeScreen featured)
+  // VERTICAL CARD (Featured)
   // ─────────────────────────────────────────
   return (
     <TouchableOpacity
@@ -228,16 +202,14 @@ export default function RestaurantCard({
         onError={() => setImageError(true)}
       />
 
-      {/* Top badges on image */}
+      {/* Top Badges */}
       <View style={styles.vTopBadges}>
-        {/* Distance */}
         {!!distance && (
           <View style={styles.distanceBadge}>
             <Ionicons name="navigate-outline" size={11} color={COLORS.primary} />
             <Text style={styles.distanceBadgeText}>{distance}</Text>
           </View>
         )}
-        {/* Open badge */}
         {restaurant.isCurrentlyOpen && (
           <View style={styles.openBadge}>
             <View style={styles.openDot} />
@@ -246,7 +218,7 @@ export default function RestaurantCard({
         )}
       </View>
 
-      {/* Plan badge top-right */}
+      {/* Plan badge */}
       {plan !== 'free_trial' && (
         <View style={styles.vPlanBadge}>
           <Text style={styles.vPlanBadgeText}>
@@ -257,21 +229,15 @@ export default function RestaurantCard({
 
       {/* Info */}
       <View style={styles.vInfo}>
-        {/* Name + Verified */}
         <View style={styles.hNameRow}>
           <Text style={styles.name} numberOfLines={1}>
             {restaurant.name}
           </Text>
           {restaurant.isVerified && (
-            <Ionicons
-              name="checkmark-circle"
-              size={14}
-              color={COLORS.primary}
-            />
+            <Ionicons name="checkmark-circle" size={14} color={COLORS.primary} />
           )}
         </View>
 
-        {/* Rating + Cuisine */}
         <View style={styles.ratingRow}>
           <Ionicons name="star" size={13} color={STAR_COLOR} />
           <Text style={styles.rating}>
@@ -291,7 +257,6 @@ export default function RestaurantCard({
           </Text>
         </View>
 
-        {/* Location */}
         {!!restaurant.location?.city && (
           <View style={styles.locationRow}>
             <Ionicons name="location-outline" size={12} color={COLORS.textMuted} />
@@ -301,17 +266,10 @@ export default function RestaurantCard({
           </View>
         )}
 
-        {/* Services */}
         <View style={styles.servicesRow}>
-          {restaurant.hasDelivery && (
-            <Text style={styles.serviceIcon}>🛵</Text>
-          )}
-          {restaurant.hasTakeout && (
-            <Text style={styles.serviceIcon}>🥡</Text>
-          )}
-          {restaurant.hasDineIn && (
-            <Text style={styles.serviceIcon}>🪑</Text>
-          )}
+          {restaurant.hasDelivery && <Text style={styles.serviceIcon}>🛵</Text>}
+          {restaurant.hasTakeout  && <Text style={styles.serviceIcon}>🥡</Text>}
+          {restaurant.hasDineIn   && <Text style={styles.serviceIcon}>🪑</Text>}
         </View>
       </View>
     </TouchableOpacity>
@@ -330,7 +288,10 @@ const styles = StyleSheet.create({
     overflow:        'hidden',
     ...SHADOW,
   },
-  vImage: { width: '100%', height: 150 },
+  vImage: {
+    width:  '100%',
+    height: 150,
+  },
   vTopBadges: {
     position:      'absolute',
     top:           SIZES.sm,
@@ -395,7 +356,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ── Plan Badge (horizontal) ───────────────
+  // ── Plan Badge ────────────────────────────
   planBadge: {
     paddingHorizontal: 6,
     paddingVertical:   2,
@@ -409,15 +370,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderRadius:    RADIUS.lg,
     overflow:        'hidden',
+    height:          140,
     ...SHADOW,
   },
   hImageWrapper: {
-    position: 'relative',
+    width:  110,
+    height: 140,
   },
   hImage: {
     width:  110,
-    height: '100%',
-    minHeight: 130,
+    height: 140,
   },
   hStatusDot: {
     position:     'absolute',
@@ -431,10 +393,10 @@ const styles = StyleSheet.create({
   },
   hInfo: {
     flex:           1,
-    padding:        SIZES.md,
+    padding:        SIZES.sm,
+    paddingLeft:    SIZES.md,
     justifyContent: 'space-between',
-    gap:            4,
-    minHeight:      130,
+    gap:            2,
   },
   hNameRow: {
     flexDirection: 'row',
@@ -446,23 +408,22 @@ const styles = StyleSheet.create({
     flexDirection:  'row',
     alignItems:     'center',
     justifyContent: 'space-between',
-    marginTop:      SIZES.xs,
   },
 
   // ── Shared ────────────────────────────────
   name: {
     flex:       1,
-    fontSize:   FONTS.lg,
+    fontSize:   FONTS.md,
     fontWeight: 'bold',
     color:      COLORS.text,
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           4,
+    gap:           3,
   },
   rating: {
-    fontSize:   FONTS.sm,
+    fontSize:   FONTS.xs,
     fontWeight: '600',
     color:      COLORS.text,
   },
@@ -470,10 +431,10 @@ const styles = StyleSheet.create({
     fontSize: FONTS.xs,
     color:    COLORS.textMuted,
   },
-  dot:   { color: COLORS.textMuted },
-  price: { fontSize: FONTS.sm, color: ACCENT_COLOR, fontWeight: '600' },
+  dot:   { color: COLORS.textMuted, fontSize: FONTS.xs },
+  price: { fontSize: FONTS.xs, color: ACCENT_COLOR, fontWeight: '600' },
   cuisineText: {
-    fontSize:      FONTS.sm,
+    fontSize:      FONTS.xs,
     color:         COLORS.textLight,
     textTransform: 'capitalize',
     flexShrink:    1,
@@ -481,17 +442,17 @@ const styles = StyleSheet.create({
   locationRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           4,
+    gap:           3,
   },
   location: {
-    fontSize: FONTS.sm,
+    fontSize: FONTS.xs,
     color:    COLORS.textMuted,
     flex:     1,
   },
   distanceRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           4,
+    gap:           3,
   },
   distanceText: {
     fontSize:   FONTS.xs,
@@ -500,15 +461,18 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     alignSelf:         'flex-start',
-    paddingHorizontal: SIZES.sm,
-    paddingVertical:   3,
+    paddingHorizontal: SIZES.xs,
+    paddingVertical:   2,
     borderRadius:      RADIUS.round,
   },
-  statusText: { fontSize: FONTS.xs, fontWeight: '600' },
+  statusText: {
+    fontSize:   10,
+    fontWeight: '600',
+  },
   servicesRow: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           4,
+    gap:           3,
   },
-  serviceIcon: { fontSize: 14 },
+  serviceIcon: { fontSize: 12 },
 });
