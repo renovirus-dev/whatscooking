@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>What's Cooking - Discover Daily Menus</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #2C3E50;
+      overflow-x: hidden;
+    }
+
+    /* ── Hero ──────────────────── */
+    .hero {
+      background: linear-gradient(135deg, #FF6B35, #FF8C42);
+      color: white;
+      padding: 80px 20px 60px;
+      text-align: center;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .hero-logo { font-size: 80px; margin-bottom: 20px; }
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 800;
+      margin-bottom: 16px;
+      letter-spacing: -1px;
+    }
+    .hero p {
+      font-size: 20px;
+      opacity: 0.9;
+      max-width: 600px;
+      line-height: 1.6;
+      margin-bottom: 40px;
+    }
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .btn-download {
+      background: white;
+      color: #FF6B35;
+      padding: 16px 40px;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+    }
+    .btn-download:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    }
+    .btn-owner {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      padding: 16px 40px;
+      border-radius: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      text-decoration: none;
+      border: 2px solid rgba(255,255,255,0.5);
+      transition: background 0.2s;
+    }
+    .btn-owner:hover { background: rgba(255,255,255,0.3); }
+    .hero-note {
+      margin-top: 20px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+
+    /* ── Phone Mockup ─────────── */
+    .phone-mockup {
+      margin-top: 40px;
+      font-size: 120px;
+    }
+
+    /* ── Features ─────────────── */
+    .features {
+      padding: 80px 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .features h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 16px;
+      color: #FF6B35;
+    }
+    .features-subtitle {
+      text-align: center;
+      font-size: 18px;
+      color: #7F8C8D;
+      margin-bottom: 60px;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 30px;
+    }
+    .feature-card {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+      transition: transform 0.2s;
+      border: 1px solid #f0f0f0;
+    }
+    .feature-card:hover { transform: translateY(-4px); }
+    .feature-emoji { font-size: 40px; margin-bottom: 16px; }
+    .feature-card h3 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      color: #2C3E50;
+    }
+    .feature-card p {
+      font-size: 15px;
+      color: #7F8C8D;
+      line-height: 1.6;
+    }
+
+    /* ── For Owners ───────────── */
+    .owners {
+      background: #F8F9FA;
+      padding: 80px 20px;
+    }
+    .owners-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .owners h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 16px;
+    }
+    .owners-subtitle {
+      text-align: center;
+      font-size: 18px;
+      color: #7F8C8D;
+      margin-bottom: 60px;
+    }
+    .owners-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 24px;
+    }
+    .owner-feature {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .owner-icon {
+      font-size: 28px;
+      background: #FF6B35;
+      color: white;
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .owner-feature h4 { font-size: 16px; margin-bottom: 4px; }
+    .owner-feature p { font-size: 14px; color: #7F8C8D; }
+
+    /* ── Pricing ──────────────── */
+    .pricing {
+      padding: 80px 20px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .pricing h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 60px;
+      color: #FF6B35;
+    }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .price-card {
+      border: 2px solid #E0E0E0;
+      border-radius: 16px;
+      padding: 30px;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .price-card.popular {
+      border-color: #FF6B35;
+      position: relative;
+    }
+    .popular-badge {
+      background: #FF6B35;
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 16px;
+      border-radius: 20px;
+      position: absolute;
+      top: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .price-emoji { font-size: 40px; margin-bottom: 12px; }
+    .price-name { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .price-amount { font-size: 36px; font-weight: 800; color: #FF6B35; }
+    .price-period { font-size: 14px; color: #7F8C8D; }
+    .price-features { list-style: none; margin: 20px 0; text-align: left; }
+    .price-features li {
+      padding: 8px 0;
+      font-size: 14px;
+      color: #2C3E50;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .price-features li::before { content: '✅'; }
+
+    /* ── Download Section ─────── */
+    .download {
+      background: linear-gradient(135deg, #FF6B35, #FF8C42);
+      color: white;
+      padding: 80px 20px;
+      text-align: center;
+    }
+    .download h2 {
+      font-size: 36px;
+      margin-bottom: 16px;
+    }
+    .download p {
+      font-size: 18px;
+      opacity: 0.9;
+      margin-bottom: 30px;
+    }
+    .download-btn {
+      background: white;
+      color: #FF6B35;
+      padding: 18px 48px;
+      border-radius: 12px;
+      font-size: 20px;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+      transition: transform 0.2s;
+    }
+    .download-btn:hover { transform: translateY(-2px); }
+    .download-note {
+      margin-top: 16px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+
+    /* ── Footer ───────────────── */
+    .footer {
+      background: #2C3E50;
+      color: rgba(255,255,255,0.7);
+      padding: 40px 20px;
+      text-align: center;
+    }
+    .footer a { color: #FF6B35; text-decoration: none; }
+    .footer p { margin-bottom: 8px; font-size: 14px; }
+
+    /* ── Mobile ───────────────── */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 32px; }
+      .hero p { font-size: 16px; }
+      .features h2, .owners h2, .pricing h2, .download h2 {
+        font-size: 28px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Hero ──────────────────── -->
+  <section class="hero">
+    <div class="hero-logo">🍳</div>
+    <h1>What's Cooking</h1>
+    <p>Discover daily menus from restaurants near you. Browse what's fresh today, save your favorites, and never wonder what to eat again.</p>
+    <div class="hero-buttons">
+      <a href="#download" class="btn-download">
+        📱 Download App
+      </a>
+      <a href="#owners" class="btn-owner">
+        🍽️ I'm a Restaurant Owner
+      </a>
+    </div>
+    <p class="hero-note">Free for food lovers · Available on Android</p>
+    <div class="phone-mockup">📱</div>
+  </section>
+
+  <!-- ── Features ─────────────── -->
+  <section class="features">
+    <h2>Why Food Lovers Choose Us</h2>
+    <p class="features-subtitle">Everything you need to find your next meal</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-emoji">📅</div>
+        <h3>Daily Menu Updates</h3>
+        <p>See what restaurants are cooking today — updated fresh every morning by restaurant owners.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">📍</div>
+        <h3>Find Restaurants Nearby</h3>
+        <p>Use "Near Me" to discover restaurants within walking distance. Filter by cuisine, price, and more.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">⭐</div>
+        <h3>Save & Review</h3>
+        <p>Save your favorite restaurants and dishes. Write reviews to help other food lovers.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🔔</div>
+        <h3>Get Notified</h3>
+        <p>Never miss a daily special. Get push notifications when your favorite restaurants update their menu.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🥗</div>
+        <h3>Dietary Preferences</h3>
+        <p>Set your dietary needs — vegetarian, vegan, halal, gluten-free — and see matching items highlighted.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-emoji">🛵</div>
+        <h3>Delivery & Takeout</h3>
+        <p>Know at a glance if a restaurant offers dine-in, takeout, or delivery. Contact them directly.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── For Owners ───────────── -->
+  <section class="owners" id="owners">
+    <div class="owners-inner">
+      <h2>🍽️ For Restaurant Owners</h2>
+      <p class="owners-subtitle">Grow your business and reach more customers</p>
+      <div class="owners-grid">
+        <div class="owner-feature">
+          <div class="owner-icon">📋</div>
+          <div>
+            <h4>Daily Menu Publishing</h4>
+            <p>Update your menu in seconds. Customers see what's cooking today.</p>
+          </div>
+        </div>
+        <div class="owner-feature">
+          <div class="owner-icon">📷</div>
+          <div>
+            <h4>Menu Scanner</h4>
+            <p>Scan your physical menu with your camera — items are extracted automatically.</p>
+          </div>
+        </div>
+        <div class="owner-feature">
+          <div class="owner-icon">📊</div>
+          <div>
+            <h4>Analytics Dashboard</h4>
+            <p>Track views, calls, WhatsApp messages, and conversion rates.</p>
+          </div>
+        </div>
+        <div class="owner-feature">
+          <div class="owner-icon">🔔</div>
+          <div>
+            <h4>Push Notifications</h4>
+            <p>Alert your followers when you post daily specials or new items.</p>
+          </div>
+        </div>
+        <div class="owner-feature">
+          <div class="owner-icon">⭐</div>
+          <div>
+            <h4>Customer Reviews</h4>
+            <p>Build trust with authentic reviews from real customers.</p>
+          </div>
+        </div>
+        <div class="owner-feature">
+          <div class="owner-icon">💳</div>
+          <div>
+            <h4>Easy Payments</h4>
+            <p>Pay with PayPal or Scotiabank bank transfer. Start with a 14-day free trial.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Pricing ──────────────── -->
+  <section class="pricing">
+    <h2>Simple Pricing for Owners</h2>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-emoji">🆓</div>
+        <div class="price-name">Free Trial</div>
+        <div class="price-amount">$0</div>
+        <div class="price-period">14 days</div>
+        <ul class="price-features">
+          <li>Basic restaurant listing</li>
+          <li>Up to 10 menu items</li>
+          <li>Customer reviews</li>
+          <li>Standard support</li>
+        </ul>
+      </div>
+      <div class="price-card">
+        <div class="price-emoji">⭐</div>
+        <div class="price-name">Basic</div>
+        <div class="price-amount">$9.99</div>
+        <div class="price-period">per month (≈ J$1,550)</div>
+        <ul class="price-features">
+          <li>Unlimited menu items</li>
+          <li>Menu scanner</li>
+          <li>Priority listing</li>
+          <li>Basic analytics</li>
+          <li>Email support</li>
+        </ul>
+      </div>
+      <div class="price-card popular">
+        <div class="popular-badge">⭐ MOST POPULAR</div>
+        <div class="price-emoji">👑</div>
+        <div class="price-name">Premium</div>
+        <div class="price-amount">$24.99</div>
+        <div class="price-period">per month (≈ J$3,875)</div>
+        <ul class="price-features">
+          <li>Everything in Basic</li>
+          <li>Full analytics dashboard</li>
+          <li>Push notifications</li>
+          <li>Featured listing</li>
+          <li>Guest vs user breakdown</li>
+          <li>Priority support</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Download ─────────────── -->
+  <section class="download" id="download">
+    <h2>📱 Download What's Cooking</h2>
+    <p>Free for food lovers. Start discovering restaurants today.</p>
+    <a href="YOUR_APK_DOWNLOAD_LINK_HERE" class="download-btn">
+      📥 Download for Android
+    </a>
+    <p class="download-note">
+      Android APK · Free · No Play Store account needed
+    </p>
+  </section>
+
+  <!-- ── Footer ───────────────── -->
+  <footer class="footer">
+    <p>Made with ❤️ in Jamaica</p>
+    <p>Contact: <a href="mailto:renogooden@outlook.com">renogooden@outlook.com</a></p>
+    <p>© 2024 What's Cooking. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>
