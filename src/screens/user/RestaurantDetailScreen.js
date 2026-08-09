@@ -553,10 +553,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
 
           {/* Back Button */}
           <TouchableOpacity
-            style={[styles.coverBtn, { top: insets.top + SIZES.sm, left: SIZES.md }]}
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.8}
-          >
+			style={[styles.coverBtn, { position: 'absolute', top: insets.top + SIZES.sm, left: 16 }]}
+			onPress={() => navigation.goBack()}
+			activeOpacity={0.8}
+			>
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
 
@@ -1220,28 +1220,32 @@ const styles = StyleSheet.create({
   backBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
 
   // ── Cover ─────────────────────────────────
-  coverContainer: { height: 260, position: 'relative' },
+  coverContainer: {
+  height:   260,
+  position: 'relative',
+  overflow: 'visible',
+},
   coverImage:     { width: '100%', height: '100%' },
   coverOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
   coverBtn: {
-    position:        'absolute',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    padding:         SIZES.sm,
-    borderRadius:    RADIUS.round,
-    width:           40,
-    height:          40,
-    justifyContent:  'center',
-    alignItems:      'center',
-  },
+	backgroundColor: 'rgba(0,0,0,0.5)',
+	padding:         10,
+	borderRadius:    20,
+	width:           42,
+	height:          42,
+	justifyContent:  'center',
+	alignItems:      'center',
+	},
   coverBtnsRight: {
-    position:      'absolute',
-    right:         SIZES.md,
-    flexDirection: 'row',
-    gap:           SIZES.sm,
-  },
+	position:      'absolute',
+	right:         16,
+	flexDirection: 'row',
+	gap:           10,
+	zIndex:        10,
+	},
   statusBadge: {
     position:          'absolute',
     bottom:            SIZES.md,
