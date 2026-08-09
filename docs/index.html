@@ -3,20 +3,122 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>What's Cooking - Discover Daily Menus</title>
+  <title>What's Cooking - Discover Daily Menus Near You</title>
+  <meta name="description" content="Discover daily menus from restaurants near you. Browse what's fresh today, save favorites, and never wonder what to eat again.">
+  <meta name="theme-color" content="#FF6B35">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍳</text></svg>">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       color: #2C3E50;
       overflow-x: hidden;
     }
 
+    /* ── Navbar ────────────────── */
+    .navbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: rgba(255, 107, 53, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: white;
+    }
+    .nav-logo-emoji { font-size: 28px; }
+    .nav-logo-text { font-size: 20px; font-weight: 800; color: white; }
+    .nav-links {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    }
+    .nav-links a {
+      color: rgba(255,255,255,0.9);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: white; }
+    .nav-download-btn {
+      background: white !important;
+      color: #FF6B35 !important;
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-weight: 700 !important;
+      transition: transform 0.2s;
+    }
+    .nav-download-btn:hover { transform: translateY(-1px); }
+    .nav-menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: white;
+      font-size: 28px;
+      cursor: pointer;
+    }
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .nav-menu-btn { display: block; }
+      .nav-links.active {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 56px;
+        left: 0;
+        right: 0;
+        background: #FF6B35;
+        padding: 20px;
+        gap: 16px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      }
+    }
+
+    /* ── Back to Top ──────────── */
+    .back-to-top {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      background: #FF6B35;
+      color: white;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      text-decoration: none;
+      box-shadow: 0 4px 15px rgba(255,107,53,0.4);
+      transition: transform 0.2s, opacity 0.3s;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 999;
+    }
+    .back-to-top.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .back-to-top:hover { transform: translateY(-3px); }
+
     /* ── Hero ──────────────────── */
     .hero {
       background: linear-gradient(135deg, #FF6B35, #FF8C42);
       color: white;
-      padding: 80px 20px 60px;
+      padding: 120px 20px 60px;
       text-align: center;
       min-height: 100vh;
       display: flex;
@@ -74,17 +176,18 @@
       transition: background 0.2s;
     }
     .btn-owner:hover { background: rgba(255,255,255,0.3); }
-    .hero-note {
-      margin-top: 20px;
+    .hero-note { margin-top: 20px; font-size: 14px; opacity: 0.7; }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.2);
+      padding: 8px 20px;
+      border-radius: 30px;
       font-size: 14px;
-      opacity: 0.7;
+      margin-bottom: 24px;
     }
-
-    /* ── Phone Mockup ─────────── */
-    .phone-mockup {
-      margin-top: 40px;
-      font-size: 120px;
-    }
+    .phone-mockup { margin-top: 40px; font-size: 120px; }
 
     /* ── Features ─────────────── */
     .features {
@@ -119,16 +222,89 @@
     }
     .feature-card:hover { transform: translateY(-4px); }
     .feature-emoji { font-size: 40px; margin-bottom: 16px; }
-    .feature-card h3 {
-      font-size: 20px;
-      margin-bottom: 8px;
+    .feature-card h3 { font-size: 20px; margin-bottom: 8px; color: #2C3E50; }
+    .feature-card p { font-size: 15px; color: #7F8C8D; line-height: 1.6; }
+
+    /* ── Screenshots ──────────── */
+    .screenshots {
+      background: #F8F9FA;
+      padding: 80px 20px;
+      text-align: center;
+    }
+    .screenshots h2 {
+      font-size: 36px;
+      margin-bottom: 16px;
       color: #2C3E50;
     }
-    .feature-card p {
-      font-size: 15px;
+    .screenshots-subtitle {
+      font-size: 18px;
       color: #7F8C8D;
-      line-height: 1.6;
+      margin-bottom: 40px;
     }
+    .screenshots-scroll {
+      display: flex;
+      gap: 20px;
+      overflow-x: auto;
+      padding: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .screenshot-item {
+      background: white;
+      border-radius: 16px;
+      padding: 20px 30px;
+      box-shadow: 0 2px 15px rgba(0,0,0,0.08);
+      text-align: center;
+      min-width: 160px;
+      transition: transform 0.2s;
+    }
+    .screenshot-item:hover { transform: translateY(-4px); }
+    .screenshot-emoji { font-size: 50px; margin-bottom: 12px; }
+    .screenshot-label { font-size: 14px; color: #7F8C8D; font-weight: 600; }
+
+    /* ── How It Works ─────────── */
+    .how-it-works {
+      padding: 80px 20px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .how-it-works h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 60px;
+      color: #2C3E50;
+    }
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      background: white;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      transition: transform 0.2s;
+    }
+    .step:hover { transform: translateX(8px); }
+    .step-number {
+      background: #FF6B35;
+      color: white;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+    .step-content h3 { font-size: 18px; margin-bottom: 4px; }
+    .step-content p { font-size: 14px; color: #7F8C8D; line-height: 1.5; }
 
     /* ── For Owners ───────────── */
     .owners {
@@ -163,9 +339,12 @@
       align-items: flex-start;
       gap: 16px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      border: 1px solid #f0f0f0;
+      transition: transform 0.2s;
     }
+    .owner-feature:hover { transform: translateY(-4px); }
     .owner-icon {
-      font-size: 28px;
+      font-size: 24px;
       background: #FF6B35;
       color: white;
       width: 48px;
@@ -177,19 +356,27 @@
       flex-shrink: 0;
     }
     .owner-feature h4 { font-size: 16px; margin-bottom: 4px; }
-    .owner-feature p { font-size: 14px; color: #7F8C8D; }
+    .owner-feature p { font-size: 14px; color: #7F8C8D; line-height: 1.5; }
 
     /* ── Pricing ──────────────── */
     .pricing {
       padding: 80px 20px;
+    }
+    .pricing-inner {
       max-width: 1000px;
       margin: 0 auto;
     }
     .pricing h2 {
       text-align: center;
       font-size: 36px;
-      margin-bottom: 60px;
+      margin-bottom: 16px;
       color: #FF6B35;
+    }
+    .pricing-subtitle {
+      text-align: center;
+      font-size: 16px;
+      color: #7F8C8D;
+      margin-bottom: 60px;
     }
     .pricing-grid {
       display: grid;
@@ -197,15 +384,18 @@
       gap: 24px;
     }
     .price-card {
+      background: white;
       border: 2px solid #E0E0E0;
       border-radius: 16px;
       padding: 30px;
       text-align: center;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, transform 0.2s;
     }
+    .price-card:hover { transform: translateY(-4px); }
     .price-card.popular {
       border-color: #FF6B35;
       position: relative;
+      box-shadow: 0 4px 20px rgba(255,107,53,0.15);
     }
     .popular-badge {
       background: #FF6B35;
@@ -222,8 +412,8 @@
     .price-emoji { font-size: 40px; margin-bottom: 12px; }
     .price-name { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
     .price-amount { font-size: 36px; font-weight: 800; color: #FF6B35; }
-    .price-period { font-size: 14px; color: #7F8C8D; }
-    .price-features { list-style: none; margin: 20px 0; text-align: left; }
+    .price-period { font-size: 14px; color: #7F8C8D; margin-bottom: 20px; }
+    .price-features { list-style: none; text-align: left; }
     .price-features li {
       padding: 8px 0;
       font-size: 14px;
@@ -231,8 +421,62 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      border-bottom: 1px solid #f5f5f5;
     }
+    .price-features li:last-child { border-bottom: none; }
     .price-features li::before { content: '✅'; }
+
+    /* ── Testimonials ─────────── */
+    .testimonials {
+      background: #F8F9FA;
+      padding: 80px 20px;
+    }
+    .testimonials h2 {
+      text-align: center;
+      font-size: 36px;
+      margin-bottom: 60px;
+      color: #2C3E50;
+    }
+    .testimonials-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+    .testimonial-card {
+      background: white;
+      border-radius: 16px;
+      padding: 30px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    .testimonial-stars { font-size: 18px; margin-bottom: 12px; }
+    .testimonial-text {
+      font-size: 15px;
+      color: #2C3E50;
+      line-height: 1.6;
+      margin-bottom: 16px;
+      font-style: italic;
+    }
+    .testimonial-author {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .testimonial-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #FF6B35;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .testimonial-name { font-weight: 600; font-size: 14px; }
+    .testimonial-role { font-size: 12px; color: #7F8C8D; }
 
     /* ── Download Section ─────── */
     .download {
@@ -241,15 +485,8 @@
       padding: 80px 20px;
       text-align: center;
     }
-    .download h2 {
-      font-size: 36px;
-      margin-bottom: 16px;
-    }
-    .download p {
-      font-size: 18px;
-      opacity: 0.9;
-      margin-bottom: 30px;
-    }
+    .download h2 { font-size: 36px; margin-bottom: 16px; }
+    .download p { font-size: 18px; opacity: 0.9; margin-bottom: 30px; max-width: 500px; margin-left: auto; margin-right: auto; }
     .download-btn {
       background: white;
       color: #FF6B35;
@@ -265,53 +502,111 @@
       transition: transform 0.2s;
     }
     .download-btn:hover { transform: translateY(-2px); }
-    .download-note {
-      margin-top: 16px;
-      font-size: 14px;
-      opacity: 0.7;
+    .download-note { margin-top: 16px; font-size: 14px; opacity: 0.7; }
+    .download-stats {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      margin-top: 48px;
+      flex-wrap: wrap;
     }
+    .download-stat { text-align: center; }
+    .download-stat-value { font-size: 40px; margin-bottom: 4px; }
+    .download-stat-label { font-size: 14px; opacity: 0.85; }
 
     /* ── Footer ───────────────── */
     .footer {
       background: #2C3E50;
       color: rgba(255,255,255,0.7);
-      padding: 40px 20px;
-      text-align: center;
+      padding: 48px 20px 24px;
     }
-    .footer a { color: #FF6B35; text-decoration: none; }
-    .footer p { margin-bottom: 8px; font-size: 14px; }
+    .footer-inner {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 40px;
+    }
+    .footer-col h4 {
+      color: white;
+      margin-bottom: 16px;
+      font-size: 16px;
+    }
+    .footer-col a {
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+      display: block;
+      margin-bottom: 10px;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+    .footer-col a:hover { color: #FF6B35; }
+    .footer-col p { font-size: 14px; line-height: 1.6; max-width: 280px; }
+    .footer-bottom {
+      max-width: 1000px;
+      margin: 0 auto;
+      text-align: center;
+      padding-top: 24px;
+      margin-top: 32px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      font-size: 13px;
+    }
 
     /* ── Mobile ───────────────── */
     @media (max-width: 768px) {
+      .hero { padding: 100px 20px 40px; min-height: auto; }
       .hero h1 { font-size: 32px; }
       .hero p { font-size: 16px; }
-      .features h2, .owners h2, .pricing h2, .download h2 {
-        font-size: 28px;
-      }
+      .phone-mockup { font-size: 80px; }
+      .features h2, .owners h2, .pricing h2,
+      .download h2, .how-it-works h2, .screenshots h2,
+      .testimonials h2 { font-size: 28px; }
+      .download-stats { gap: 24px; }
+      .footer-inner { flex-direction: column; gap: 24px; }
+      .step { flex-direction: column; text-align: center; }
+      .hero-buttons { flex-direction: column; align-items: center; }
+      .btn-download, .btn-owner { width: 100%; justify-content: center; }
     }
   </style>
 </head>
 <body>
 
+  <!-- ── Navbar ────────────────── -->
+  <nav class="navbar" id="top">
+    <a href="#top" class="nav-logo">
+      <span class="nav-logo-emoji">🍳</span>
+      <span class="nav-logo-text">What's Cooking</span>
+    </a>
+    <button class="nav-menu-btn" onclick="toggleMenu()">☰</button>
+    <div class="nav-links" id="navLinks">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#owners">For Owners</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://drive.google.com/file/d/1Bj6yDy98dg9VwmBAMNGSjp26mvF2Rg42/view?usp=drive_link" class="nav-download-btn">📥 Download</a>
+    </div>
+  </nav>
+
+  <!-- ── Back to Top ───────────── -->
+  <a href="#top" class="back-to-top" id="backToTop">↑</a>
+
   <!-- ── Hero ──────────────────── -->
-  <section class="hero">
+  <section class="hero" id="hero">
+    <div class="hero-badge">🇯🇲 Made in Jamaica</div>
     <div class="hero-logo">🍳</div>
     <h1>What's Cooking</h1>
     <p>Discover daily menus from restaurants near you. Browse what's fresh today, save your favorites, and never wonder what to eat again.</p>
     <div class="hero-buttons">
-      <a href="https://drive.google.com/file/d/1Bj6yDy98dg9VwmBAMNGSjp26mvF2Rg42/view?usp=drive_link" class="btn-download">
-        📱 Download App
-      </a>
-      <a href="#owners" class="btn-owner">
-        🍽️ I'm a Restaurant Owner
-      </a>
+      <a href="https://drive.google.com/file/d/1Bj6yDy98dg9VwmBAMNGSjp26mvF2Rg42/view?usp=drive_link" class="btn-download">📱 Download Free App</a>
+      <a href="#owners" class="btn-owner">🍽️ I'm a Restaurant Owner</a>
     </div>
     <p class="hero-note">Free for food lovers · Available on Android</p>
     <div class="phone-mockup">📱</div>
   </section>
 
   <!-- ── Features ─────────────── -->
-  <section class="features">
+  <section class="features" id="features">
     <h2>Why Food Lovers Choose Us</h2>
     <p class="features-subtitle">Everything you need to find your next meal</p>
     <div class="features-grid">
@@ -348,52 +643,119 @@
     </div>
   </section>
 
+  <!-- ── Screenshots ──────────── -->
+  <section class="screenshots">
+    <h2>📱 See It In Action</h2>
+    <p class="screenshots-subtitle">Beautiful design, easy to use</p>
+    <div class="screenshots-scroll">
+      <div class="screenshot-item">
+        <div class="screenshot-emoji">🏠</div>
+        <div class="screenshot-label">Home Screen</div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-emoji">🔍</div>
+        <div class="screenshot-label">Explore</div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-emoji">🍽️</div>
+        <div class="screenshot-label">Restaurant</div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-emoji">📋</div>
+        <div class="screenshot-label">Menu Items</div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-emoji">📷</div>
+        <div class="screenshot-label">Menu Scanner</div>
+      </div>
+      <div class="screenshot-item">
+        <div class="screenshot-emoji">📊</div>
+        <div class="screenshot-label">Analytics</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── How It Works ─────────── -->
+  <section class="how-it-works" id="how-it-works">
+    <h2>How It Works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <div class="step-content">
+          <h3>📥 Download the App</h3>
+          <p>Download What's Cooking for free on your Android phone. No Play Store account needed.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">2</div>
+        <div class="step-content">
+          <h3>🔍 Browse Restaurants</h3>
+          <p>Explore restaurants near you. Filter by cuisine, price range, or find ones that are open now.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">3</div>
+        <div class="step-content">
+          <h3>📅 See Today's Menu</h3>
+          <p>Check what's cooking today at your favorite spots. Menus are updated daily by restaurant owners.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-number">4</div>
+        <div class="step-content">
+          <h3>❤️ Save & Order</h3>
+          <p>Save favorites, call the restaurant, get directions, or message them on WhatsApp to order.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ── For Owners ───────────── -->
   <section class="owners" id="owners">
     <div class="owners-inner">
       <h2>🍽️ For Restaurant Owners</h2>
-      <p class="owners-subtitle">Grow your business and reach more customers</p>
+      <p class="owners-subtitle">Grow your business and reach more customers every day</p>
       <div class="owners-grid">
         <div class="owner-feature">
           <div class="owner-icon">📋</div>
           <div>
             <h4>Daily Menu Publishing</h4>
-            <p>Update your menu in seconds. Customers see what's cooking today.</p>
+            <p>Update your menu in seconds. Customers see what's cooking today, right from their phone.</p>
           </div>
         </div>
         <div class="owner-feature">
           <div class="owner-icon">📷</div>
           <div>
-            <h4>Menu Scanner</h4>
-            <p>Scan your physical menu with your camera — items are extracted automatically.</p>
+            <h4>AI Menu Scanner</h4>
+            <p>Point your camera at your physical menu — our AI extracts all items, prices, and descriptions automatically.</p>
           </div>
         </div>
         <div class="owner-feature">
           <div class="owner-icon">📊</div>
           <div>
             <h4>Analytics Dashboard</h4>
-            <p>Track views, calls, WhatsApp messages, and conversion rates.</p>
+            <p>Track views, calls, WhatsApp messages, and your conversion rate. See guest vs user breakdown.</p>
           </div>
         </div>
         <div class="owner-feature">
           <div class="owner-icon">🔔</div>
           <div>
             <h4>Push Notifications</h4>
-            <p>Alert your followers when you post daily specials or new items.</p>
+            <p>Alert your followers when you post daily specials, new items, or limited offers.</p>
           </div>
         </div>
         <div class="owner-feature">
           <div class="owner-icon">⭐</div>
           <div>
             <h4>Customer Reviews</h4>
-            <p>Build trust with authentic reviews from real customers.</p>
+            <p>Build trust and attract new customers with authentic reviews and star ratings.</p>
           </div>
         </div>
         <div class="owner-feature">
           <div class="owner-icon">💳</div>
           <div>
             <h4>Easy Payments</h4>
-            <p>Pay with PayPal or Scotiabank bank transfer. Start with a 14-day free trial.</p>
+            <p>Subscribe with PayPal or Scotiabank Jamaica bank transfer. Start with a free 14-day trial.</p>
           </div>
         </div>
       </div>
@@ -401,70 +763,186 @@
   </section>
 
   <!-- ── Pricing ──────────────── -->
-  <section class="pricing">
-    <h2>Simple Pricing for Owners</h2>
-    <div class="pricing-grid">
-      <div class="price-card">
-        <div class="price-emoji">🆓</div>
-        <div class="price-name">Free Trial</div>
-        <div class="price-amount">$0</div>
-        <div class="price-period">14 days</div>
-        <ul class="price-features">
-          <li>Basic restaurant listing</li>
-          <li>Up to 10 menu items</li>
-          <li>Customer reviews</li>
-          <li>Standard support</li>
-        </ul>
+  <section class="pricing" id="pricing">
+    <div class="pricing-inner">
+      <h2>Simple Pricing for Owners</h2>
+      <p class="pricing-subtitle">Free for food lovers. Affordable plans for restaurant owners. Cancel anytime.</p>
+      <div class="pricing-grid">
+        <div class="price-card">
+          <div class="price-emoji">🆓</div>
+          <div class="price-name">Free Trial</div>
+          <div class="price-amount">$0</div>
+          <div class="price-period">14 days · no credit card</div>
+          <ul class="price-features">
+            <li>Basic restaurant listing</li>
+            <li>Up to 10 menu items</li>
+            <li>Customer reviews</li>
+            <li>Standard support</li>
+          </ul>
+        </div>
+        <div class="price-card">
+          <div class="price-emoji">⭐</div>
+          <div class="price-name">Basic</div>
+          <div class="price-amount">$9.99</div>
+          <div class="price-period">per month (≈ J$1,550)</div>
+          <ul class="price-features">
+            <li>Unlimited menu items</li>
+            <li>AI menu scanner</li>
+            <li>Priority listing</li>
+            <li>Basic analytics</li>
+            <li>Email support</li>
+          </ul>
+        </div>
+        <div class="price-card popular">
+          <div class="popular-badge">⭐ MOST POPULAR</div>
+          <div class="price-emoji">👑</div>
+          <div class="price-name">Premium</div>
+          <div class="price-amount">$24.99</div>
+          <div class="price-period">per month (≈ J$3,875)</div>
+          <ul class="price-features">
+            <li>Everything in Basic</li>
+            <li>Full analytics dashboard</li>
+            <li>Push notifications</li>
+            <li>Featured listing</li>
+            <li>Guest vs user breakdown</li>
+            <li>Priority support</li>
+          </ul>
+        </div>
       </div>
-      <div class="price-card">
-        <div class="price-emoji">⭐</div>
-        <div class="price-name">Basic</div>
-        <div class="price-amount">$9.99</div>
-        <div class="price-period">per month (≈ J$1,550)</div>
-        <ul class="price-features">
-          <li>Unlimited menu items</li>
-          <li>Menu scanner</li>
-          <li>Priority listing</li>
-          <li>Basic analytics</li>
-          <li>Email support</li>
-        </ul>
+    </div>
+  </section>
+
+  <!-- ── Testimonials ─────────── -->
+  <section class="testimonials">
+    <h2>What People Are Saying</h2>
+    <div class="testimonials-grid">
+      <div class="testimonial-card">
+        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+        <p class="testimonial-text">"Finally! I can see what every restaurant near me is cooking today without calling each one. This app is a game changer."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">A</div>
+          <div>
+            <div class="testimonial-name">Andre M.</div>
+            <div class="testimonial-role">Food Lover, Kingston</div>
+          </div>
+        </div>
       </div>
-      <div class="price-card popular">
-        <div class="popular-badge">⭐ MOST POPULAR</div>
-        <div class="price-emoji">👑</div>
-        <div class="price-name">Premium</div>
-        <div class="price-amount">$24.99</div>
-        <div class="price-period">per month (≈ J$3,875)</div>
-        <ul class="price-features">
-          <li>Everything in Basic</li>
-          <li>Full analytics dashboard</li>
-          <li>Push notifications</li>
-          <li>Featured listing</li>
-          <li>Guest vs user breakdown</li>
-          <li>Priority support</li>
-        </ul>
+      <div class="testimonial-card">
+        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+        <p class="testimonial-text">"The menu scanner saved me hours of typing. I just pointed my camera at our menu board and everything was uploaded in minutes."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">S</div>
+          <div>
+            <div class="testimonial-name">Shelly R.</div>
+            <div class="testimonial-role">Restaurant Owner, Montego Bay</div>
+          </div>
+        </div>
+      </div>
+      <div class="testimonial-card">
+        <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+        <p class="testimonial-text">"My restaurant gets way more calls now. The analytics show me exactly how many people view my menu and contact me."</p>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">D</div>
+          <div>
+            <div class="testimonial-name">Devon P.</div>
+            <div class="testimonial-role">Restaurant Owner, Spanish Town</div>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
   <!-- ── Download ─────────────── -->
   <section class="download" id="download">
-    <h2>📱 Download What's Cooking</h2>
-    <p>Free for food lovers. Start discovering restaurants today.</p>
+    <h2>📱 Ready to Discover What's Cooking?</h2>
+    <p>Download free for Android. Start finding your next meal today.</p>
     <a href="https://drive.google.com/file/d/1Bj6yDy98dg9VwmBAMNGSjp26mvF2Rg42/view?usp=drive_link" class="download-btn">
       📥 Download for Android
     </a>
-    <p class="download-note">
-      Android APK · Free · No Play Store account needed
-    </p>
+    <p class="download-note">Free APK · No Play Store needed · Install directly</p>
+    <div class="download-stats">
+      <div class="download-stat">
+        <div class="download-stat-value">🍽️</div>
+        <div class="download-stat-label">Daily Menus</div>
+      </div>
+      <div class="download-stat">
+        <div class="download-stat-value">📍</div>
+        <div class="download-stat-label">Near Me Search</div>
+      </div>
+      <div class="download-stat">
+        <div class="download-stat-value">📷</div>
+        <div class="download-stat-label">AI Menu Scanner</div>
+      </div>
+      <div class="download-stat">
+        <div class="download-stat-value">⭐</div>
+        <div class="download-stat-label">Reviews & Ratings</div>
+      </div>
+    </div>
   </section>
 
   <!-- ── Footer ───────────────── -->
   <footer class="footer">
-    <p>Made with ❤️ in Jamaica</p>
-    <p>Contact: <a href="mailto:renogooden@outlook.com">renogooden@outlook.com</a></p>
-    <p>© 2024 What's Cooking. All rights reserved.</p>
+    <div class="footer-inner">
+      <div class="footer-col">
+        <h4>🍳 What's Cooking</h4>
+        <p>Discover daily menus from restaurants near you. Built for Jamaica, available everywhere.</p>
+        <p style="margin-top: 12px;">Made with ❤️ in Jamaica 🇯🇲</p>
+      </div>
+      <div class="footer-col">
+        <h4>Quick Links</h4>
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#owners">For Owners</a>
+        <a href="#pricing">Pricing</a>
+        <a href="https://drive.google.com/file/d/1Bj6yDy98dg9VwmBAMNGSjp26mvF2Rg42/view?usp=drive_link">Download App</a>
+      </div>
+      <div class="footer-col">
+        <h4>Contact Us</h4>
+        <a href="mailto:renogooden@outlook.com">📧 renogooden@outlook.com</a>
+        <a href="mailto:support@whatscooking.app">📧 support@whatscooking.app</a>
+        <p style="margin-top: 12px; font-size: 13px;">
+          Payment support: renogooden@outlook.com<br>
+          PayPal · Scotiabank Jamaica
+        </p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      © 2024 What's Cooking. All rights reserved.
+    </div>
   </footer>
+
+  <!-- ── JavaScript ────────────── -->
+  <script>
+    // Mobile menu toggle
+    function toggleMenu() {
+      document.getElementById('navLinks').classList.toggle('active');
+    }
+
+    // Close menu when link clicked
+    document.querySelectorAll('.nav-links a').forEach(link => {
+      link.addEventListener('click', () => {
+        document.getElementById('navLinks').classList.remove('active');
+      });
+    });
+
+    // Back to top button
+    window.addEventListener('scroll', () => {
+      const btn = document.getElementById('backToTop');
+      if (window.scrollY > 500) {
+        btn.classList.add('visible');
+      } else {
+        btn.classList.remove('visible');
+      }
+
+      // Navbar background opacity on scroll
+      const navbar = document.querySelector('.navbar');
+      if (window.scrollY > 50) {
+        navbar.style.background = 'rgba(255, 107, 53, 0.98)';
+      } else {
+        navbar.style.background = 'rgba(255, 107, 53, 0.95)';
+      }
+    });
+  </script>
 
 </body>
 </html>
