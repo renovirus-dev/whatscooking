@@ -15,7 +15,7 @@ const STAR_COLOR   = COLORS.star   || '#F39C12';
 const ACCENT_COLOR = COLORS.accent || COLORS.primary;
 
 // ─── Local Placeholder ───────────────────────
-const PLACEHOLDER = require('../assets/images/restaurant_placeholder.png');
+const PLACEHOLDER = require('../assets/images/restaurant_placeholder.jpg');
 
 // ─────────────────────────────────────────────
 // GET OPTIMIZED IMAGE URL
