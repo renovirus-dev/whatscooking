@@ -573,8 +573,8 @@
 <body>
 
   <!-- ── Navbar ────────────────── -->
-  <nav class="navbar" id="top">
-    <a href="#top" class="nav-logo">
+  <nav class="navbar" >
+    <a href="#" class="nav-logo" onclick="scrollToTop(event)">
       <span class="nav-logo-emoji">🍳</span>
       <span class="nav-logo-text">What's Cooking</span>
     </a>
@@ -589,7 +589,7 @@
   </nav>
 
   <!-- ── Back to Top ───────────── -->
-  <a href="#top" class="back-to-top" id="backToTop">↑</a>
+  <a href="#" class="back-to-top" id="backToTop" onclick="scrollToTop(event)">↑</a>
 
   <!-- ── Hero ──────────────────── -->
   <section class="hero" id="hero">
@@ -907,42 +907,47 @@
       </div>
     </div>
     <div class="footer-bottom">
-      © 2024 What's Cooking. All rights reserved.
+      © 2026 What's Cooking. All rights reserved.
     </div>
   </footer>
 
   <!-- ── JavaScript ────────────── -->
-  <script>
-    // Mobile menu toggle
-    function toggleMenu() {
-      document.getElementById('navLinks').classList.toggle('active');
+<script>
+  // Mobile menu toggle
+  function toggleMenu() {
+    document.getElementById('navLinks').classList.toggle('active');
+  }
+
+  // Close menu when link clicked
+  document.querySelectorAll('.nav-links a').forEach(link => {
+    link.addEventListener('click', () => {
+      document.getElementById('navLinks').classList.remove('active');
+    });
+  });
+
+  // Back to top button
+  window.addEventListener('scroll', () => {
+    const btn = document.getElementById('backToTop');
+    if (window.scrollY > 500) {
+      btn.classList.add('visible');
+    } else {
+      btn.classList.remove('visible');
     }
 
-    // Close menu when link clicked
-    document.querySelectorAll('.nav-links a').forEach(link => {
-      link.addEventListener('click', () => {
-        document.getElementById('navLinks').classList.remove('active');
-      });
-    });
+    const navbar = document.querySelector('.navbar');
+    if (window.scrollY > 50) {
+      navbar.style.background = 'rgba(255, 107, 53, 0.98)';
+    } else {
+      navbar.style.background = 'rgba(255, 107, 53, 0.95)';
+    }
+  });
 
-    // Back to top button
-    window.addEventListener('scroll', () => {
-      const btn = document.getElementById('backToTop');
-      if (window.scrollY > 500) {
-        btn.classList.add('visible');
-      } else {
-        btn.classList.remove('visible');
-      }
-
-      // Navbar background opacity on scroll
-      const navbar = document.querySelector('.navbar');
-      if (window.scrollY > 50) {
-        navbar.style.background = 'rgba(255, 107, 53, 0.98)';
-      } else {
-        navbar.style.background = 'rgba(255, 107, 53, 0.95)';
-      }
-    });
-  </script>
+  // ✅ Fixed: Scroll to top function
+  function scrollToTop(e) {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>
 
 </body>
 </html>
