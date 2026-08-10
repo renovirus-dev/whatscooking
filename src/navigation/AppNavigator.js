@@ -155,7 +155,11 @@ function LoadingScreen({ onTimeout }) {
       </Text>
       {showTimeout && (
         <View style={{ alignItems: 'center', gap: 8, marginTop: 8 }}>
-          <Text style={{ fontSize: 13, color: MUTED, textAlign: 'center' }}>
+          <Text style={{
+            fontSize:   13,
+            color:      MUTED,
+            textAlign:  'center',
+          }}>
             Taking longer than expected...
           </Text>
           <TouchableOpacity
@@ -606,6 +610,8 @@ function UserTabs() {
 
 // ─────────────────────────────────────────────
 // OWNER TABS
+// ✅ Added Explore tab so owners can browse
+//    other restaurants like a regular customer
 // ─────────────────────────────────────────────
 function OwnerTabs() {
   return (
@@ -624,6 +630,12 @@ function OwnerTabs() {
         name="Daily"
         component={DailyMenuScreen}
         options={{ tabBarLabel: "Today's" }}
+      />
+      {/* ✅ Owners can browse other restaurants */}
+      <Tab.Screen
+        name="Explore"
+        component={ExploreScreen}
+        options={{ tabBarLabel: 'Explore' }}
       />
       <Tab.Screen
         name="Profile"
@@ -684,8 +696,9 @@ function UserNavigator() {
 
 // ─────────────────────────────────────────────
 // OWNER NAVIGATOR
-// ✅ Added Favorites + FavoriteDishes
-//    so owners can access them from ProfileScreen
+// ✅ Full browse experience for owners
+//    They can explore, save favourites and
+//    view other restaurants just like users
 // ─────────────────────────────────────────────
 function OwnerNavigator() {
   return (
@@ -746,8 +759,7 @@ function OwnerNavigator() {
         component={OwnerDashboardScreen}
         options={{ title: 'My Dashboard' }}
       />
-
-      {/* ✅ Added — owners can now access these from ProfileScreen */}
+      {/* ✅ Favourites — owners can save other restaurants */}
       <Stack.Screen
         name="Favorites"
         component={FavoritesScreen}
@@ -758,7 +770,12 @@ function OwnerNavigator() {
         component={FavoriteDishesScreen}
         options={{ title: 'Favourite Dishes' }}
       />
-
+      {/* ✅ Home — owners can browse the home feed */}
+      <Stack.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ title: "What's Cooking" }}
+      />
     </Stack.Navigator>
   );
 }
@@ -858,7 +875,6 @@ export default function AppNavigator() {
     setIsGuest(true);
   }, []);
 
-  // ✅ Guest handler for Onboarding screen
   const handleOnboardingGuest = useCallback(() => {
     AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
     setOnboardingDone(true);
