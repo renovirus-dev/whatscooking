@@ -24,7 +24,6 @@ import { getThumbUrl }     from '../utils/uploadToCloudinary';
 const WARNING_COLOR = COLORS.warning || '#F39C12';
 
 // ─── Safe Analytics Import ────────────────────
-// ✅ Import at module level - not inside component
 let useAnalytics;
 try {
   useAnalytics = require('../hooks/useAnalytics').useAnalytics;
@@ -46,18 +45,14 @@ const DIETARY_BADGES = {
 
 // ─────────────────────────────────────────────
 // GET IMAGE SOURCE
-// ✅ Handles Cloudinary, Firebase, and local images
 // ─────────────────────────────────────────────
 const getMenuItemImageSource = (item) => {
-  // ✅ Cloudinary URL → use thumb transform (128x128)
   if (item?.cloudinaryUrl) {
     return { uri: getThumbUrl(item.cloudinaryUrl, 200, 200) };
   }
-  // ✅ Legacy Firebase/any HTTP URL
   if (item?.imageUrl && item.imageUrl.startsWith('http')) {
     return { uri: item.imageUrl };
   }
-  // ✅ Local auto image fallback
   return getImageSource(item);
 };
 
@@ -67,8 +62,6 @@ const getMenuItemImageSource = (item) => {
 export default function MenuItemCard({ item, onLoginRequired }) {
   const insets = useSafeAreaInsets();
   const { user, userProfile } = useAuth();
-
-  // ✅ Called unconditionally at top level — no try/catch
   const { trackMenuItemView } = useAnalytics();
 
   const isMounted = useRef(true);
@@ -77,31 +70,23 @@ export default function MenuItemCard({ item, onLoginRequired }) {
     return () => { isMounted.current = false; };
   }, []);
 
-  // ── State ─────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
   const [favLoading, setFavLoading]     = useState(false);
   const [imageError, setImageError]     = useState(false);
 
-  // ── Derived ───────────────────────────────
   const isFavorited = userProfile?.favoriteDishes?.includes(item.id) || false;
   const activeDietary = Object.entries(DIETARY_BADGES).filter(
     ([key]) => item.dietaryInfo?.[key]
   );
 
-  // ✅ Image source with Cloudinary support
   const imageSource = imageError
-    ? getImageSource(item) // fallback on error
+    ? getImageSource(item)
     : getMenuItemImageSource(item);
 
-  // ─────────────────────────────────────────
-  // HANDLERS
-  // ─────────────────────────────────────────
-
+  // ── Handlers ──────────────────────────────
   const handleCardPress = useCallback(() => {
     if (isMounted.current) setModalVisible(true);
-    try {
-      trackMenuItemView(item.id, item.name, item.restaurantId);
-    } catch {}
+    try { trackMenuItemView(item.id, item.name, item.restaurantId); } catch {}
   }, [item, trackMenuItemView]);
 
   const handleCloseModal = useCallback(() => {
@@ -110,15 +95,13 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 
   const handleFavourite = useCallback(async (e) => {
     e?.stopPropagation?.();
+    console.log('❤️ Dish favorite tapped!');
 
     if (!user) {
       if (onLoginRequired) {
         onLoginRequired();
       } else {
-        Alert.alert(
-          'Sign In Required',
-          'Please sign in to save favourite dishes'
-        );
+        Alert.alert('Sign In Required', 'Please sign in to save favourite dishes');
       }
       return;
     }
@@ -130,17 +113,10 @@ export default function MenuItemCard({ item, onLoginRequired }) {
       const userRef = doc(db, 'users', user.uid);
 
       if (isFavorited) {
-        await updateDoc(userRef, {
-          favoriteDishes: arrayRemove(item.id),
-        });
+        await updateDoc(userRef, { favoriteDishes: arrayRemove(item.id) });
       } else {
-        await updateDoc(userRef, {
-          favoriteDishes: arrayUnion(item.id),
-        });
+        await updateDoc(userRef, { favoriteDishes: arrayUnion(item.id) });
       }
-      // ✅ Removed updateUserProfile({}) - unnecessary extra call
-      // userProfile updates automatically via auth listener
-
     } catch (err) {
       console.error('handleFavourite error:', err);
       if (isMounted.current) {
@@ -151,9 +127,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
     }
   }, [user, isFavorited, item.id, onLoginRequired]);
 
-  // ─────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────
+  // ── Render ────────────────────────────────
   return (
     <>
       {/* ── Card ──────────────────────────── */}
@@ -168,7 +142,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
       >
         {/* Left: Info */}
         <View style={styles.info}>
-          {/* Name + Special badge */}
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={2}>
               {item.name}
@@ -180,47 +153,32 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             )}
           </View>
 
-          {/* Description */}
           {!!item.description && (
             <Text style={styles.description} numberOfLines={2}>
               {item.description}
             </Text>
           )}
 
-          {/* Dietary icons */}
           {activeDietary.length > 0 && (
             <View style={styles.dietaryRow}>
               {activeDietary.map(([key, d]) => (
-                <Text key={key} style={styles.dietaryIcon}>
-                  {d.icon}
-                </Text>
+                <Text key={key} style={styles.dietaryIcon}>{d.icon}</Text>
               ))}
             </View>
           )}
 
-          {/* Price + Prep Time */}
           <View style={styles.priceRow}>
-            <Text style={styles.price}>
-              ${item.price?.toFixed(2)}
-            </Text>
+            <Text style={styles.price}>${item.price?.toFixed(2)}</Text>
             {!!item.preparationTime && (
               <View style={styles.prepTime}>
-                <Ionicons
-                  name="time-outline"
-                  size={12}
-                  color={COLORS.textMuted}
-                />
-                <Text style={styles.prepTimeText}>
-                  {item.preparationTime} min
-                </Text>
+                <Ionicons name="time-outline" size={12} color={COLORS.textMuted} />
+                <Text style={styles.prepTimeText}>{item.preparationTime} min</Text>
               </View>
             )}
           </View>
 
           {!item.isAvailable && (
-            <Text style={styles.unavailableText}>
-              ❌ Not available today
-            </Text>
+            <Text style={styles.unavailableText}>❌ Not available today</Text>
           )}
         </View>
 
@@ -228,24 +186,18 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         <View style={styles.imageWrapper}>
           <Image
             source={imageSource}
-            style={[
-              styles.image,
-              !item.isAvailable && styles.imageGray,
-            ]}
+            style={[styles.image, !item.isAvailable && styles.imageGray]}
             resizeMode="cover"
-            onError={() => {
-              // ✅ Fallback to local image on error
-              if (isMounted.current) setImageError(true);
-            }}
+            onError={() => { if (isMounted.current) setImageError(true); }}
           />
 
-          {/* Heart button */}
+          {/* ✅ Heart — zIndex + bigger + hitSlop */}
           <TouchableOpacity
             style={styles.heartBtn}
             onPress={handleFavourite}
             disabled={favLoading}
-            activeOpacity={0.8}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             {favLoading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -258,8 +210,8 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             )}
           </TouchableOpacity>
 
-          {/* Expand hint */}
-          <View style={styles.expandHint}>
+          {/* Expand hint — pointerEvents none so it doesn't block heart */}
+          <View style={styles.expandHint} pointerEvents="none">
             <Ionicons name="expand-outline" size={12} color="#FFFFFF" />
           </View>
         </View>
@@ -279,37 +231,33 @@ export default function MenuItemCard({ item, onLoginRequired }) {
         >
           <TouchableOpacity
             activeOpacity={1}
-            style={[
-              styles.modalCard,
-              // ✅ Safe area for bottom inset
-              { paddingBottom: insets.bottom },
-            ]}
+            style={[styles.modalCard, { paddingBottom: insets.bottom + SIZES.sm }]}
           >
             {/* Hero Image */}
             <Image
               source={imageSource}
               style={styles.modalImage}
               resizeMode="cover"
-              onError={() => {
-                if (isMounted.current) setImageError(true);
-              }}
+              onError={() => { if (isMounted.current) setImageError(true); }}
             />
 
-            {/* Close Button */}
+            {/* ✅ Close — zIndex + hitSlop */}
             <TouchableOpacity
               style={styles.closeIconBtn}
               onPress={handleCloseModal}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.7}
             >
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Heart Button */}
+            {/* ✅ Heart — zIndex + hitSlop */}
             <TouchableOpacity
               style={styles.modalHeartBtn}
               onPress={handleFavourite}
               disabled={favLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {favLoading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
@@ -322,7 +270,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               )}
             </TouchableOpacity>
 
-            {/* Drag Handle */}
+            {/* ✅ Drag Handle — margin not absolute */}
             <View style={styles.modalHandle} />
 
             <ScrollView
@@ -333,7 +281,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             >
               <View style={styles.modalBody}>
 
-                {/* Name + Special */}
                 <View style={styles.modalNameRow}>
                   <Text style={styles.modalName}>{item.name}</Text>
                   {item.isSpecialOfTheDay && (
@@ -341,70 +288,47 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   )}
                 </View>
 
-                {/* Price + Favorites Count */}
                 <View style={styles.modalPriceRow}>
-                  <Text style={styles.modalPrice}>
-                    ${item.price?.toFixed(2)}
-                  </Text>
+                  <Text style={styles.modalPrice}>${item.price?.toFixed(2)}</Text>
                   {item.totalFavorites > 0 && (
                     <View style={styles.favCount}>
                       <Ionicons name="heart" size={14} color={COLORS.error} />
-                      <Text style={styles.favCountText}>
-                        {item.totalFavorites} saved
-                      </Text>
+                      <Text style={styles.favCountText}>{item.totalFavorites} saved</Text>
                     </View>
                   )}
                 </View>
 
-                {/* Description */}
                 {!!item.description && (
                   <Text style={styles.modalDesc}>{item.description}</Text>
                 )}
 
-                {/* Dietary Badges */}
                 {activeDietary.length > 0 && (
                   <View style={styles.dietaryList}>
                     {activeDietary.map(([key, d]) => (
                       <View key={key} style={styles.dietaryBadge}>
-                        <Text style={styles.dietaryBadgeText}>
-                          {d.icon} {d.label}
-                        </Text>
+                        <Text style={styles.dietaryBadgeText}>{d.icon} {d.label}</Text>
                       </View>
                     ))}
                   </View>
                 )}
 
-                {/* Extras (serving size + prep time) */}
                 {(item.servingSize || item.preparationTime) && (
                   <View style={styles.modalExtras}>
                     {!!item.servingSize && (
                       <View style={styles.extraItem}>
-                        <Ionicons
-                          name="restaurant-outline"
-                          size={14}
-                          color={COLORS.textMuted}
-                        />
-                        <Text style={styles.extraText}>
-                          {item.servingSize}
-                        </Text>
+                        <Ionicons name="restaurant-outline" size={14} color={COLORS.textMuted} />
+                        <Text style={styles.extraText}>{item.servingSize}</Text>
                       </View>
                     )}
                     {!!item.preparationTime && (
                       <View style={styles.extraItem}>
-                        <Ionicons
-                          name="time-outline"
-                          size={14}
-                          color={COLORS.textMuted}
-                        />
-                        <Text style={styles.extraText}>
-                          {item.preparationTime} min prep
-                        </Text>
+                        <Ionicons name="time-outline" size={14} color={COLORS.textMuted} />
+                        <Text style={styles.extraText}>{item.preparationTime} min prep</Text>
                       </View>
                     )}
                   </View>
                 )}
 
-                {/* Tags */}
                 {item.tags?.length > 0 && (
                   <View style={styles.tagsRow}>
                     {item.tags.map((tag, i) => (
@@ -415,40 +339,23 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* View Count */}
                 {item.viewCount > 0 && (
                   <View style={styles.viewCountRow}>
-                    <Ionicons
-                      name="eye-outline"
-                      size={14}
-                      color={COLORS.textMuted}
-                    />
-                    <Text style={styles.viewCountText}>
-                      Viewed {item.viewCount} times
-                    </Text>
+                    <Ionicons name="eye-outline" size={14} color={COLORS.textMuted} />
+                    <Text style={styles.viewCountText}>Viewed {item.viewCount} times</Text>
                   </View>
                 )}
 
-                {/* Unavailable Banner */}
                 {!item.isAvailable && (
                   <View style={styles.unavailableBanner}>
-                    <Ionicons
-                      name="close-circle-outline"
-                      size={18}
-                      color={COLORS.error}
-                    />
-                    <Text style={styles.unavailableBannerText}>
-                      Not available today
-                    </Text>
+                    <Ionicons name="close-circle-outline" size={18} color={COLORS.error} />
+                    <Text style={styles.unavailableBannerText}>Not available today</Text>
                   </View>
                 )}
 
                 {/* Save Favourite Button */}
                 <TouchableOpacity
-                  style={[
-                    styles.modalFavBtn,
-                    isFavorited && styles.modalFavBtnActive,
-                  ]}
+                  style={[styles.modalFavBtn, isFavorited && styles.modalFavBtnActive]}
                   onPress={handleFavourite}
                   disabled={favLoading}
                   activeOpacity={0.8}
@@ -469,9 +376,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                         styles.modalFavBtnText,
                         isFavorited && styles.modalFavBtnTextActive,
                       ]}>
-                        {isFavorited
-                          ? 'Saved to Favourites ✓'
-                          : 'Save to Favourites'}
+                        {isFavorited ? 'Saved to Favourites ✓' : 'Save to Favourites'}
                       </Text>
                     </>
                   )}
@@ -500,7 +405,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 // ─────────────────────────────────────────────
 const styles = StyleSheet.create({
 
-  // ── Card ──────────────────────────────────
   card: {
     flexDirection:   'row',
     backgroundColor: COLORS.surface,
@@ -518,7 +422,6 @@ const styles = StyleSheet.create({
     backgroundColor: WARNING_COLOR + '05',
   },
 
-  // ── Info ──────────────────────────────────
   info: { flex: 1, justifyContent: 'space-between' },
   nameRow: {
     flexDirection: 'row',
@@ -557,21 +460,14 @@ const styles = StyleSheet.create({
     gap:           SIZES.md,
     marginTop:     SIZES.xs,
   },
-  price: { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
-  prepTime: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           3,
-  },
+  price:    { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
+  prepTime: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   prepTimeText:    { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableText: {
-    fontSize:   FONTS.xs,
-    color:      COLORS.error,
-    marginTop:  4,
-    fontWeight: '500',
+    fontSize: FONTS.xs, color: COLORS.error, marginTop: 4, fontWeight: '500',
   },
 
-  // ── Image Wrapper ─────────────────────────
+  // ── Image + Heart ─────────────────────────
   imageWrapper: { position: 'relative' },
   image: {
     width:        95,
@@ -579,17 +475,23 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
   },
   imageGray: { opacity: 0.4 },
+
+  // ✅ Fixed: zIndex + bigger size + elevation
   heartBtn: {
     position:        'absolute',
     top:             4,
     right:           4,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    width:           28,
-    height:          28,
-    borderRadius:    14,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width:           32,
+    height:          32,
+    borderRadius:    16,
     justifyContent:  'center',
     alignItems:      'center',
+    zIndex:          10,
+    elevation:       10,
   },
+
+  // ✅ Fixed: lower zIndex than heart
   expandHint: {
     position:        'absolute',
     bottom:          4,
@@ -597,6 +499,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius:    4,
     padding:         3,
+    zIndex:          5,
   },
 
   // ── Modal ─────────────────────────────────
@@ -616,42 +519,51 @@ const styles = StyleSheet.create({
     width:  '100%',
     height: 220,
   },
+
+  // ✅ Fixed: zIndex + elevation
   closeIconBtn: {
     position:        'absolute',
     top:             12,
     right:           12,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    width:           34,
-    height:          34,
-    borderRadius:    17,
+    width:           36,
+    height:          36,
+    borderRadius:    18,
     justifyContent:  'center',
     alignItems:      'center',
+    zIndex:          10,
+    elevation:       10,
   },
+
+  // ✅ Fixed: zIndex + elevation
   modalHeartBtn: {
     position:        'absolute',
     top:             12,
     left:            12,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    width:           40,
-    height:          40,
-    borderRadius:    20,
+    width:           42,
+    height:          42,
+    borderRadius:    21,
     justifyContent:  'center',
     alignItems:      'center',
+    zIndex:          10,
+    elevation:       10,
   },
+
+  // ✅ Fixed: margin-based positioning instead of absolute
   modalHandle: {
     width:           40,
     height:          4,
     backgroundColor: COLORS.border,
     borderRadius:    2,
     alignSelf:       'center',
-    marginTop:       -20,
-    position:        'absolute',
-    top:             230,
+    marginTop:       SIZES.sm,
+    marginBottom:    SIZES.xs,
   },
+
   modalScroll: { maxHeight: 440 },
   modalBody:   { padding: SIZES.lg, gap: SIZES.sm },
 
-  // ── Modal Content ─────────────────────────
   modalNameRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -678,7 +590,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color:      COLORS.primary,
   },
-  favCount: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  favCount:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
   favCountText: { fontSize: FONTS.sm, color: COLORS.textMuted },
   modalDesc: {
     fontSize:   FONTS.md,
@@ -721,26 +633,18 @@ const styles = StyleSheet.create({
     paddingVertical:   3,
     borderRadius:      RADIUS.round,
   },
-  tagText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '500' },
+  tagText:      { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '500' },
   viewCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewCountText: { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableBanner: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    gap:             SIZES.sm,
-    backgroundColor: COLORS.error + '15',
-    padding:         SIZES.md,
-    borderRadius:    RADIUS.md,
-    borderWidth:     1,
-    borderColor:     COLORS.error + '30',
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    backgroundColor: COLORS.error + '15', padding: SIZES.md,
+    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.error + '30',
   },
   unavailableBannerText: {
-    fontSize:   FONTS.md,
-    color:      COLORS.error,
-    fontWeight: '500',
+    fontSize: FONTS.md, color: COLORS.error, fontWeight: '500',
   },
 
-  // ── Modal Buttons ─────────────────────────
   modalFavBtn: {
     flexDirection:   'row',
     alignItems:      'center',
