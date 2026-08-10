@@ -222,10 +222,15 @@ export default function RestaurantDetailScreen({ route, navigation }) {
     return () => { unsubRestaurant(); unsubMenu(); };
   }, [restaurantId]);
 
+  // ✅ Sync isFavorited from userProfile but only when NOT mid-request
   useEffect(() => {
     if (!isMounted.current) return;
-    setIsFavorited(userProfile?.favoriteRestaurants?.includes(restaurantId) || false);
-  }, [userProfile, restaurantId]);
+    if (!favoriteLoading) {
+      setIsFavorited(
+        userProfile?.favoriteRestaurants?.includes(restaurantId) || false
+      );
+    }
+  }, [userProfile, restaurantId, favoriteLoading]);
 
   useEffect(() => {
     if (!user?.uid || !restaurantId) return;
@@ -298,35 +303,51 @@ export default function RestaurantDetailScreen({ route, navigation }) {
     const { address, city } = restaurant?.location || {};
     if (!address) { Alert.alert('No Address', 'No address available'); return; }
     try { analytics.trackAction(restaurantId, restaurant.name, 'directions'); } catch {}
-    Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(`${address}, ${city || ''}`)}`).catch(() => Alert.alert('Error', 'Could not open maps'));
+    Linking.openURL(
+      `https://maps.google.com/?q=${encodeURIComponent(`${address}, ${city || ''}`)}`
+    ).catch(() => Alert.alert('Error', 'Could not open maps'));
   }, [restaurant, restaurantId]);
 
   const handleWhatsApp = useCallback(() => {
     const number = restaurant?.contact?.whatsapp;
     if (!number) return;
     try { analytics.trackAction(restaurantId, restaurant.name, 'whatsapp'); } catch {}
-    Linking.openURL(`https://wa.me/${number.replace(/\D/g, '')}`).catch(() => Alert.alert('Error', 'Could not open WhatsApp'));
+    Linking.openURL(
+      `https://wa.me/${number.replace(/\D/g, '')}`
+    ).catch(() => Alert.alert('Error', 'Could not open WhatsApp'));
   }, [restaurant, restaurantId]);
 
   const handleWebsite = useCallback(() => {
     const url = restaurant?.contact?.website;
     if (!url) return;
     try { analytics.trackAction(restaurantId, restaurant.name, 'website'); } catch {}
-    Linking.openURL(url.startsWith('http') ? url : `https://${url}`).catch(() => Alert.alert('Error', 'Could not open website'));
+    Linking.openURL(
+      url.startsWith('http') ? url : `https://${url}`
+    ).catch(() => Alert.alert('Error', 'Could not open website'));
   }, [restaurant, restaurantId]);
 
+  // ✅ FIXED: Optimistic favourite toggle
   const handleFavorite = useCallback(async () => {
     console.log('❤️ Favorite tapped!');
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to save favorites');
       return;
     }
+
+    // ✅ Optimistic update BEFORE the async call — instant UI response
+    const newValue = !isFavorited;
+    setIsFavorited(newValue);
+
     try {
       setFavoriteLoading(true);
       await toggleFavorite(user.uid, restaurantId, isFavorited);
-      if (isMounted.current) setIsFavorited(prev => !prev);
+      console.log(`✅ Restaurant favourite ${newValue ? 'added' : 'removed'}:`, restaurantId);
     } catch {
-      Alert.alert('Error', 'Could not update favorites');
+      // ✅ Revert optimistic update on failure
+      if (isMounted.current) {
+        setIsFavorited(!newValue);
+        Alert.alert('Error', 'Could not update favorites');
+      }
     } finally {
       if (isMounted.current) setFavoriteLoading(false);
     }
@@ -354,11 +375,11 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         result = await updateReview(myReview.id, reviewRating, reviewComment);
       } else {
         result = await addReview({
-          userId: user.uid,
-          userName: `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'Anonymous',
+          userId:       user.uid,
+          userName:     `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'Anonymous',
           restaurantId,
-          rating: reviewRating,
-          comment: reviewComment.trim(),
+          rating:       reviewRating,
+          comment:      reviewComment.trim(),
         });
       }
     } catch (err) {
@@ -372,7 +393,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
     } else {
       Alert.alert('Error', result?.error || 'Something went wrong');
     }
-  }, [reviewRating, reviewComment, myReview, editingReview, user, userProfile, restaurantId, updateReview, addReview]);
+  }, [
+    reviewRating, reviewComment, myReview, editingReview,
+    user, userProfile, restaurantId, updateReview, addReview,
+  ]);
 
   const handleDeleteReview = useCallback(() => {
     Alert.alert('Delete Review', 'Are you sure?', [
@@ -382,8 +406,14 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         onPress: async () => {
           try {
             await deleteReview(myReview.id);
-            if (isMounted.current) { setMyReview(null); setReviewRating(5); setReviewComment(''); }
-          } catch { Alert.alert('Error', 'Could not delete review'); }
+            if (isMounted.current) {
+              setMyReview(null);
+              setReviewRating(5);
+              setReviewComment('');
+            }
+          } catch {
+            Alert.alert('Error', 'Could not delete review');
+          }
         },
       },
     ]);
@@ -392,7 +422,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
   // ── Loading / Error ───────────────────────
   if (loading) {
     return (
-      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={[
+        styles.centered,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading restaurant...</Text>
       </View>
@@ -401,11 +434,19 @@ export default function RestaurantDetailScreen({ route, navigation }) {
 
   if (error || !restaurant) {
     return (
-      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={[
+        styles.centered,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}>
         <Text style={{ fontSize: 48 }}>🍽️</Text>
         <Text style={styles.errorTitle}>Restaurant Not Found</Text>
-        <Text style={styles.errorText}>{error || 'This restaurant may no longer be available'}</Text>
-        <TouchableOpacity style={styles.goBackBtn} onPress={() => navigation.goBack()}>
+        <Text style={styles.errorText}>
+          {error || 'This restaurant may no longer be available'}
+        </Text>
+        <TouchableOpacity
+          style={styles.goBackBtn}
+          onPress={() => navigation.goBack()}
+        >
           <Text style={styles.goBackBtnText}>Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -424,24 +465,39 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh}
-            colors={[COLORS.primary]} tintColor={COLORS.primary} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
         }
       >
         {/* ── Cover Image ─────────────────── */}
         <View style={styles.coverContainer}>
-          <Image source={coverSource} style={styles.coverImage} resizeMode="cover" />
+          <Image
+            source={coverSource}
+            style={styles.coverImage}
+            resizeMode="cover"
+          />
 
-          {/* ✅ Overlay — pointerEvents="none" so it doesn't block touches */}
+          {/* Overlay — pointerEvents none so it never blocks touches */}
           <View style={styles.coverOverlay} pointerEvents="none" />
 
-          {/* ✅ Back Button — inline styles with zIndex */}
+          {/* Back Button */}
           <TouchableOpacity
             style={{
-              position: 'absolute', top: insets.top + 8, left: 16,
-              backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 21,
-              width: 42, height: 42, justifyContent: 'center', alignItems: 'center',
-              zIndex: 20, elevation: 20,
+              position:        'absolute',
+              top:             insets.top + 8,
+              left:            16,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              borderRadius:    21,
+              width:           42,
+              height:          42,
+              justifyContent:  'center',
+              alignItems:      'center',
+              zIndex:          20,
+              elevation:       20,
             }}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
@@ -450,15 +506,25 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
 
-          {/* ✅ Share + Heart — inline styles with zIndex */}
+          {/* Share + Heart */}
           <View style={{
-            position: 'absolute', top: insets.top + 8, right: 16,
-            flexDirection: 'row', gap: 10, zIndex: 20, elevation: 20,
+            position:      'absolute',
+            top:           insets.top + 8,
+            right:         16,
+            flexDirection: 'row',
+            gap:           10,
+            zIndex:        20,
+            elevation:     20,
           }}>
+            {/* Share */}
             <TouchableOpacity
               style={{
-                backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 21,
-                width: 42, height: 42, justifyContent: 'center', alignItems: 'center',
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                borderRadius:    21,
+                width:           42,
+                height:          42,
+                justifyContent:  'center',
+                alignItems:      'center',
               }}
               onPress={handleShare}
               activeOpacity={0.7}
@@ -467,10 +533,15 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               <Ionicons name="share-outline" size={22} color="#FFFFFF" />
             </TouchableOpacity>
 
+            {/* ✅ Heart — optimistic, instant toggle */}
             <TouchableOpacity
               style={{
-                backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 21,
-                width: 42, height: 42, justifyContent: 'center', alignItems: 'center',
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                borderRadius:    21,
+                width:           42,
+                height:          42,
+                justifyContent:  'center',
+                alignItems:      'center',
               }}
               onPress={handleFavorite}
               disabled={favoriteLoading}
@@ -489,10 +560,15 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Open/Closed */}
-          <View style={[styles.statusBadge, {
-            backgroundColor: restaurant.isCurrentlyOpen ? COLORS.success : COLORS.error,
-          }]}>
+          {/* Open / Closed badge */}
+          <View style={[
+            styles.statusBadge,
+            {
+              backgroundColor: restaurant.isCurrentlyOpen
+                ? COLORS.success
+                : COLORS.error,
+            },
+          ]}>
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>
               {restaurant.isCurrentlyOpen ? 'Open Now' : 'Closed'}
@@ -504,28 +580,42 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         <View style={styles.infoCard}>
           <View style={styles.nameRow}>
             {logoSource ? (
-              <Image source={logoSource} style={styles.logo} resizeMode="cover" />
+              <Image
+                source={logoSource}
+                style={styles.logo}
+                resizeMode="cover"
+              />
             ) : (
               <View style={styles.logoFallback}>
                 <Text style={{ fontSize: 24 }}>🍽️</Text>
               </View>
             )}
+
             <View style={{ flex: 1 }}>
-              <Text style={styles.restaurantName} numberOfLines={2}>{restaurant.name}</Text>
+              <Text style={styles.restaurantName} numberOfLines={2}>
+                {restaurant.name}
+              </Text>
               <View style={styles.metaRow}>
                 <Ionicons name="star" size={14} color={WARNING_COLOR} />
                 <Text style={styles.rating}>
-                  {restaurant.averageRating ? restaurant.averageRating.toFixed(1) : 'New'}
+                  {restaurant.averageRating
+                    ? restaurant.averageRating.toFixed(1)
+                    : 'New'}
                 </Text>
-                <Text style={styles.reviewCount}>({restaurant.totalReviews || 0} reviews)</Text>
+                <Text style={styles.reviewCount}>
+                  ({restaurant.totalReviews || 0} reviews)
+                </Text>
                 <Text style={styles.dot}>·</Text>
-                <Text style={styles.priceRange}>{restaurant.priceRange || '$$'}</Text>
+                <Text style={styles.priceRange}>
+                  {restaurant.priceRange || '$$'}
+                </Text>
               </View>
               {restaurant.location?.city && (
                 <View style={styles.locationLine}>
                   <Ionicons name="location-outline" size={12} color={COLORS.textMuted} />
                   <Text style={styles.locationText}>
-                    {restaurant.location.city}{restaurant.location.state ? `, ${restaurant.location.state}` : ''}
+                    {restaurant.location.city}
+                    {restaurant.location.state ? `, ${restaurant.location.state}` : ''}
                   </Text>
                 </View>
               )}
@@ -540,33 +630,49 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             <View style={styles.tagsRow}>
               {restaurant.cuisineTypes.map((type, i) => (
                 <View key={i} style={styles.tag}>
-                  <Text style={styles.tagText}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
+                  <Text style={styles.tagText}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </Text>
                 </View>
               ))}
             </View>
           )}
 
           <View style={styles.actionButtons}>
-            <ActionButton icon="call-outline" label="Call" color={COLORS.primary} onPress={handleCall} />
-            <ActionButton icon="navigate-outline" label="Directions" color={COLORS.primary} onPress={handleDirections} />
+            <ActionButton
+              icon="call-outline" label="Call"
+              color={COLORS.primary} onPress={handleCall}
+            />
+            <ActionButton
+              icon="navigate-outline" label="Directions"
+              color={COLORS.primary} onPress={handleDirections}
+            />
             {!!restaurant.contact?.whatsapp && (
-              <ActionButton icon="logo-whatsapp" label="WhatsApp" color={COLORS.success} onPress={handleWhatsApp} />
+              <ActionButton
+                icon="logo-whatsapp" label="WhatsApp"
+                color={COLORS.success} onPress={handleWhatsApp}
+              />
             )}
             {!!restaurant.contact?.website && (
-              <ActionButton icon="globe-outline" label="Website" color={INFO_COLOR} onPress={handleWebsite} />
+              <ActionButton
+                icon="globe-outline" label="Website"
+                color={INFO_COLOR} onPress={handleWebsite}
+              />
             )}
           </View>
 
           <View style={styles.servicesRow}>
-            {restaurant.hasDineIn   && <ServiceBadge label="🪑 Dine In" />}
-            {restaurant.hasTakeout  && <ServiceBadge label="🥡 Takeout" />}
+            {restaurant.hasDineIn   && <ServiceBadge label="🪑 Dine In"  />}
+            {restaurant.hasTakeout  && <ServiceBadge label="🥡 Takeout"  />}
             {restaurant.hasDelivery && <ServiceBadge label="🛵 Delivery" />}
           </View>
 
           {restaurant.announcement?.isActive && !!restaurant.announcement?.text && (
             <View style={styles.announcement}>
               <Ionicons name="megaphone-outline" size={16} color={WARNING_COLOR} />
-              <Text style={styles.announcementText}>{restaurant.announcement.text}</Text>
+              <Text style={styles.announcementText}>
+                {restaurant.announcement.text}
+              </Text>
             </View>
           )}
         </View>
@@ -582,8 +688,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             >
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
                 {tab}
-                {tab === 'Reviews' && reviews.length > 0 ? ` (${reviews.length})` : ''}
-                {tab === 'Menu' && menuItems.length > 0 ? ` (${menuItems.length})` : ''}
+                {tab === 'Reviews' && reviews.length > 0
+                  ? ` (${reviews.length})` : ''}
+                {tab === 'Menu' && menuItems.length > 0
+                  ? ` (${menuItems.length})` : ''}
               </Text>
             </TouchableOpacity>
           ))}
@@ -594,7 +702,8 @@ export default function RestaurantDetailScreen({ route, navigation }) {
           <View>
             {categories.length > 1 && (
               <ScrollView
-                horizontal showsHorizontalScrollIndicator={false}
+                horizontal
+                showsHorizontalScrollIndicator={false}
                 style={styles.categoryTabs}
                 contentContainerStyle={{ paddingHorizontal: SIZES.md }}
                 nestedScrollEnabled
@@ -602,12 +711,20 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 {categories.map(cat => (
                   <TouchableOpacity
                     key={cat}
-                    style={[styles.categoryTab, activeCategory === cat && styles.categoryTabActive]}
+                    style={[
+                      styles.categoryTab,
+                      activeCategory === cat && styles.categoryTabActive,
+                    ]}
                     onPress={() => setActiveCategory(cat)}
                     activeOpacity={0.7}
                   >
-                    <Text style={[styles.categoryTabText, activeCategory === cat && styles.categoryTabTextActive]}>
-                      {cat === 'all' ? `🍽️ All (${menuItems.length})` : `${CATEGORY_ICONS[cat] || '🍴'} ${formatCategory(cat)}`}
+                    <Text style={[
+                      styles.categoryTabText,
+                      activeCategory === cat && styles.categoryTabTextActive,
+                    ]}>
+                      {cat === 'all'
+                        ? `🍽️ All (${menuItems.length})`
+                        : `${CATEGORY_ICONS[cat] || '🍴'} ${formatCategory(cat)}`}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -619,7 +736,9 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 <View style={styles.emptyState}>
                   <Text style={{ fontSize: 48 }}>🍽️</Text>
                   <Text style={styles.emptyTitle}>Menu coming soon</Text>
-                  <Text style={styles.emptySubtext}>This restaurant hasn't added their menu yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    This restaurant hasn't added their menu yet
+                  </Text>
                 </View>
               ) : (
                 Object.entries(groupedItems).map(([category, items]) => (
@@ -632,7 +751,12 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                       <MenuItemCard
                         key={item.id}
                         item={item}
-                        onLoginRequired={() => Alert.alert('Sign In Required', 'Please sign in to save favourite dishes')}
+                        onLoginRequired={() =>
+                          Alert.alert(
+                            'Sign In Required',
+                            'Please sign in to save favourite dishes'
+                          )
+                        }
                       />
                     ))}
                   </View>
@@ -655,7 +779,9 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 <View style={styles.ratingBreakdown}>
                   {[5, 4, 3, 2, 1].map(star => {
                     const count = reviews.filter(r => r.rating === star).length;
-                    const pct = reviews.length > 0 ? (count / reviews.length) * 100 : 0;
+                    const pct   = reviews.length > 0
+                      ? (count / reviews.length) * 100
+                      : 0;
                     return (
                       <View key={star} style={styles.breakdownRow}>
                         <Text style={styles.breakdownStar}>{star}⭐</Text>
@@ -674,7 +800,8 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               <View style={styles.myReviewSection}>
                 <Text style={styles.myReviewLabel}>YOUR REVIEW</Text>
                 <ReviewCard
-                  review={myReview} isOwn
+                  review={myReview}
+                  isOwn
                   onEdit={() => {
                     setEditingReview(true);
                     setReviewRating(myReview.rating);
@@ -687,7 +814,11 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             )}
 
             {user && !myReview && (
-              <TouchableOpacity style={styles.writeReviewBtn} onPress={handleOpenReview} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={styles.writeReviewBtn}
+                onPress={handleOpenReview}
+                activeOpacity={0.8}
+              >
                 <Ionicons name="star-outline" size={20} color="#FFFFFF" />
                 <Text style={styles.writeReviewText}>Write a Review</Text>
               </TouchableOpacity>
@@ -701,7 +832,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             )}
 
             {reviewsLoading ? (
-              <ActivityIndicator color={COLORS.primary} style={{ marginTop: SIZES.lg }} />
+              <ActivityIndicator
+                color={COLORS.primary}
+                style={{ marginTop: SIZES.lg }}
+              />
             ) : reviews.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={{ fontSize: 48 }}>⭐</Text>
@@ -709,9 +843,11 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 <Text style={styles.emptySubtext}>Be the first to review!</Text>
               </View>
             ) : (
-              reviews.filter(r => r.userId !== user?.uid).map(review => (
-                <ReviewCard key={review.id} review={review} />
-              ))
+              reviews
+                .filter(r => r.userId !== user?.uid)
+                .map(review => (
+                  <ReviewCard key={review.id} review={review} />
+                ))
             )}
           </View>
         )}
@@ -721,10 +857,19 @@ export default function RestaurantDetailScreen({ route, navigation }) {
           <View style={styles.infoTab}>
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>📍 Location</Text>
-              <TouchableOpacity style={styles.infoRow} onPress={handleDirections} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.infoRow}
+                onPress={handleDirections}
+                activeOpacity={0.7}
+              >
                 <Ionicons name="location-outline" size={16} color={COLORS.primary} />
                 <Text style={styles.infoLink}>
-                  {[restaurant.location?.address, restaurant.location?.city, restaurant.location?.state, restaurant.location?.country].filter(Boolean).join(', ')}
+                  {[
+                    restaurant.location?.address,
+                    restaurant.location?.city,
+                    restaurant.location?.state,
+                    restaurant.location?.country,
+                  ].filter(Boolean).join(', ')}
                 </Text>
                 <Ionicons name="open-outline" size={14} color={COLORS.primary} />
               </TouchableOpacity>
@@ -733,18 +878,33 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>📞 Contact</Text>
               {!!restaurant.contact?.phone && (
-                <TouchableOpacity style={styles.infoRow} onPress={handleCall} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={handleCall}
+                  activeOpacity={0.7}
+                >
                   <Ionicons name="call-outline" size={16} color={COLORS.primary} />
                   <Text style={styles.infoLink}>{restaurant.contact.phone}</Text>
-                  <View style={styles.infoCTA}><Text style={styles.infoCTAText}>Tap to call</Text></View>
+                  <View style={styles.infoCTA}>
+                    <Text style={styles.infoCTAText}>Tap to call</Text>
+                  </View>
                 </TouchableOpacity>
               )}
               {!!restaurant.contact?.whatsapp && (
-                <TouchableOpacity style={styles.infoRow} onPress={handleWhatsApp} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={handleWhatsApp}
+                  activeOpacity={0.7}
+                >
                   <Ionicons name="logo-whatsapp" size={16} color={COLORS.success} />
                   <Text style={styles.infoLink}>{restaurant.contact.whatsapp}</Text>
-                  <View style={[styles.infoCTA, { backgroundColor: COLORS.success + '20' }]}>
-                    <Text style={[styles.infoCTAText, { color: COLORS.success }]}>WhatsApp</Text>
+                  <View style={[
+                    styles.infoCTA,
+                    { backgroundColor: COLORS.success + '20' },
+                  ]}>
+                    <Text style={[styles.infoCTAText, { color: COLORS.success }]}>
+                      WhatsApp
+                    </Text>
                   </View>
                 </TouchableOpacity>
               )}
@@ -755,9 +915,15 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 </View>
               )}
               {!!restaurant.contact?.website && (
-                <TouchableOpacity style={styles.infoRow} onPress={handleWebsite} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={styles.infoRow}
+                  onPress={handleWebsite}
+                  activeOpacity={0.7}
+                >
                   <Ionicons name="globe-outline" size={16} color={INFO_COLOR} />
-                  <Text style={[styles.infoLink, { color: INFO_COLOR }]}>{restaurant.contact.website}</Text>
+                  <Text style={[styles.infoLink, { color: INFO_COLOR }]}>
+                    {restaurant.contact.website}
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -765,8 +931,8 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>🛎️ Services</Text>
               {[
-                { key: 'hasDineIn', label: '🪑 Dine In available' },
-                { key: 'hasTakeout', label: '🥡 Takeout available' },
+                { key: 'hasDineIn',   label: '🪑 Dine In available'  },
+                { key: 'hasTakeout',  label: '🥡 Takeout available'  },
                 { key: 'hasDelivery', label: '🛵 Delivery available' },
               ].map(s => restaurant[s.key] && (
                 <View key={s.key} style={styles.infoRow}>
@@ -781,7 +947,9 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 <View style={styles.tagsRow}>
                   {restaurant.cuisineTypes.map((type, i) => (
                     <View key={i} style={styles.tag}>
-                      <Text style={styles.tagText}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
+                      <Text style={styles.tagText}>
+                        {type.charAt(0).toUpperCase() + type.slice(1)}
+                      </Text>
                     </View>
                   ))}
                 </View>
@@ -791,24 +959,32 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>💰 Price Range</Text>
               <Text style={styles.infoText}>
-                {restaurant.priceRange || '$$'} — {PRICE_LABELS[restaurant.priceRange] || 'Moderate'}
+                {restaurant.priceRange || '$$'} —{' '}
+                {PRICE_LABELS[restaurant.priceRange] || 'Moderate'}
               </Text>
             </View>
 
-            {(restaurant.analytics?.totalViews > 0 || restaurant.totalFavorites > 0) && (
+            {(restaurant.analytics?.totalViews > 0 ||
+              restaurant.totalFavorites > 0) && (
               <View style={styles.infoSection}>
                 <Text style={styles.infoSectionTitle}>📊 Popularity</Text>
                 <View style={styles.popularityRow}>
                   <View style={styles.popularityStat}>
-                    <Text style={styles.popularityValue}>{restaurant.analytics?.totalViews || 0}</Text>
+                    <Text style={styles.popularityValue}>
+                      {restaurant.analytics?.totalViews || 0}
+                    </Text>
                     <Text style={styles.popularityLabel}>Views</Text>
                   </View>
                   <View style={styles.popularityStat}>
-                    <Text style={styles.popularityValue}>{restaurant.totalFavorites || 0}</Text>
+                    <Text style={styles.popularityValue}>
+                      {restaurant.totalFavorites || 0}
+                    </Text>
                     <Text style={styles.popularityLabel}>Favorites</Text>
                   </View>
                   <View style={styles.popularityStat}>
-                    <Text style={styles.popularityValue}>{restaurant.totalReviews || 0}</Text>
+                    <Text style={styles.popularityValue}>
+                      {restaurant.totalReviews || 0}
+                    </Text>
                     <Text style={styles.popularityLabel}>Reviews</Text>
                   </View>
                 </View>
@@ -819,16 +995,31 @@ export default function RestaurantDetailScreen({ route, navigation }) {
       </ScrollView>
 
       {/* ── Review Modal ─────────────────── */}
-      <Modal visible={showReviewModal} transparent animationType="slide"
-        onRequestClose={() => setShowReviewModal(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }}
+      <Modal
+        visible={showReviewModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReviewModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}>
-          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
-            onPress={() => setShowReviewModal(false)}>
-            <TouchableOpacity activeOpacity={1}
-              style={[styles.reviewModal, { paddingBottom: insets.bottom + SIZES.lg }]}>
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowReviewModal(false)}
+          >
+            <TouchableOpacity
+              activeOpacity={1}
+              style={[
+                styles.reviewModal,
+                { paddingBottom: insets.bottom + SIZES.lg },
+              ]}
+            >
               <View style={styles.modalHandle} />
+
               <Text style={styles.reviewModalTitle}>
                 {editingReview ? '✏️ Edit Review' : '⭐ Write a Review'}
               </Text>
@@ -836,8 +1027,14 @@ export default function RestaurantDetailScreen({ route, navigation }) {
 
               <View style={styles.starPickerContainer}>
                 <Text style={styles.starPickerLabel}>Your Rating</Text>
-                <StarRating rating={reviewRating} size={40} onRate={setReviewRating} />
-                <Text style={styles.ratingLabel}>{RATING_LABELS[reviewRating] || ''}</Text>
+                <StarRating
+                  rating={reviewRating}
+                  size={40}
+                  onRate={setReviewRating}
+                />
+                <Text style={styles.ratingLabel}>
+                  {RATING_LABELS[reviewRating] || ''}
+                </Text>
               </View>
 
               <View style={styles.reviewInputWrapper}>
@@ -847,15 +1044,25 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                   placeholderTextColor={COLORS.textMuted}
                   value={reviewComment}
                   onChangeText={v => setReviewComment(v.slice(0, MAX_REVIEW_COMMENT))}
-                  multiline numberOfLines={4} textAlignVertical="top"
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
                   maxLength={MAX_REVIEW_COMMENT}
                 />
-                <Text style={styles.charCount}>{reviewComment.length}/{MAX_REVIEW_COMMENT}</Text>
+                <Text style={styles.charCount}>
+                  {reviewComment.length}/{MAX_REVIEW_COMMENT}
+                </Text>
               </View>
 
               <TouchableOpacity
-                style={[styles.submitReviewBtn, reviewLoading && { opacity: 0.7 }]}
-                onPress={handleSubmitReview} disabled={reviewLoading} activeOpacity={0.8}>
+                style={[
+                  styles.submitReviewBtn,
+                  reviewLoading && { opacity: 0.7 },
+                ]}
+                onPress={handleSubmitReview}
+                disabled={reviewLoading}
+                activeOpacity={0.8}
+              >
                 {reviewLoading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
@@ -865,7 +1072,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.cancelReviewBtn} onPress={() => setShowReviewModal(false)}>
+              <TouchableOpacity
+                style={styles.cancelReviewBtn}
+                onPress={() => setShowReviewModal(false)}
+              >
                 <Text style={styles.cancelReviewBtnText}>Cancel</Text>
               </TouchableOpacity>
             </TouchableOpacity>
@@ -903,10 +1113,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
   statusBadge: {
-    position: 'absolute', bottom: SIZES.md, left: SIZES.md,
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: SIZES.md, paddingVertical: SIZES.xs,
-    borderRadius: RADIUS.round, gap: SIZES.xs,
+    position:          'absolute',
+    bottom:            SIZES.md,
+    left:              SIZES.md,
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingHorizontal: SIZES.md,
+    paddingVertical:   SIZES.xs,
+    borderRadius:      RADIUS.round,
+    gap:               SIZES.xs,
   },
   statusDot: {
     width: 8, height: 8, borderRadius: 4,
@@ -915,46 +1130,73 @@ const styles = StyleSheet.create({
   statusText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.sm },
 
   infoCard:     { backgroundColor: COLORS.surface, padding: SIZES.lg, ...SHADOW },
-  nameRow:      { flexDirection: 'row', gap: SIZES.md, marginBottom: SIZES.sm, alignItems: 'center' },
-  logo:         { width: 64, height: 64, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border },
+  nameRow:      {
+    flexDirection: 'row', gap: SIZES.md,
+    marginBottom: SIZES.sm, alignItems: 'center',
+  },
+  logo: {
+    width: 64, height: 64, borderRadius: RADIUS.md,
+    borderWidth: 1, borderColor: COLORS.border,
+  },
   logoFallback: {
     width: 64, height: 64, borderRadius: RADIUS.md,
-    backgroundColor: COLORS.border, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: COLORS.border,
+    justifyContent: 'center', alignItems: 'center',
   },
   restaurantName: { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text },
-  metaRow:     { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' },
+  metaRow: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 4, marginTop: 4, flexWrap: 'wrap',
+  },
   rating:      { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
   reviewCount: { fontSize: FONTS.sm, color: COLORS.textMuted },
   dot:         { color: COLORS.textMuted },
   priceRange:  { fontSize: FONTS.md, color: COLORS.primary, fontWeight: '600' },
   locationLine: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   locationText: { fontSize: FONTS.xs, color: COLORS.textMuted },
-  description:  { fontSize: FONTS.md, color: COLORS.textLight, lineHeight: 22, marginBottom: SIZES.sm },
-  tagsRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: SIZES.xs, marginBottom: SIZES.sm },
-  tag:          { backgroundColor: COLORS.primary + '15', paddingHorizontal: SIZES.sm, paddingVertical: 4, borderRadius: RADIUS.round },
-  tagText:      { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '500' },
+  description:  {
+    fontSize: FONTS.md, color: COLORS.textLight,
+    lineHeight: 22, marginBottom: SIZES.sm,
+  },
+  tagsRow: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    gap: SIZES.xs, marginBottom: SIZES.sm,
+  },
+  tag:     {
+    backgroundColor: COLORS.primary + '15',
+    paddingHorizontal: SIZES.sm, paddingVertical: 4,
+    borderRadius: RADIUS.round,
+  },
+  tagText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '500' },
   actionButtons: {
     flexDirection: 'row', justifyContent: 'space-around',
-    paddingVertical: SIZES.md, borderTopWidth: 1, borderBottomWidth: 1,
+    paddingVertical: SIZES.md,
+    borderTopWidth: 1, borderBottomWidth: 1,
     borderColor: COLORS.border, marginBottom: SIZES.sm,
   },
   actionBtn:     { alignItems: 'center', gap: 6 },
-  actionBtnIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  actionText:    { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '500' },
-  servicesRow:   { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap', marginTop: SIZES.xs },
+  actionBtnIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  actionText:  { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '500' },
+  servicesRow: { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap', marginTop: SIZES.xs },
   serviceBadge: {
-    backgroundColor: COLORS.primary + '12', paddingHorizontal: SIZES.sm,
-    paddingVertical: 4, borderRadius: RADIUS.round,
+    backgroundColor: COLORS.primary + '12',
+    paddingHorizontal: SIZES.sm, paddingVertical: 4,
+    borderRadius: RADIUS.round,
     borderWidth: 1, borderColor: COLORS.primary + '25',
   },
   serviceBadgeText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '500' },
   announcement: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: SIZES.sm,
-    backgroundColor: WARNING_COLOR + '15', padding: SIZES.md,
-    borderRadius: RADIUS.md, marginTop: SIZES.md,
+    flexDirection: 'row', alignItems: 'flex-start',
+    gap: SIZES.sm, backgroundColor: WARNING_COLOR + '15',
+    padding: SIZES.md, borderRadius: RADIUS.md, marginTop: SIZES.md,
     borderLeftWidth: 4, borderLeftColor: WARNING_COLOR,
   },
-  announcementText: { fontSize: FONTS.md, color: COLORS.text, lineHeight: 20, flex: 1 },
+  announcementText: {
+    fontSize: FONTS.md, color: COLORS.text, lineHeight: 20, flex: 1,
+  },
 
   tabBar: {
     flexDirection: 'row', backgroundColor: COLORS.surface,
@@ -1000,7 +1242,10 @@ const styles = StyleSheet.create({
     borderRadius: 4, overflow: 'hidden',
   },
   breakdownBar:   { height: '100%', backgroundColor: WARNING_COLOR, borderRadius: 4 },
-  breakdownCount: { fontSize: FONTS.sm, color: COLORS.textMuted, width: 20, textAlign: 'right' },
+  breakdownCount: {
+    fontSize: FONTS.sm, color: COLORS.textMuted,
+    width: 20, textAlign: 'right',
+  },
   myReviewSection: { marginBottom: SIZES.md },
   myReviewLabel: {
     fontSize: FONTS.xs, fontWeight: '700', color: COLORS.textMuted,
@@ -1025,14 +1270,21 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg, gap: SIZES.sm, ...SHADOW,
   },
   infoSectionTitle: {
-    fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text, marginBottom: SIZES.xs,
+    fontSize: FONTS.lg, fontWeight: 'bold',
+    color: COLORS.text, marginBottom: SIZES.xs,
   },
   infoRow:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
-  infoText: { fontSize: FONTS.md, color: COLORS.textLight, lineHeight: 22, flex: 1 },
-  infoLink: { fontSize: FONTS.md, color: COLORS.primary, textDecorationLine: 'underline', flex: 1 },
+  infoText: {
+    fontSize: FONTS.md, color: COLORS.textLight, lineHeight: 22, flex: 1,
+  },
+  infoLink: {
+    fontSize: FONTS.md, color: COLORS.primary,
+    textDecorationLine: 'underline', flex: 1,
+  },
   infoCTA: {
-    backgroundColor: COLORS.primary + '15', paddingHorizontal: SIZES.sm,
-    paddingVertical: 3, borderRadius: RADIUS.round,
+    backgroundColor: COLORS.primary + '15',
+    paddingHorizontal: SIZES.sm, paddingVertical: 3,
+    borderRadius: RADIUS.round,
   },
   infoCTAText:     { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '600' },
   popularityRow:   { flexDirection: 'row', justifyContent: 'space-around', marginTop: SIZES.sm },
@@ -1044,29 +1296,43 @@ const styles = StyleSheet.create({
   emptyTitle:   { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text },
   emptySubtext: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end',
+  },
   reviewModal: {
-    backgroundColor: COLORS.surface, borderTopLeftRadius: 28,
-    borderTopRightRadius: 28, padding: SIZES.lg, gap: SIZES.md,
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: SIZES.lg, gap: SIZES.md,
   },
   modalHandle: {
     width: 40, height: 4, backgroundColor: COLORS.border,
     borderRadius: 2, alignSelf: 'center', marginBottom: SIZES.xs,
   },
-  reviewModalTitle:    { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' },
-  reviewModalSubtitle: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center', marginTop: -SIZES.sm },
-  starPickerContainer: { alignItems: 'center', gap: SIZES.sm, paddingVertical: SIZES.md },
-  starPickerLabel:     { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
-  ratingLabel:         { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.primary, height: 28 },
-  reviewInputWrapper:  { gap: 4 },
+  reviewModalTitle: {
+    fontSize: FONTS.xxl, fontWeight: 'bold',
+    color: COLORS.text, textAlign: 'center',
+  },
+  reviewModalSubtitle: {
+    fontSize: FONTS.md, color: COLORS.textMuted,
+    textAlign: 'center', marginTop: -SIZES.sm,
+  },
+  starPickerContainer: {
+    alignItems: 'center', gap: SIZES.sm, paddingVertical: SIZES.md,
+  },
+  starPickerLabel: { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
+  ratingLabel:     { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.primary, height: 28 },
+  reviewInputWrapper: { gap: 4 },
   reviewInput: {
     backgroundColor: COLORS.background, borderRadius: RADIUS.lg,
     padding: SIZES.md, fontSize: FONTS.md, color: COLORS.text,
     height: 100, textAlignVertical: 'top',
     borderWidth: 1, borderColor: COLORS.border,
   },
-  charCount:          { fontSize: FONTS.xs, color: COLORS.textMuted, textAlign: 'right' },
-  submitReviewBtn:    { backgroundColor: COLORS.primary, padding: SIZES.md, borderRadius: RADIUS.lg, alignItems: 'center' },
+  charCount:           { fontSize: FONTS.xs, color: COLORS.textMuted, textAlign: 'right' },
+  submitReviewBtn:     {
+    backgroundColor: COLORS.primary, padding: SIZES.md,
+    borderRadius: RADIUS.lg, alignItems: 'center',
+  },
   submitReviewBtnText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
   cancelReviewBtn:     { alignItems: 'center', paddingVertical: SIZES.sm },
   cancelReviewBtnText: { color: COLORS.textMuted, fontSize: FONTS.md },
