@@ -74,7 +74,21 @@ export default function MenuItemCard({ item, onLoginRequired }) {
   const [favLoading, setFavLoading]     = useState(false);
   const [imageError, setImageError]     = useState(false);
 
-  const isFavorited = userProfile?.favoriteDishes?.includes(item.id) || false;
+  // ✅ Optimistic local state — initialised from userProfile
+  const [localFavorited, setLocalFavorited] = useState(
+    () => userProfile?.favoriteDishes?.includes(item.id) || false
+  );
+
+  // ✅ Sync whenever onSnapshot updates userProfile in useAuth
+  useEffect(() => {
+    if (userProfile?.favoriteDishes !== undefined) {
+      setLocalFavorited(userProfile.favoriteDishes.includes(item.id));
+    }
+  }, [userProfile?.favoriteDishes, item.id]);
+
+  // Use localFavorited as the single source of truth
+  const isFavorited = localFavorited;
+
   const activeDietary = Object.entries(DIETARY_BADGES).filter(
     ([key]) => item.dietaryInfo?.[key]
   );
@@ -95,7 +109,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 
   const handleFavourite = useCallback(async (e) => {
     e?.stopPropagation?.();
-    console.log('❤️ Dish favorite tapped!');
+    console.log('❤️ Dish favourite tapped!');
 
     if (!user) {
       if (onLoginRequired) {
@@ -108,24 +122,36 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 
     if (!isMounted.current) return;
 
+    // ✅ Optimistic update BEFORE the async Firestore call
+    const newValue = !localFavorited;
+    setLocalFavorited(newValue);
+
     try {
       setFavLoading(true);
       const userRef = doc(db, 'users', user.uid);
 
-      if (isFavorited) {
+      if (!newValue) {
+        // Was favourited → remove
         await updateDoc(userRef, { favoriteDishes: arrayRemove(item.id) });
       } else {
+        // Was not favourited → add
         await updateDoc(userRef, { favoriteDishes: arrayUnion(item.id) });
       }
+
+      console.log(`✅ Favourite ${newValue ? 'added' : 'removed'} for:`, item.id);
+
     } catch (err) {
       console.error('handleFavourite error:', err);
+
+      // ✅ Revert optimistic update on failure
       if (isMounted.current) {
+        setLocalFavorited(!newValue);
         Alert.alert('Error', 'Could not update favourite. Please try again.');
       }
     } finally {
       if (isMounted.current) setFavLoading(false);
     }
-  }, [user, isFavorited, item.id, onLoginRequired]);
+  }, [user, localFavorited, item.id, onLoginRequired]);
 
   // ── Render ────────────────────────────────
   return (
@@ -191,7 +217,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             onError={() => { if (isMounted.current) setImageError(true); }}
           />
 
-          {/* ✅ Heart — zIndex + bigger + hitSlop */}
+          {/* Heart button */}
           <TouchableOpacity
             style={styles.heartBtn}
             onPress={handleFavourite}
@@ -210,7 +236,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             )}
           </TouchableOpacity>
 
-          {/* Expand hint — pointerEvents none so it doesn't block heart */}
+          {/* Expand hint */}
           <View style={styles.expandHint} pointerEvents="none">
             <Ionicons name="expand-outline" size={12} color="#FFFFFF" />
           </View>
@@ -241,7 +267,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               onError={() => { if (isMounted.current) setImageError(true); }}
             />
 
-            {/* ✅ Close — zIndex + hitSlop */}
+            {/* Close button */}
             <TouchableOpacity
               style={styles.closeIconBtn}
               onPress={handleCloseModal}
@@ -251,7 +277,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* ✅ Heart — zIndex + hitSlop */}
+            {/* Heart button */}
             <TouchableOpacity
               style={styles.modalHeartBtn}
               onPress={handleFavourite}
@@ -270,7 +296,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               )}
             </TouchableOpacity>
 
-            {/* ✅ Drag Handle — margin not absolute */}
+            {/* Drag handle */}
             <View style={styles.modalHandle} />
 
             <ScrollView
@@ -476,7 +502,6 @@ const styles = StyleSheet.create({
   },
   imageGray: { opacity: 0.4 },
 
-  // ✅ Fixed: zIndex + bigger size + elevation
   heartBtn: {
     position:        'absolute',
     top:             4,
@@ -491,7 +516,6 @@ const styles = StyleSheet.create({
     elevation:       10,
   },
 
-  // ✅ Fixed: lower zIndex than heart
   expandHint: {
     position:        'absolute',
     bottom:          4,
@@ -520,7 +544,6 @@ const styles = StyleSheet.create({
     height: 220,
   },
 
-  // ✅ Fixed: zIndex + elevation
   closeIconBtn: {
     position:        'absolute',
     top:             12,
@@ -535,7 +558,6 @@ const styles = StyleSheet.create({
     elevation:       10,
   },
 
-  // ✅ Fixed: zIndex + elevation
   modalHeartBtn: {
     position:        'absolute',
     top:             12,
@@ -550,7 +572,6 @@ const styles = StyleSheet.create({
     elevation:       10,
   },
 
-  // ✅ Fixed: margin-based positioning instead of absolute
   modalHandle: {
     width:           40,
     height:          4,
@@ -637,9 +658,14 @@ const styles = StyleSheet.create({
   viewCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewCountText: { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
-    backgroundColor: COLORS.error + '15', padding: SIZES.md,
-    borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.error + '30',
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             SIZES.sm,
+    backgroundColor: COLORS.error + '15',
+    padding:         SIZES.md,
+    borderRadius:    RADIUS.md,
+    borderWidth:     1,
+    borderColor:     COLORS.error + '30',
   },
   unavailableBannerText: {
     fontSize: FONTS.md, color: COLORS.error, fontWeight: '500',

@@ -1,6 +1,5 @@
 // ============================================
 // FILE: src/hooks/useAuth.js
-// ONLY AUTH CODE IN THIS FILE - NOTHING ELSE
 // ============================================
 import { useState, useEffect, createContext, useContext } from 'react';
 import {
@@ -16,55 +15,76 @@ import {
   setDoc,
   getDoc,
   updateDoc,
+  onSnapshot,        // ✅ ADD THIS
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 
-// Create Auth Context
 const AuthContext = createContext(null);
 
-// Auth Provider Component
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]               = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let profileUnsubscribe = null; // ✅ holds the Firestore listener
+
+    const authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      // ✅ Clean up previous profile listener whenever auth changes
+      if (profileUnsubscribe) {
+        profileUnsubscribe();
+        profileUnsubscribe = null;
+      }
+
       if (firebaseUser) {
-        const profile = await getUserProfile(firebaseUser.uid);
         setUser(firebaseUser);
-        setUserProfile(profile);
+
+        // ✅ Real-time listener on the user doc
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        profileUnsubscribe = onSnapshot(
+          userDocRef,
+          (snap) => {
+            if (snap.exists()) {
+              setUserProfile(snap.data());
+            } else {
+              setUserProfile(null);
+            }
+            setLoading(false); // ✅ only stop loading once we have profile data
+          },
+          (error) => {
+            console.error('Profile snapshot error:', error);
+            setUserProfile(null);
+            setLoading(false);
+          }
+        );
       } else {
         setUser(null);
         setUserProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
-    return unsubscribe;
+
+    // ✅ Cleanup both listeners on unmount
+    return () => {
+      authUnsubscribe();
+      if (profileUnsubscribe) profileUnsubscribe();
+    };
   }, []);
 
+  // getUserProfile kept for internal use in register/login
   const getUserProfile = async (uid) => {
     try {
       const docRef = doc(db, 'users', uid);
       const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        return docSnap.data();
-      }
-      return null;
+      return docSnap.exists() ? docSnap.data() : null;
     } catch (error) {
       console.error('Error getting user profile:', error);
       return null;
     }
   };
 
-  const register = async (
-    email,
-    password,
-    firstName,
-    lastName,
-    role = 'user'
-  ) => {
+  const register = async (email, password, firstName, lastName, role = 'user') => {
     try {
       const { user: firebaseUser } =
         await createUserWithEmailAndPassword(auth, email, password);
@@ -74,37 +94,34 @@ export function AuthProvider({ children }) {
       });
 
       const userDoc = {
-        uid: firebaseUser.uid,
+        uid:                 firebaseUser.uid,
         firstName,
         lastName,
         email,
         role,
-        avatar: '',
+        avatar:              '',
         favoriteRestaurants: [],
-        dietaryPreferences: [],
+        favoriteDishes:      [], // ✅ initialise so it always exists
+        dietaryPreferences:  [],
         notifications: {
           pushEnabled: true,
           menuUpdates: true,
-          promotions: true
+          promotions:  true
         },
-        isActive: true,
+        isActive:  true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
 
       await setDoc(doc(db, 'users', firebaseUser.uid), userDoc);
-      setUserProfile(userDoc);
+      // ✅ No need to setUserProfile here — onSnapshot will fire automatically
 
       return { success: true, user: firebaseUser };
     } catch (error) {
       let message = 'Registration failed';
-      if (error.code === 'auth/email-already-in-use') {
-        message = 'Email already registered';
-      } else if (error.code === 'auth/weak-password') {
-        message = 'Password must be at least 6 characters';
-      } else if (error.code === 'auth/invalid-email') {
-        message = 'Invalid email address';
-      }
+      if (error.code === 'auth/email-already-in-use') message = 'Email already registered';
+      else if (error.code === 'auth/weak-password')   message = 'Password must be at least 6 characters';
+      else if (error.code === 'auth/invalid-email')   message = 'Invalid email address';
       return { success: false, error: message };
     }
   };
@@ -114,9 +131,7 @@ export function AuthProvider({ children }) {
       const { user: firebaseUser } =
         await signInWithEmailAndPassword(auth, email, password);
 
-      const profile = await getUserProfile(firebaseUser.uid);
-      setUserProfile(profile);
-
+      // ✅ No need to setUserProfile here — onSnapshot fires automatically
       await updateDoc(doc(db, 'users', firebaseUser.uid), {
         lastLogin: serverTimestamp()
       });
@@ -125,8 +140,8 @@ export function AuthProvider({ children }) {
     } catch (error) {
       let message = 'Login failed';
       if (
-        error.code === 'auth/user-not-found' ||
-        error.code === 'auth/wrong-password' ||
+        error.code === 'auth/user-not-found'    ||
+        error.code === 'auth/wrong-password'    ||
         error.code === 'auth/invalid-credential'
       ) {
         message = 'Invalid email or password';
@@ -140,8 +155,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await signOut(auth);
-      setUser(null);
-      setUserProfile(null);
+      // ✅ onAuthStateChanged handles clearing user + userProfile
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -153,10 +167,7 @@ export function AuthProvider({ children }) {
       await sendPasswordResetEmail(auth, email);
       return { success: true };
     } catch (error) {
-      return {
-        success: false,
-        error: 'Could not send reset email. Check the address.'
-      };
+      return { success: false, error: 'Could not send reset email. Check the address.' };
     }
   };
 
@@ -166,8 +177,7 @@ export function AuthProvider({ children }) {
         ...data,
         updatedAt: serverTimestamp()
       });
-      const updated = await getUserProfile(user.uid);
-      setUserProfile(updated);
+      // ✅ No need to re-fetch — onSnapshot updates userProfile automatically
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -181,12 +191,12 @@ export function AuthProvider({ children }) {
     register,
     login,
     logout,
-	signOut: logout,
+    signOut:           logout,
     forgotPassword,
     updateUserProfile,
-    isAdmin: userProfile?.role === 'admin',
-    isOwner: userProfile?.role === 'restaurant_owner',
-    isUser: userProfile?.role === 'user'
+    isAdmin:  userProfile?.role === 'admin',
+    isOwner:  userProfile?.role === 'restaurant_owner',
+    isUser:   userProfile?.role === 'user'
   };
 
   return (
@@ -198,8 +208,6 @@ export function AuthProvider({ children }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 };
