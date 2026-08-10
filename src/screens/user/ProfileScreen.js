@@ -47,7 +47,6 @@ const uploadAvatarToCloudinary = async (imageUri, userId) => {
       name: `avatar_${userId}_${Date.now()}.jpg`,
     });
     formData.append('upload_preset', uploadPreset);
-    // ✅ Goes to whats_cooking/profiles/
     formData.append('folder', folders.profiles);
     // ✅ Use userId as public_id so it overwrites old avatar
     formData.append('public_id', `avatar_${userId}`);
@@ -115,13 +114,12 @@ const ProfileButton = ({
 
 // ─────────────────────────────────────────────
 // OWNER SUBSCRIPTION CARD
-// ✅ Now uses onSnapshot for real-time updates
+// ✅ Uses onSnapshot for real-time updates
 // ─────────────────────────────────────────────
 const OwnerSubscriptionCard = ({ navigation, userId }) => {
   const [restaurant, setRestaurant] = useState(null);
   const [loading, setLoading]       = useState(true);
 
-  // ✅ Real-time listener instead of getDocs
   useEffect(() => {
     if (!userId) return;
 
@@ -162,7 +160,7 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
   const plan    = PLANS[planId] || PLANS.free_trial;
   const exp     = restaurant?.subscription?.expiresAt;
 
-  // ✅ Handle both Timestamp and ISO string
+  // ✅ Handle both Firestore Timestamp and ISO string
   const expDate  = exp?.toDate ? exp.toDate() : exp ? new Date(exp) : null;
   const daysLeft = expDate
     ? Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24))
@@ -188,8 +186,8 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
   };
 
   const payMethod = restaurant?.subscription?.paymentMethod;
-  const payLabel  = payMethod === 'paypal'        ? '💳 PayPal'
-                  : payMethod === 'bank_transfer'  ? '🏦 Bank Transfer'
+  const payLabel  = payMethod === 'paypal'       ? '💳 PayPal'
+                  : payMethod === 'bank_transfer' ? '🏦 Bank Transfer'
                   : null;
 
   return (
@@ -201,9 +199,7 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
           isExpired  && { borderColor: COLORS.error   + '40' },
           isExpiring && { borderColor: WARNING_COLOR   + '40' },
         ]}
-        onPress={() =>
-          navigation.navigate('Subscription', { restaurant })
-        }
+        onPress={() => navigation.navigate('Subscription', { restaurant })}
         activeOpacity={0.85}
       >
         <View style={styles.subCardLeft}>
@@ -215,10 +211,7 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.subPlanName}>{plan.name} Plan</Text>
-            <Text style={[
-              styles.subPlanStatus,
-              { color: getStatusColor() },
-            ]}>
+            <Text style={[styles.subPlanStatus, { color: getStatusColor() }]}>
               {getStatusText()}
             </Text>
             {planId !== 'free_trial' && (
@@ -231,9 +224,7 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
             )}
             {payLabel && (
               <View style={styles.paymentMethodChip}>
-                <Text style={styles.paymentMethodChipText}>
-                  {payLabel}
-                </Text>
+                <Text style={styles.paymentMethodChipText}>{payLabel}</Text>
               </View>
             )}
           </View>
@@ -274,12 +265,18 @@ export default function ProfileScreen({ navigation }) {
   const insets                        = useSafeAreaInsets();
   const { user, userProfile, logout } = useAuth();
   const { unreadCount }               = useNotifications();
-  const [signingOut, setSigningOut]   = useState(false);
-  const [refreshing, setRefreshing]   = useState(false);
+  const [signingOut, setSigningOut]         = useState(false);
+  const [refreshing, setRefreshing]         = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const isOwner = userProfile?.role === 'restaurant_owner';
   const isAdmin = userProfile?.role === 'admin';
+
+  // ✅ These counts update automatically because useAuth now uses
+  // onSnapshot — no extra polling needed
+  const savedRestaurantsCount = userProfile?.favoriteRestaurants?.length || 0;
+  const favDishesCount        = userProfile?.favoriteDishes?.length       || 0;
+  const dietaryPrefsCount     = userProfile?.dietaryPreferences?.length   || 0;
 
   // ── App version ───────────────────────────
   const appVersion = Application.nativeApplicationVersion || '1.0.0';
@@ -316,30 +313,26 @@ export default function ProfileScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // PULL TO REFRESH
+  // ✅ userProfile updates automatically via onSnapshot in useAuth
+  // Pull to refresh is just visual feedback now
   // ─────────────────────────────────────────
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    // userProfile updates via auth listener automatically
-    setTimeout(() => setRefreshing(false), 1000);
+    setTimeout(() => setRefreshing(false), 800);
   }, []);
 
   // ─────────────────────────────────────────
   // AVATAR UPLOAD
-  // ✅ Pick photo → compress → upload to Cloudinary → save URL to Firestore
+  // ✅ Pick → compress → upload to Cloudinary → save URL to Firestore
+  // onSnapshot in useAuth will pick up the avatar change automatically
   // ─────────────────────────────────────────
   const handleAvatarPress = useCallback(() => {
     Alert.alert(
       '📷 Profile Photo',
       'Choose how to update your photo',
       [
-        {
-          text:    '📷 Take Photo',
-          onPress: () => pickAvatar('camera'),
-        },
-        {
-          text:    '🖼️ Choose from Library',
-          onPress: () => pickAvatar('library'),
-        },
+        { text: '📷 Take Photo',          onPress: () => pickAvatar('camera')  },
+        { text: '🖼️ Choose from Library', onPress: () => pickAvatar('library') },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
@@ -380,17 +373,16 @@ export default function ProfileScreen({ navigation }) {
       const imageUri = result.assets[0].uri;
       setAvatarUploading(true);
 
-      // ✅ Upload to Cloudinary
-      const uploadResult = await uploadAvatarToCloudinary(
-        imageUri, user.uid
-      );
+      // Upload to Cloudinary
+      const uploadResult = await uploadAvatarToCloudinary(imageUri, user.uid);
 
       if (!uploadResult.success) {
         Alert.alert('Upload Failed', uploadResult.error || 'Please try again');
         return;
       }
 
-      // ✅ Save Cloudinary URL to Firestore user document
+      // ✅ Save to Firestore — onSnapshot in useAuth updates userProfile
+      // automatically so the new avatar shows without any extra setState
       await updateDoc(doc(db, 'users', user.uid), {
         avatar:    uploadResult.url,
         updatedAt: serverTimestamp(),
@@ -495,7 +487,7 @@ export default function ProfileScreen({ navigation }) {
       {/* ── Header ──────────────────────── */}
       <View style={[styles.header, { paddingTop: insets.top + SIZES.xl }]}>
 
-        {/* Avatar — now uploads to Cloudinary */}
+        {/* Avatar */}
         <TouchableOpacity
           style={styles.avatarContainer}
           onPress={handleAvatarPress}
@@ -570,15 +562,14 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       {/* ── Stats Row ───────────────────── */}
+      {/* ✅ These update in real-time via onSnapshot in useAuth */}
       <View style={styles.statsRow}>
         <TouchableOpacity
           style={styles.statItem}
           onPress={() => navigation.navigate('Favorites')}
           activeOpacity={0.7}
         >
-          <Text style={styles.statValue}>
-            {userProfile?.favoriteRestaurants?.length || 0}
-          </Text>
+          <Text style={styles.statValue}>{savedRestaurantsCount}</Text>
           <Text style={styles.statLabel}>Saved</Text>
         </TouchableOpacity>
 
@@ -589,9 +580,7 @@ export default function ProfileScreen({ navigation }) {
           onPress={() => navigation.navigate('FavoriteDishes')}
           activeOpacity={0.7}
         >
-          <Text style={styles.statValue}>
-            {userProfile?.favoriteDishes?.length || 0}
-          </Text>
+          <Text style={styles.statValue}>{favDishesCount}</Text>
           <Text style={styles.statLabel}>Fav Dishes</Text>
         </TouchableOpacity>
 
@@ -602,9 +591,7 @@ export default function ProfileScreen({ navigation }) {
           onPress={() => navigation.navigate('EditProfile')}
           activeOpacity={0.7}
         >
-          <Text style={styles.statValue}>
-            {userProfile?.dietaryPreferences?.length || 0}
-          </Text>
+          <Text style={styles.statValue}>{dietaryPrefsCount}</Text>
           <Text style={styles.statLabel}>Diet Prefs</Text>
         </TouchableOpacity>
       </View>
@@ -629,13 +616,13 @@ export default function ProfileScreen({ navigation }) {
         <ProfileButton
           icon="heart-outline"
           label="Favourite Dishes"
-          badge={userProfile?.favoriteDishes?.length || null}
+          badge={favDishesCount || null}
           onPress={() => navigation.navigate('FavoriteDishes')}
         />
         <ProfileButton
           icon="restaurant-outline"
           label="Saved Restaurants"
-          badge={userProfile?.favoriteRestaurants?.length || null}
+          badge={savedRestaurantsCount || null}
           onPress={() => navigation.navigate('Favorites')}
         />
         <ProfileButton
