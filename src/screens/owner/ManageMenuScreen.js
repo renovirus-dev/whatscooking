@@ -476,7 +476,9 @@ export default function ManageMenuScreen({ navigation }) {
             clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <TouchableOpacity onPress={() => setSearchQuery('')}
+			hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+			>
               <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
             </TouchableOpacity>
           )}
@@ -518,6 +520,7 @@ export default function ManageMenuScreen({ navigation }) {
         {/* Sort button */}
         <TouchableOpacity
           style={styles.sortBtn}
+		  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           onPress={() => {
             Alert.alert(
               'Sort By',
@@ -545,6 +548,7 @@ export default function ManageMenuScreen({ navigation }) {
           </Text>
           <TouchableOpacity
             onPress={() => { setSearchQuery(''); setFilter('all'); }}
+			hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.clearFiltersText}>Clear Filters</Text>
           </TouchableOpacity>
@@ -886,6 +890,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical:   2,
     borderRadius:      RADIUS.round,
+	zIndex:            5,
+	elevation:         5,
   },
   specialBadgeText: {
     fontSize:   9,
