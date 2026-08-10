@@ -25,8 +25,8 @@ import MenuItemCard   from '../../components/MenuItemCard';
 
 // ─── Sort Options ─────────────────────────────
 const SORT_OPTIONS = [
-  { label: 'Saved Order', value: 'saved'    },
-  { label: 'A-Z',         value: 'name'     },
+  { label: 'Saved Order', value: 'saved'     },
+  { label: 'A-Z',         value: 'name'      },
   { label: '💰 Price ↑',  value: 'price_asc' },
   { label: '💰 Price ↓',  value: 'price_desc'},
 ];
@@ -35,20 +35,19 @@ const SORT_OPTIONS = [
 // MAIN SCREEN
 // ─────────────────────────────────────────────
 export default function FavoriteDishesScreen({ navigation }) {
-  const insets            = useSafeAreaInsets();
+  const insets                = useSafeAreaInsets();
   const { user, userProfile } = useAuth();
 
   // ── State ─────────────────────────────────
-  const [dishes, setDishes]       = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [dishes, setDishes]         = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch]       = useState('');
-  const [sortBy, setSortBy]       = useState('saved');
+  const [search, setSearch]         = useState('');
+  const [sortBy, setSortBy]         = useState('saved');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [removing, setRemoving]   = useState(null);
+  const [removing, setRemoving]     = useState(null);
 
-  const isMounted   = useRef(true);
-  const savedIds    = useRef([]);
+  const isMounted = useRef(true);
 
   useEffect(() => {
     isMounted.current = true;
@@ -63,7 +62,6 @@ export default function FavoriteDishesScreen({ navigation }) {
   // ─────────────────────────────────────────
   const fetchFavDishes = useCallback(async () => {
     const ids = userProfile?.favoriteDishes || [];
-    savedIds.current = ids;
 
     if (ids.length === 0) {
       if (isMounted.current) {
@@ -127,14 +125,16 @@ export default function FavoriteDishesScreen({ navigation }) {
   }, [fetchFavDishes]);
 
   // ─────────────────────────────────────────
-  // UNFAVORITE DISH
+  // REMOVE FROM FAVOURITES
+  // ✅ Optimistic update — removes from list instantly
+  // ✅ onSnapshot in useAuth updates userProfile automatically
   // ─────────────────────────────────────────
   const handleUnfavorite = useCallback((dish) => {
     Alert.alert(
       '💔 Remove Dish',
-      `Remove "${dish.name}" from your favorites?`,
+      `Remove "${dish.name}" from your favourites?`,
       [
-        { text: 'Keep', style: 'cancel' },
+        { text: 'Keep',   style: 'cancel' },
         {
           text:  'Remove',
           style: 'destructive',
@@ -142,19 +142,25 @@ export default function FavoriteDishesScreen({ navigation }) {
             try {
               setRemoving(dish.id);
 
-              // ✅ Remove from user's favoriteDishes array
+              // ✅ Optimistic UI update — remove from list instantly
+              if (isMounted.current) {
+                setDishes(prev => prev.filter(d => d.id !== dish.id));
+              }
+
+              // ✅ Write to Firestore
               await updateDoc(doc(db, 'users', user.uid), {
                 favoriteDishes: arrayRemove(dish.id),
                 updatedAt:      serverTimestamp(),
               });
 
-              // ✅ Optimistic update
-              if (isMounted.current) {
-                setDishes(prev => prev.filter(d => d.id !== dish.id));
-              }
             } catch (err) {
-              console.error('Unfavorite dish error:', err);
-              Alert.alert('Error', 'Could not remove dish. Please try again.');
+              console.error('Unfavourite dish error:', err);
+
+              // ✅ Revert on failure — re-fetch to restore list
+              if (isMounted.current) {
+                await fetchFavDishes();
+                Alert.alert('Error', 'Could not remove dish. Please try again.');
+              }
             } finally {
               if (isMounted.current) setRemoving(null);
             }
@@ -162,7 +168,7 @@ export default function FavoriteDishesScreen({ navigation }) {
         },
       ]
     );
-  }, [user]);
+  }, [user, fetchFavDishes]);
 
   // ─────────────────────────────────────────
   // CATEGORIES FROM DISHES
@@ -176,17 +182,14 @@ export default function FavoriteDishesScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // FILTERED + SORTED DISHES
-  // ✅ Memoized
   // ─────────────────────────────────────────
   const displayedDishes = useMemo(() => {
     let result = [...dishes];
 
-    // ── Category filter ────────────────────
     if (selectedCategory !== 'all') {
       result = result.filter(d => d.category === selectedCategory);
     }
 
-    // ── Search filter ──────────────────────
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(d =>
@@ -196,7 +199,6 @@ export default function FavoriteDishesScreen({ navigation }) {
       );
     }
 
-    // ── Sort ───────────────────────────────
     switch (sortBy) {
       case 'name':
         result.sort((a, b) =>
@@ -211,7 +213,6 @@ export default function FavoriteDishesScreen({ navigation }) {
         break;
       case 'saved':
       default:
-        // Already in saved order from fetch
         break;
     }
 
@@ -233,8 +234,7 @@ export default function FavoriteDishesScreen({ navigation }) {
         <Text style={styles.emptyEmoji}>🍽️</Text>
         <Text style={styles.emptyTitle}>Favourite Dishes</Text>
         <Text style={styles.emptySubtext}>
-          Sign in to save your favorite dishes and
-          access them anytime
+          Sign in to save your favourite dishes and access them anytime
         </Text>
         <TouchableOpacity
           style={styles.browseBtn}
@@ -333,9 +333,10 @@ export default function FavoriteDishesScreen({ navigation }) {
                 returnKeyType="search"
               />
               {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')}
-				 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-				>
+                <TouchableOpacity
+                  onPress={() => setSearch('')}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
                   <Ionicons
                     name="close-circle"
                     size={18}
@@ -418,8 +419,7 @@ export default function FavoriteDishesScreen({ navigation }) {
               <Text style={styles.countText}>
                 {displayedDishes.length}
                 {search || selectedCategory !== 'all'
-                  ? ` of ${dishes.length}`
-                  : ''}{' '}
+                  ? ` of ${dishes.length}` : ''}{' '}
                 dish{dishes.length !== 1 ? 'es' : ''}
               </Text>
               {(search || selectedCategory !== 'all') && (
@@ -447,9 +447,7 @@ export default function FavoriteDishesScreen({ navigation }) {
                     setSelectedCategory('all');
                   }}
                 >
-                  <Text style={styles.searchEmptyClear}>
-                    Clear filters
-                  </Text>
+                  <Text style={styles.searchEmptyClear}>Clear filters</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -458,13 +456,17 @@ export default function FavoriteDishesScreen({ navigation }) {
 
         renderItem={({ item }) => (
           <View style={styles.cardWrapper}>
+            {/* ✅ showHeart=false — hides built-in heart,
+                we use our own remove button below */}
             <MenuItemCard
               item={item}
               onLoginRequired={() => navigation.navigate('Profile')}
+              showHeart={false}
             />
-            {/* ✅ Unfavorite button */}
+
+            {/* ✅ Remove from favourites button */}
             <TouchableOpacity
-              style={styles.unfavoriteBtn}
+              style={styles.removeBtn}
               onPress={() => handleUnfavorite(item)}
               disabled={removing === item.id}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -473,7 +475,7 @@ export default function FavoriteDishesScreen({ navigation }) {
               {removing === item.id ? (
                 <ActivityIndicator size="small" color={COLORS.error} />
               ) : (
-                <Ionicons name="heart" size={18} color={COLORS.error} />
+                <Ionicons name="heart-dislike" size={18} color={COLORS.error} />
               )}
             </TouchableOpacity>
           </View>
@@ -493,12 +495,12 @@ const styles = StyleSheet.create({
 
   // ── Centered States ───────────────────────
   centered: {
-    flex:              1,
-    justifyContent:    'center',
-    alignItems:        'center',
-    padding:           SIZES.xl,
-    backgroundColor:   COLORS.background,
-    gap:               SIZES.sm,
+    flex:            1,
+    justifyContent:  'center',
+    alignItems:      'center',
+    padding:         SIZES.xl,
+    backgroundColor: COLORS.background,
+    gap:             SIZES.sm,
   },
   loadingText: { fontSize: FONTS.md, color: COLORS.textMuted },
   emptyEmoji:  { fontSize: 60 },
@@ -562,7 +564,12 @@ const styles = StyleSheet.create({
     borderColor:       COLORS.border,
   },
   categoryChipActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  categoryChipText:       { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '500', textTransform: 'capitalize' },
+  categoryChipText:       {
+    fontSize:        FONTS.xs,
+    color:           COLORS.text,
+    fontWeight:      '500',
+    textTransform:   'capitalize',
+  },
   categoryChipTextActive: { color: '#FFFFFF', fontWeight: '600' },
 
   // ── Sort Row ──────────────────────────────
@@ -573,7 +580,7 @@ const styles = StyleSheet.create({
     marginBottom:  SIZES.sm,
     flexWrap:      'wrap',
   },
-  sortLabel:        { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '600' },
+  sortLabel:          { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '600' },
   sortChip: {
     paddingHorizontal: SIZES.sm,
     paddingVertical:   4,
@@ -594,7 +601,7 @@ const styles = StyleSheet.create({
     marginBottom:   SIZES.sm,
   },
   countText: { fontSize: FONTS.sm, color: COLORS.textMuted, fontWeight: '500' },
-  clearText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '600' },
+  clearText: { fontSize: FONTS.sm, color: COLORS.primary,   fontWeight: '600' },
 
   // ── Search Empty ──────────────────────────
   searchEmpty: {
@@ -612,20 +619,22 @@ const styles = StyleSheet.create({
   // ── Card Wrapper ──────────────────────────
   cardWrapper: { position: 'relative' },
 
-  // ── Unfavorite Button ─────────────────────
-  unfavoriteBtn: {
+  // ── Remove Button ─────────────────────────
+  // ✅ Positioned over the card image area — same spot as the
+  //    built-in heart so it feels consistent
+  removeBtn: {
     position:        'absolute',
-    top:             SIZES.sm,
-    right:           SIZES.sm,
+    top:             SIZES.sm + 4,
+    right:           SIZES.sm + 4,
     backgroundColor: '#FFFFFF',
     width:           36,
     height:          36,
     borderRadius:    18,
     justifyContent:  'center',
     alignItems:      'center',
+    zIndex:          10,
     elevation:       10,
-	zIndex:          10,
-	...SHADOW,
+    ...SHADOW,
   },
 
   // ── Separator ─────────────────────────────

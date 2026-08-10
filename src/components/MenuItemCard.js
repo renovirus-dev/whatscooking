@@ -58,8 +58,15 @@ const getMenuItemImageSource = (item) => {
 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
+// ✅ showHeart prop — hides heart buttons when false
+//    Use showHeart={false} in FavoriteDishesScreen
+//    to avoid showing a duplicate heart
 // ─────────────────────────────────────────────
-export default function MenuItemCard({ item, onLoginRequired }) {
+export default function MenuItemCard({
+  item,
+  onLoginRequired,
+  showHeart = true,   // ✅ new prop
+}) {
   const insets = useSafeAreaInsets();
   const { user, userProfile } = useAuth();
   const { trackMenuItemView } = useAnalytics();
@@ -86,7 +93,6 @@ export default function MenuItemCard({ item, onLoginRequired }) {
     }
   }, [userProfile?.favoriteDishes, item.id]);
 
-  // Use localFavorited as the single source of truth
   const isFavorited = localFavorited;
 
   const activeDietary = Object.entries(DIETARY_BADGES).filter(
@@ -122,7 +128,7 @@ export default function MenuItemCard({ item, onLoginRequired }) {
 
     if (!isMounted.current) return;
 
-    // ✅ Optimistic update BEFORE the async Firestore call
+    // ✅ Optimistic update BEFORE async call
     const newValue = !localFavorited;
     setLocalFavorited(newValue);
 
@@ -131,19 +137,17 @@ export default function MenuItemCard({ item, onLoginRequired }) {
       const userRef = doc(db, 'users', user.uid);
 
       if (!newValue) {
-        // Was favourited → remove
         await updateDoc(userRef, { favoriteDishes: arrayRemove(item.id) });
       } else {
-        // Was not favourited → add
         await updateDoc(userRef, { favoriteDishes: arrayUnion(item.id) });
       }
 
-      console.log(`✅ Favourite ${newValue ? 'added' : 'removed'} for:`, item.id);
+      console.log(`✅ Dish favourite ${newValue ? 'added' : 'removed'}:`, item.id);
 
     } catch (err) {
       console.error('handleFavourite error:', err);
 
-      // ✅ Revert optimistic update on failure
+      // ✅ Revert on failure
       if (isMounted.current) {
         setLocalFavorited(!newValue);
         Alert.alert('Error', 'Could not update favourite. Please try again.');
@@ -217,24 +221,26 @@ export default function MenuItemCard({ item, onLoginRequired }) {
             onError={() => { if (isMounted.current) setImageError(true); }}
           />
 
-          {/* Heart button */}
-          <TouchableOpacity
-            style={styles.heartBtn}
-            onPress={handleFavourite}
-            disabled={favLoading}
-            activeOpacity={0.7}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            {favLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Ionicons
-                name={isFavorited ? 'heart' : 'heart-outline'}
-                size={18}
-                color={isFavorited ? COLORS.error : '#FFFFFF'}
-              />
-            )}
-          </TouchableOpacity>
+          {/* ✅ Only show heart button when showHeart is true */}
+          {showHeart && (
+            <TouchableOpacity
+              style={styles.heartBtn}
+              onPress={handleFavourite}
+              disabled={favLoading}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              {favLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Ionicons
+                  name={isFavorited ? 'heart' : 'heart-outline'}
+                  size={18}
+                  color={isFavorited ? COLORS.error : '#FFFFFF'}
+                />
+              )}
+            </TouchableOpacity>
+          )}
 
           {/* Expand hint */}
           <View style={styles.expandHint} pointerEvents="none">
@@ -277,24 +283,26 @@ export default function MenuItemCard({ item, onLoginRequired }) {
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Heart button */}
-            <TouchableOpacity
-              style={styles.modalHeartBtn}
-              onPress={handleFavourite}
-              disabled={favLoading}
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              {favLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Ionicons
-                  name={isFavorited ? 'heart' : 'heart-outline'}
-                  size={24}
-                  color={isFavorited ? COLORS.error : '#FFFFFF'}
-                />
-              )}
-            </TouchableOpacity>
+            {/* ✅ Only show modal heart when showHeart is true */}
+            {showHeart && (
+              <TouchableOpacity
+                style={styles.modalHeartBtn}
+                onPress={handleFavourite}
+                disabled={favLoading}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {favLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons
+                    name={isFavorited ? 'heart' : 'heart-outline'}
+                    size={24}
+                    color={isFavorited ? COLORS.error : '#FFFFFF'}
+                  />
+                )}
+              </TouchableOpacity>
+            )}
 
             {/* Drag handle */}
             <View style={styles.modalHandle} />
@@ -379,34 +387,36 @@ export default function MenuItemCard({ item, onLoginRequired }) {
                   </View>
                 )}
 
-                {/* Save Favourite Button */}
-                <TouchableOpacity
-                  style={[styles.modalFavBtn, isFavorited && styles.modalFavBtnActive]}
-                  onPress={handleFavourite}
-                  disabled={favLoading}
-                  activeOpacity={0.8}
-                >
-                  {favLoading ? (
-                    <ActivityIndicator
-                      size="small"
-                      color={isFavorited ? '#FFFFFF' : COLORS.error}
-                    />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name={isFavorited ? 'heart' : 'heart-outline'}
-                        size={20}
+                {/* ✅ Only show Save Favourite button when showHeart is true */}
+                {showHeart && (
+                  <TouchableOpacity
+                    style={[styles.modalFavBtn, isFavorited && styles.modalFavBtnActive]}
+                    onPress={handleFavourite}
+                    disabled={favLoading}
+                    activeOpacity={0.8}
+                  >
+                    {favLoading ? (
+                      <ActivityIndicator
+                        size="small"
                         color={isFavorited ? '#FFFFFF' : COLORS.error}
                       />
-                      <Text style={[
-                        styles.modalFavBtnText,
-                        isFavorited && styles.modalFavBtnTextActive,
-                      ]}>
-                        {isFavorited ? 'Saved to Favourites ✓' : 'Save to Favourites'}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={isFavorited ? 'heart' : 'heart-outline'}
+                          size={20}
+                          color={isFavorited ? '#FFFFFF' : COLORS.error}
+                        />
+                        <Text style={[
+                          styles.modalFavBtnText,
+                          isFavorited && styles.modalFavBtnTextActive,
+                        ]}>
+                          {isFavorited ? 'Saved to Favourites ✓' : 'Save to Favourites'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
 
                 {/* Close Button */}
                 <TouchableOpacity
