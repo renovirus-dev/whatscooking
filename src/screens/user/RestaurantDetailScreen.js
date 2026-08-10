@@ -78,7 +78,6 @@ const RATING_LABELS = [
 const formatCategory = (cat) =>
   cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-// ✅ Get optimized cover image URL
 const getCoverImage = (restaurant) => {
   if (restaurant?.coverUrl?.includes('cloudinary')) {
     return { uri: getBannerUrl(restaurant.coverUrl) };
@@ -86,11 +85,9 @@ const getCoverImage = (restaurant) => {
   if (restaurant?.coverUrl) {
     return { uri: restaurant.coverUrl };
   }
-  // ✅ Local fallback - no Unsplash
   return require('../../assets/images/restaurant_placeholder.jpg');
 };
 
-// ✅ Get optimized logo URL
 const getLogoImage = (restaurant) => {
   if (restaurant?.logoUrl?.includes('cloudinary')) {
     return { uri: getThumbUrl(restaurant.logoUrl, 120, 120) };
@@ -107,6 +104,7 @@ const ActionButton = ({ icon, label, color, onPress }) => (
     style={styles.actionBtn}
     onPress={onPress}
     activeOpacity={0.7}
+    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
   >
     <View style={[styles.actionBtnIcon, { backgroundColor: color + '15' }]}>
       <Ionicons name={icon} size={20} color={color} />
@@ -135,10 +133,8 @@ export default function RestaurantDetailScreen({ route, navigation }) {
     addReview, updateReview, deleteReview, getUserReview,
   } = useReviews(restaurantId);
 
-  // ✅ Analytics - safe to call unconditionally
   const analytics = useAnalytics();
 
-  // ✅ isMounted ref
   const isMounted   = useRef(true);
   const viewTracked = useRef(false);
 
@@ -153,7 +149,6 @@ export default function RestaurantDetailScreen({ route, navigation }) {
   const [activeCategory, setActiveCategory]   = useState('all');
   const [activeTab, setActiveTab]             = useState('Menu');
 
-  // Review state
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [myReview, setMyReview]               = useState(null);
   const [reviewRating, setReviewRating]       = useState(5);
@@ -161,14 +156,12 @@ export default function RestaurantDetailScreen({ route, navigation }) {
   const [reviewLoading, setReviewLoading]     = useState(false);
   const [editingReview, setEditingReview]     = useState(false);
 
-  // ── Mounted lifecycle ──────────────────────
+  // ── Lifecycle ─────────────────────────────
   useEffect(() => {
     isMounted.current = true;
     return () => { isMounted.current = false; };
   }, []);
 
-  // ── Analytics page timer ───────────────────
-  // ✅ Called unconditionally — not inside if
   useEffect(() => {
     if (!restaurantId) return;
     try {
@@ -178,9 +171,7 @@ export default function RestaurantDetailScreen({ route, navigation }) {
     } catch {}
   }, [restaurantId]);
 
-  // ─────────────────────────────────────────
-  // FIRESTORE LISTENERS
-  // ─────────────────────────────────────────
+  // ── Firestore ─────────────────────────────
   useEffect(() => {
     if (!restaurantId) {
       setError('Restaurant not found');
@@ -188,7 +179,6 @@ export default function RestaurantDetailScreen({ route, navigation }) {
       return;
     }
 
-    // Restaurant
     const unsubRestaurant = onSnapshot(
       doc(db, 'restaurants', restaurantId),
       (snap) => {
@@ -208,13 +198,11 @@ export default function RestaurantDetailScreen({ route, navigation }) {
       },
       (err) => {
         if (!isMounted.current) return;
-        console.error('Restaurant listener error:', err);
         setError(err.message);
         setLoading(false);
       }
     );
 
-    // Menu items
     const unsubMenu = onSnapshot(
       query(
         collection(db, 'menuItems'),
@@ -225,33 +213,23 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         if (!isMounted.current) return;
         const items = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) =>
-            (a.category || '').localeCompare(b.category || '')
-          );
+          .sort((a, b) => (a.category || '').localeCompare(b.category || ''));
         setMenuItems(items);
       },
       (err) => console.error('Menu listener error:', err)
     );
 
-    return () => {
-      unsubRestaurant();
-      unsubMenu();
-    };
+    return () => { unsubRestaurant(); unsubMenu(); };
   }, [restaurantId]);
 
-  // ── Favorite status ────────────────────────
   useEffect(() => {
     if (!isMounted.current) return;
-    setIsFavorited(
-      userProfile?.favoriteRestaurants?.includes(restaurantId) || false
-    );
+    setIsFavorited(userProfile?.favoriteRestaurants?.includes(restaurantId) || false);
   }, [userProfile, restaurantId]);
 
-  // ── Load user's review ─────────────────────
   useEffect(() => {
     if (!user?.uid || !restaurantId) return;
     let cancelled = false;
-
     getUserReview(user.uid)
       .then(review => {
         if (cancelled || !isMounted.current) return;
@@ -263,19 +241,13 @@ export default function RestaurantDetailScreen({ route, navigation }) {
           setMyReview(null);
         }
       })
-      .catch(err => console.error('getUserReview error:', err));
-
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [user?.uid, restaurantId, reviews.length]);
 
-  // ─────────────────────────────────────────
-  // DERIVED DATA
-  // ─────────────────────────────────────────
+  // ── Derived ───────────────────────────────
   const categories = useMemo(() => {
-    const cats = [...new Set(
-      menuItems.map(i => i.category).filter(Boolean)
-    )];
-    // Only show "all" tab if more than 1 category
+    const cats = [...new Set(menuItems.map(i => i.category).filter(Boolean))];
     return cats.length > 1 ? ['all', ...cats] : cats;
   }, [menuItems]);
 
@@ -295,97 +267,56 @@ export default function RestaurantDetailScreen({ route, navigation }) {
 
   const avgRating = useMemo(() =>
     reviews.length > 0
-      ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) /
-          reviews.length).toFixed(1)
+      ? (reviews.reduce((s, r) => s + (r.rating || 0), 0) / reviews.length).toFixed(1)
       : null,
   [reviews]);
 
-  // ─────────────────────────────────────────
-  // PULL TO REFRESH
-  // ─────────────────────────────────────────
+  // ── Handlers ──────────────────────────────
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    // Firestore listeners update automatically
-    // Just reset refreshing after a moment
-    setTimeout(() => {
-      if (isMounted.current) setRefreshing(false);
-    }, 1000);
+    setTimeout(() => { if (isMounted.current) setRefreshing(false); }, 1000);
   }, []);
 
-  // ─────────────────────────────────────────
-  // SHARE
-  // ─────────────────────────────────────────
   const handleShare = useCallback(async () => {
     if (!restaurant) return;
     try {
       await Share.share({
         title:   restaurant.name,
-        message: `Check out ${restaurant.name} on What's Cooking!\n` +
-                 `📍 ${restaurant.location?.city}\n` +
-                 `⭐ ${restaurant.averageRating?.toFixed(1) || 'New'} rating\n` +
-                 `${restaurant.cuisineTypes?.join(', ') || ''}`,
+        message: `Check out ${restaurant.name} on What's Cooking!\n📍 ${restaurant.location?.city}\n⭐ ${restaurant.averageRating?.toFixed(1) || 'New'} rating`,
       });
-    } catch (err) {
-      console.error('Share error:', err);
-    }
+    } catch {}
   }, [restaurant]);
 
-  // ─────────────────────────────────────────
-  // CONTACT HANDLERS
-  // ─────────────────────────────────────────
   const handleCall = useCallback(() => {
     const phone = restaurant?.contact?.phone;
-    if (!phone) {
-      Alert.alert('No Phone', 'No phone number available for this restaurant');
-      return;
-    }
-    try { analytics.trackAction(restaurantId, restaurant.name, 'call'); }
-    catch {}
-    Linking.openURL(`tel:${phone}`).catch(() =>
-      Alert.alert('Error', 'Could not open phone app')
-    );
+    if (!phone) { Alert.alert('No Phone', 'No phone number available'); return; }
+    try { analytics.trackAction(restaurantId, restaurant.name, 'call'); } catch {}
+    Linking.openURL(`tel:${phone}`).catch(() => Alert.alert('Error', 'Could not open phone'));
   }, [restaurant, restaurantId]);
 
   const handleDirections = useCallback(() => {
     const { address, city } = restaurant?.location || {};
-    if (!address) {
-      Alert.alert('No Address', 'No address available for this restaurant');
-      return;
-    }
-    try { analytics.trackAction(restaurantId, restaurant.name, 'directions'); }
-    catch {}
-    const encoded = encodeURIComponent(`${address}, ${city || ''}`);
-    Linking.openURL(`https://maps.google.com/?q=${encoded}`).catch(() =>
-      Alert.alert('Error', 'Could not open maps')
-    );
+    if (!address) { Alert.alert('No Address', 'No address available'); return; }
+    try { analytics.trackAction(restaurantId, restaurant.name, 'directions'); } catch {}
+    Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(`${address}, ${city || ''}`)}`).catch(() => Alert.alert('Error', 'Could not open maps'));
   }, [restaurant, restaurantId]);
 
   const handleWhatsApp = useCallback(() => {
     const number = restaurant?.contact?.whatsapp;
     if (!number) return;
-    try { analytics.trackAction(restaurantId, restaurant.name, 'whatsapp'); }
-    catch {}
-    const clean = number.replace(/\D/g, '');
-    Linking.openURL(`https://wa.me/${clean}`).catch(() =>
-      Alert.alert('Error', 'Could not open WhatsApp')
-    );
+    try { analytics.trackAction(restaurantId, restaurant.name, 'whatsapp'); } catch {}
+    Linking.openURL(`https://wa.me/${number.replace(/\D/g, '')}`).catch(() => Alert.alert('Error', 'Could not open WhatsApp'));
   }, [restaurant, restaurantId]);
 
   const handleWebsite = useCallback(() => {
     const url = restaurant?.contact?.website;
     if (!url) return;
-    try { analytics.trackAction(restaurantId, restaurant.name, 'website'); }
-    catch {}
-    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
-    Linking.openURL(fullUrl).catch(() =>
-      Alert.alert('Error', 'Could not open website')
-    );
+    try { analytics.trackAction(restaurantId, restaurant.name, 'website'); } catch {}
+    Linking.openURL(url.startsWith('http') ? url : `https://${url}`).catch(() => Alert.alert('Error', 'Could not open website'));
   }, [restaurant, restaurantId]);
 
-  // ─────────────────────────────────────────
-  // FAVORITE
-  // ─────────────────────────────────────────
   const handleFavorite = useCallback(async () => {
+    console.log('❤️ Favorite tapped!');
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to save favorites');
       return;
@@ -401,9 +332,6 @@ export default function RestaurantDetailScreen({ route, navigation }) {
     }
   }, [user, restaurantId, isFavorited, toggleFavorite]);
 
-  // ─────────────────────────────────────────
-  // REVIEW HANDLERS
-  // ─────────────────────────────────────────
   const handleOpenReview = useCallback(() => {
     if (!user) {
       Alert.alert('Sign In Required', 'Please sign in to write a review');
@@ -419,7 +347,6 @@ export default function RestaurantDetailScreen({ route, navigation }) {
       return;
     }
     if (!isMounted.current) return;
-
     setReviewLoading(true);
     let result;
     try {
@@ -427,72 +354,45 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         result = await updateReview(myReview.id, reviewRating, reviewComment);
       } else {
         result = await addReview({
-          userId:       user.uid,
-          userName:     `${userProfile?.firstName || ''} ${
-                          userProfile?.lastName  || ''
-                        }`.trim() || 'Anonymous',
+          userId: user.uid,
+          userName: `${userProfile?.firstName || ''} ${userProfile?.lastName || ''}`.trim() || 'Anonymous',
           restaurantId,
-          rating:       reviewRating,
-          comment:      reviewComment.trim(),
+          rating: reviewRating,
+          comment: reviewComment.trim(),
         });
       }
     } catch (err) {
       result = { success: false, error: err.message };
     }
-
     if (!isMounted.current) return;
     setReviewLoading(false);
-
     if (result?.success) {
       setShowReviewModal(false);
-      Alert.alert(
-        '✅ Thank You!',
-        editingReview ? 'Review updated!' : 'Review submitted!'
-      );
+      Alert.alert('✅ Thank You!', editingReview ? 'Review updated!' : 'Review submitted!');
     } else {
       Alert.alert('Error', result?.error || 'Something went wrong');
     }
-  }, [
-    reviewRating, reviewComment, myReview,
-    editingReview, user, userProfile, restaurantId,
-    updateReview, addReview,
-  ]);
+  }, [reviewRating, reviewComment, myReview, editingReview, user, userProfile, restaurantId, updateReview, addReview]);
 
   const handleDeleteReview = useCallback(() => {
-    Alert.alert(
-      'Delete Review',
-      'Are you sure you want to delete your review?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text:  'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteReview(myReview.id);
-              if (isMounted.current) {
-                setMyReview(null);
-                setReviewRating(5);
-                setReviewComment('');
-              }
-            } catch {
-              Alert.alert('Error', 'Could not delete review');
-            }
-          },
+    Alert.alert('Delete Review', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteReview(myReview.id);
+            if (isMounted.current) { setMyReview(null); setReviewRating(5); setReviewComment(''); }
+          } catch { Alert.alert('Error', 'Could not delete review'); }
         },
-      ]
-    );
+      },
+    ]);
   }, [myReview, deleteReview]);
 
-  // ─────────────────────────────────────────
-  // LOADING / ERROR STATES
-  // ─────────────────────────────────────────
+  // ── Loading / Error ───────────────────────
   if (loading) {
     return (
-      <View style={[
-        styles.centered,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
+      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading restaurant...</Text>
       </View>
@@ -501,20 +401,12 @@ export default function RestaurantDetailScreen({ route, navigation }) {
 
   if (error || !restaurant) {
     return (
-      <View style={[
-        styles.centered,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
+      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Text style={{ fontSize: 48 }}>🍽️</Text>
         <Text style={styles.errorTitle}>Restaurant Not Found</Text>
-        <Text style={styles.errorText}>
-          {error || 'This restaurant may no longer be available'}
-        </Text>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backBtnText}>Go Back</Text>
+        <Text style={styles.errorText}>{error || 'This restaurant may no longer be available'}</Text>
+        <TouchableOpacity style={styles.goBackBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.goBackBtnText}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -523,9 +415,7 @@ export default function RestaurantDetailScreen({ route, navigation }) {
   const coverSource = getCoverImage(restaurant);
   const logoSource  = getLogoImage(restaurant);
 
-  // ─────────────────────────────────────────
-  // MAIN RENDER
-  // ─────────────────────────────────────────
+  // ── Render ────────────────────────────────
   return (
     <View style={styles.outerContainer}>
       <ScrollView
@@ -534,52 +424,58 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={[COLORS.primary]}
-            tintColor={COLORS.primary}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh}
+            colors={[COLORS.primary]} tintColor={COLORS.primary} />
         }
       >
         {/* ── Cover Image ─────────────────── */}
         <View style={styles.coverContainer}>
-          <Image
-            source={coverSource}
-            style={styles.coverImage}
-            resizeMode="cover"
-          />
-          <View style={styles.coverOverlay} />
+          <Image source={coverSource} style={styles.coverImage} resizeMode="cover" />
 
-          {/* Back Button */}
+          {/* ✅ Overlay — pointerEvents="none" so it doesn't block touches */}
+          <View style={styles.coverOverlay} pointerEvents="none" />
+
+          {/* ✅ Back Button — inline styles with zIndex */}
           <TouchableOpacity
-			style={[styles.coverBtn, { position: 'absolute', top: insets.top + SIZES.sm, left: 16 }]}
-			onPress={() => navigation.goBack()}
-			activeOpacity={0.8}
-			>
+            style={{
+              position: 'absolute', top: insets.top + 8, left: 16,
+              backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 21,
+              width: 42, height: 42, justifyContent: 'center', alignItems: 'center',
+              zIndex: 20, elevation: 20,
+            }}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
           </TouchableOpacity>
 
-          {/* Top Right Buttons */}
-          <View style={[
-            styles.coverBtnsRight,
-            { top: insets.top + SIZES.sm },
-          ]}>
-            {/* Share */}
+          {/* ✅ Share + Heart — inline styles with zIndex */}
+          <View style={{
+            position: 'absolute', top: insets.top + 8, right: 16,
+            flexDirection: 'row', gap: 10, zIndex: 20, elevation: 20,
+          }}>
             <TouchableOpacity
-              style={styles.coverBtn}
+              style={{
+                backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 21,
+                width: 42, height: 42, justifyContent: 'center', alignItems: 'center',
+              }}
               onPress={handleShare}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Ionicons name="share-outline" size={22} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* Favorite */}
             <TouchableOpacity
-              style={styles.coverBtn}
+              style={{
+                backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 21,
+                width: 42, height: 42, justifyContent: 'center', alignItems: 'center',
+              }}
               onPress={handleFavorite}
               disabled={favoriteLoading}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {favoriteLoading ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
@@ -593,14 +489,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Open/Closed Badge */}
-          <View style={[
-            styles.statusBadge,
-            {
-              backgroundColor: restaurant.isCurrentlyOpen
-                ? COLORS.success : COLORS.error,
-            },
-          ]}>
+          {/* Open/Closed */}
+          <View style={[styles.statusBadge, {
+            backgroundColor: restaurant.isCurrentlyOpen ? COLORS.success : COLORS.error,
+          }]}>
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>
               {restaurant.isCurrentlyOpen ? 'Open Now' : 'Closed'}
@@ -612,129 +504,74 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         <View style={styles.infoCard}>
           <View style={styles.nameRow}>
             {logoSource ? (
-              <Image
-                source={logoSource}
-                style={styles.logo}
-                resizeMode="cover"
-              />
+              <Image source={logoSource} style={styles.logo} resizeMode="cover" />
             ) : (
               <View style={styles.logoFallback}>
                 <Text style={{ fontSize: 24 }}>🍽️</Text>
               </View>
             )}
             <View style={{ flex: 1 }}>
-              <Text style={styles.restaurantName} numberOfLines={2}>
-                {restaurant.name}
-              </Text>
+              <Text style={styles.restaurantName} numberOfLines={2}>{restaurant.name}</Text>
               <View style={styles.metaRow}>
                 <Ionicons name="star" size={14} color={WARNING_COLOR} />
                 <Text style={styles.rating}>
-                  {restaurant.averageRating
-                    ? restaurant.averageRating.toFixed(1)
-                    : 'New'}
+                  {restaurant.averageRating ? restaurant.averageRating.toFixed(1) : 'New'}
                 </Text>
-                <Text style={styles.reviewCount}>
-                  ({restaurant.totalReviews || 0} reviews)
-                </Text>
+                <Text style={styles.reviewCount}>({restaurant.totalReviews || 0} reviews)</Text>
                 <Text style={styles.dot}>·</Text>
-                <Text style={styles.priceRange}>
-                  {restaurant.priceRange || '$$'}
-                </Text>
+                <Text style={styles.priceRange}>{restaurant.priceRange || '$$'}</Text>
               </View>
-              {/* Location line */}
               {restaurant.location?.city && (
                 <View style={styles.locationLine}>
-                  <Ionicons
-                    name="location-outline"
-                    size={12}
-                    color={COLORS.textMuted}
-                  />
+                  <Ionicons name="location-outline" size={12} color={COLORS.textMuted} />
                   <Text style={styles.locationText}>
-                    {restaurant.location.city}
-                    {restaurant.location.state
-                      ? `, ${restaurant.location.state}` : ''}
+                    {restaurant.location.city}{restaurant.location.state ? `, ${restaurant.location.state}` : ''}
                   </Text>
                 </View>
               )}
             </View>
           </View>
 
-          {/* Description */}
           {!!restaurant.description && (
-            <Text style={styles.description}>
-              {restaurant.description}
-            </Text>
+            <Text style={styles.description}>{restaurant.description}</Text>
           )}
 
-          {/* Cuisine Tags */}
           {restaurant.cuisineTypes?.length > 0 && (
             <View style={styles.tagsRow}>
               {restaurant.cuisineTypes.map((type, i) => (
                 <View key={i} style={styles.tag}>
-                  <Text style={styles.tagText}>
-                    {type.charAt(0).toUpperCase() + type.slice(1)}
-                  </Text>
+                  <Text style={styles.tagText}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
                 </View>
               ))}
             </View>
           )}
 
-          {/* Action Buttons */}
           <View style={styles.actionButtons}>
-            <ActionButton
-              icon="call-outline"
-              label="Call"
-              color={COLORS.primary}
-              onPress={handleCall}
-            />
-            <ActionButton
-              icon="navigate-outline"
-              label="Directions"
-              color={COLORS.primary}
-              onPress={handleDirections}
-            />
+            <ActionButton icon="call-outline" label="Call" color={COLORS.primary} onPress={handleCall} />
+            <ActionButton icon="navigate-outline" label="Directions" color={COLORS.primary} onPress={handleDirections} />
             {!!restaurant.contact?.whatsapp && (
-              <ActionButton
-                icon="logo-whatsapp"
-                label="WhatsApp"
-                color={COLORS.success}
-                onPress={handleWhatsApp}
-              />
+              <ActionButton icon="logo-whatsapp" label="WhatsApp" color={COLORS.success} onPress={handleWhatsApp} />
             )}
             {!!restaurant.contact?.website && (
-              <ActionButton
-                icon="globe-outline"
-                label="Website"
-                color={INFO_COLOR}
-                onPress={handleWebsite}
-              />
+              <ActionButton icon="globe-outline" label="Website" color={INFO_COLOR} onPress={handleWebsite} />
             )}
           </View>
 
-          {/* Services */}
           <View style={styles.servicesRow}>
-            {restaurant.hasDineIn   && <ServiceBadge label="🪑 Dine In"  />}
-            {restaurant.hasTakeout  && <ServiceBadge label="🥡 Takeout"  />}
+            {restaurant.hasDineIn   && <ServiceBadge label="🪑 Dine In" />}
+            {restaurant.hasTakeout  && <ServiceBadge label="🥡 Takeout" />}
             {restaurant.hasDelivery && <ServiceBadge label="🛵 Delivery" />}
           </View>
 
-          {/* Announcement */}
-          {restaurant.announcement?.isActive &&
-           !!restaurant.announcement?.text && (
+          {restaurant.announcement?.isActive && !!restaurant.announcement?.text && (
             <View style={styles.announcement}>
-              <Ionicons
-                name="megaphone-outline"
-                size={16}
-                color={WARNING_COLOR}
-              />
-              <Text style={styles.announcementText}>
-                {restaurant.announcement.text}
-              </Text>
+              <Ionicons name="megaphone-outline" size={16} color={WARNING_COLOR} />
+              <Text style={styles.announcementText}>{restaurant.announcement.text}</Text>
             </View>
           )}
         </View>
 
-        {/* ── Tab Bar ─────────────────────── */}
+        {/* ── Tabs ────────────────────────── */}
         <View style={styles.tabBar}>
           {TABS.map(tab => (
             <TouchableOpacity
@@ -743,15 +580,10 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               onPress={() => setActiveTab(tab)}
               activeOpacity={0.7}
             >
-              <Text style={[
-                styles.tabText,
-                activeTab === tab && styles.tabTextActive,
-              ]}>
+              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
                 {tab}
-                {tab === 'Reviews' && reviews.length > 0
-                  ? ` (${reviews.length})` : ''}
-                {tab === 'Menu' && menuItems.length > 0
-                  ? ` (${menuItems.length})` : ''}
+                {tab === 'Reviews' && reviews.length > 0 ? ` (${reviews.length})` : ''}
+                {tab === 'Menu' && menuItems.length > 0 ? ` (${menuItems.length})` : ''}
               </Text>
             </TouchableOpacity>
           ))}
@@ -760,11 +592,9 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         {/* ── Tab: Menu ───────────────────── */}
         {activeTab === 'Menu' && (
           <View>
-            {/* Category filter — only if more than 1 category */}
             {categories.length > 1 && (
               <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
+                horizontal showsHorizontalScrollIndicator={false}
                 style={styles.categoryTabs}
                 contentContainerStyle={{ paddingHorizontal: SIZES.md }}
                 nestedScrollEnabled
@@ -772,20 +602,12 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 {categories.map(cat => (
                   <TouchableOpacity
                     key={cat}
-                    style={[
-                      styles.categoryTab,
-                      activeCategory === cat && styles.categoryTabActive,
-                    ]}
+                    style={[styles.categoryTab, activeCategory === cat && styles.categoryTabActive]}
                     onPress={() => setActiveCategory(cat)}
                     activeOpacity={0.7}
                   >
-                    <Text style={[
-                      styles.categoryTabText,
-                      activeCategory === cat && styles.categoryTabTextActive,
-                    ]}>
-                      {cat === 'all'
-                        ? `🍽️ All (${menuItems.length})`
-                        : `${CATEGORY_ICONS[cat] || '🍴'} ${formatCategory(cat)}`}
+                    <Text style={[styles.categoryTabText, activeCategory === cat && styles.categoryTabTextActive]}>
+                      {cat === 'all' ? `🍽️ All (${menuItems.length})` : `${CATEGORY_ICONS[cat] || '🍴'} ${formatCategory(cat)}`}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -797,30 +619,20 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 <View style={styles.emptyState}>
                   <Text style={{ fontSize: 48 }}>🍽️</Text>
                   <Text style={styles.emptyTitle}>Menu coming soon</Text>
-                  <Text style={styles.emptySubtext}>
-                    This restaurant hasn't added their menu yet
-                  </Text>
+                  <Text style={styles.emptySubtext}>This restaurant hasn't added their menu yet</Text>
                 </View>
               ) : (
                 Object.entries(groupedItems).map(([category, items]) => (
                   <View key={category}>
                     <Text style={styles.categoryTitle}>
-                      {CATEGORY_ICONS[category] || '🍴'}{' '}
-                      {formatCategory(category)}
-                      <Text style={styles.categoryCount}>
-                        {' '}({items.length})
-                      </Text>
+                      {CATEGORY_ICONS[category] || '🍴'} {formatCategory(category)}
+                      <Text style={styles.categoryCount}> ({items.length})</Text>
                     </Text>
                     {items.map(item => (
                       <MenuItemCard
                         key={item.id}
                         item={item}
-                        onLoginRequired={() =>
-                          Alert.alert(
-                            'Sign In Required',
-                            'Please sign in to save favourite dishes'
-                          )
-                        }
+                        onLoginRequired={() => Alert.alert('Sign In Required', 'Please sign in to save favourite dishes')}
                       />
                     ))}
                   </View>
@@ -833,7 +645,6 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         {/* ── Tab: Reviews ────────────────── */}
         {activeTab === 'Reviews' && (
           <View style={styles.reviewsTab}>
-            {/* Rating Summary */}
             {reviews.length > 0 && (
               <View style={styles.ratingsSummary}>
                 <Text style={styles.avgRatingNumber}>{avgRating}</Text>
@@ -841,21 +652,15 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 <Text style={styles.totalReviewsText}>
                   {reviews.length} review{reviews.length !== 1 ? 's' : ''}
                 </Text>
-
-                {/* Breakdown bars */}
                 <View style={styles.ratingBreakdown}>
                   {[5, 4, 3, 2, 1].map(star => {
                     const count = reviews.filter(r => r.rating === star).length;
-                    const pct   = reviews.length > 0
-                      ? (count / reviews.length) * 100 : 0;
+                    const pct = reviews.length > 0 ? (count / reviews.length) * 100 : 0;
                     return (
                       <View key={star} style={styles.breakdownRow}>
                         <Text style={styles.breakdownStar}>{star}⭐</Text>
                         <View style={styles.breakdownBarBg}>
-                          <View style={[
-                            styles.breakdownBar,
-                            { width: `${pct}%` },
-                          ]} />
+                          <View style={[styles.breakdownBar, { width: `${pct}%` }]} />
                         </View>
                         <Text style={styles.breakdownCount}>{count}</Text>
                       </View>
@@ -865,13 +670,11 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* My Review */}
             {myReview && (
               <View style={styles.myReviewSection}>
                 <Text style={styles.myReviewLabel}>YOUR REVIEW</Text>
                 <ReviewCard
-                  review={myReview}
-                  isOwn
+                  review={myReview} isOwn
                   onEdit={() => {
                     setEditingReview(true);
                     setReviewRating(myReview.rating);
@@ -883,49 +686,32 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* Write Review Button */}
             {user && !myReview && (
-              <TouchableOpacity
-                style={styles.writeReviewBtn}
-                onPress={handleOpenReview}
-                activeOpacity={0.8}
-              >
+              <TouchableOpacity style={styles.writeReviewBtn} onPress={handleOpenReview} activeOpacity={0.8}>
                 <Ionicons name="star-outline" size={20} color="#FFFFFF" />
                 <Text style={styles.writeReviewText}>Write a Review</Text>
               </TouchableOpacity>
             )}
 
-            {/* Login Prompt */}
             {!user && (
               <View style={styles.loginPrompt}>
-                <Ionicons
-                  name="person-outline"
-                  size={20}
-                  color={COLORS.primary}
-                />
-                <Text style={styles.loginPromptText}>
-                  Sign in to write a review
-                </Text>
+                <Ionicons name="person-outline" size={20} color={COLORS.primary} />
+                <Text style={styles.loginPromptText}>Sign in to write a review</Text>
               </View>
             )}
 
-            {/* Reviews List */}
             {reviewsLoading ? (
               <ActivityIndicator color={COLORS.primary} style={{ marginTop: SIZES.lg }} />
             ) : reviews.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={{ fontSize: 48 }}>⭐</Text>
                 <Text style={styles.emptyTitle}>No reviews yet</Text>
-                <Text style={styles.emptySubtext}>
-                  Be the first to review this restaurant!
-                </Text>
+                <Text style={styles.emptySubtext}>Be the first to review!</Text>
               </View>
             ) : (
-              reviews
-                .filter(r => r.userId !== user?.uid)
-                .map(review => (
-                  <ReviewCard key={review.id} review={review} />
-                ))
+              reviews.filter(r => r.userId !== user?.uid).map(review => (
+                <ReviewCard key={review.id} review={review} />
+              ))
             )}
           </View>
         )}
@@ -933,100 +719,54 @@ export default function RestaurantDetailScreen({ route, navigation }) {
         {/* ── Tab: Info ───────────────────── */}
         {activeTab === 'Info' && (
           <View style={styles.infoTab}>
-
-            {/* Location */}
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>📍 Location</Text>
-              <TouchableOpacity
-                style={styles.infoRow}
-                onPress={handleDirections}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="location-outline"
-                  size={16}
-                  color={COLORS.primary}
-                />
+              <TouchableOpacity style={styles.infoRow} onPress={handleDirections} activeOpacity={0.7}>
+                <Ionicons name="location-outline" size={16} color={COLORS.primary} />
                 <Text style={styles.infoLink}>
-                  {[
-                    restaurant.location?.address,
-                    restaurant.location?.city,
-                    restaurant.location?.state,
-                    restaurant.location?.country,
-                  ].filter(Boolean).join(', ')}
+                  {[restaurant.location?.address, restaurant.location?.city, restaurant.location?.state, restaurant.location?.country].filter(Boolean).join(', ')}
                 </Text>
-                <Ionicons
-                  name="open-outline"
-                  size={14}
-                  color={COLORS.primary}
-                />
+                <Ionicons name="open-outline" size={14} color={COLORS.primary} />
               </TouchableOpacity>
             </View>
 
-            {/* Contact */}
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>📞 Contact</Text>
-
               {!!restaurant.contact?.phone && (
-                <TouchableOpacity
-                  style={styles.infoRow}
-                  onPress={handleCall}
-                  activeOpacity={0.7}
-                >
+                <TouchableOpacity style={styles.infoRow} onPress={handleCall} activeOpacity={0.7}>
                   <Ionicons name="call-outline" size={16} color={COLORS.primary} />
                   <Text style={styles.infoLink}>{restaurant.contact.phone}</Text>
-                  <View style={styles.infoCTA}>
-                    <Text style={styles.infoCTAText}>Tap to call</Text>
-                  </View>
+                  <View style={styles.infoCTA}><Text style={styles.infoCTAText}>Tap to call</Text></View>
                 </TouchableOpacity>
               )}
-
               {!!restaurant.contact?.whatsapp && (
-                <TouchableOpacity
-                  style={styles.infoRow}
-                  onPress={handleWhatsApp}
-                  activeOpacity={0.7}
-                >
+                <TouchableOpacity style={styles.infoRow} onPress={handleWhatsApp} activeOpacity={0.7}>
                   <Ionicons name="logo-whatsapp" size={16} color={COLORS.success} />
                   <Text style={styles.infoLink}>{restaurant.contact.whatsapp}</Text>
-                  <View style={[
-                    styles.infoCTA,
-                    { backgroundColor: COLORS.success + '20' },
-                  ]}>
-                    <Text style={[styles.infoCTAText, { color: COLORS.success }]}>
-                      WhatsApp
-                    </Text>
+                  <View style={[styles.infoCTA, { backgroundColor: COLORS.success + '20' }]}>
+                    <Text style={[styles.infoCTAText, { color: COLORS.success }]}>WhatsApp</Text>
                   </View>
                 </TouchableOpacity>
               )}
-
               {!!restaurant.contact?.email && (
                 <View style={styles.infoRow}>
                   <Ionicons name="mail-outline" size={16} color={COLORS.primary} />
                   <Text style={styles.infoText}>{restaurant.contact.email}</Text>
                 </View>
               )}
-
               {!!restaurant.contact?.website && (
-                <TouchableOpacity
-                  style={styles.infoRow}
-                  onPress={handleWebsite}
-                  activeOpacity={0.7}
-                >
+                <TouchableOpacity style={styles.infoRow} onPress={handleWebsite} activeOpacity={0.7}>
                   <Ionicons name="globe-outline" size={16} color={INFO_COLOR} />
-                  <Text style={[styles.infoLink, { color: INFO_COLOR }]}>
-                    {restaurant.contact.website}
-                  </Text>
+                  <Text style={[styles.infoLink, { color: INFO_COLOR }]}>{restaurant.contact.website}</Text>
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* Services */}
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>🛎️ Services</Text>
               {[
-                { key: 'hasDineIn',   label: '🪑 Dine In available'  },
-                { key: 'hasTakeout',  label: '🥡 Takeout available'  },
+                { key: 'hasDineIn', label: '🪑 Dine In available' },
+                { key: 'hasTakeout', label: '🥡 Takeout available' },
                 { key: 'hasDelivery', label: '🛵 Delivery available' },
               ].map(s => restaurant[s.key] && (
                 <View key={s.key} style={styles.infoRow}>
@@ -1035,53 +775,40 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               ))}
             </View>
 
-            {/* Cuisine */}
             {restaurant.cuisineTypes?.length > 0 && (
               <View style={styles.infoSection}>
                 <Text style={styles.infoSectionTitle}>🍴 Cuisine</Text>
                 <View style={styles.tagsRow}>
                   {restaurant.cuisineTypes.map((type, i) => (
                     <View key={i} style={styles.tag}>
-                      <Text style={styles.tagText}>
-                        {type.charAt(0).toUpperCase() + type.slice(1)}
-                      </Text>
+                      <Text style={styles.tagText}>{type.charAt(0).toUpperCase() + type.slice(1)}</Text>
                     </View>
                   ))}
                 </View>
               </View>
             )}
 
-            {/* Price Range */}
             <View style={styles.infoSection}>
               <Text style={styles.infoSectionTitle}>💰 Price Range</Text>
               <Text style={styles.infoText}>
-                {restaurant.priceRange || '$$'} —{' '}
-                {PRICE_LABELS[restaurant.priceRange] || 'Moderate'}
+                {restaurant.priceRange || '$$'} — {PRICE_LABELS[restaurant.priceRange] || 'Moderate'}
               </Text>
             </View>
 
-            {/* Popularity */}
-            {(restaurant.analytics?.totalViews > 0 ||
-              restaurant.totalFavorites > 0) && (
+            {(restaurant.analytics?.totalViews > 0 || restaurant.totalFavorites > 0) && (
               <View style={styles.infoSection}>
                 <Text style={styles.infoSectionTitle}>📊 Popularity</Text>
                 <View style={styles.popularityRow}>
                   <View style={styles.popularityStat}>
-                    <Text style={styles.popularityValue}>
-                      {restaurant.analytics?.totalViews || 0}
-                    </Text>
+                    <Text style={styles.popularityValue}>{restaurant.analytics?.totalViews || 0}</Text>
                     <Text style={styles.popularityLabel}>Views</Text>
                   </View>
                   <View style={styles.popularityStat}>
-                    <Text style={styles.popularityValue}>
-                      {restaurant.totalFavorites || 0}
-                    </Text>
+                    <Text style={styles.popularityValue}>{restaurant.totalFavorites || 0}</Text>
                     <Text style={styles.popularityLabel}>Favorites</Text>
                   </View>
                   <View style={styles.popularityStat}>
-                    <Text style={styles.popularityValue}>
-                      {restaurant.totalReviews || 0}
-                    </Text>
+                    <Text style={styles.popularityValue}>{restaurant.totalReviews || 0}</Text>
                     <Text style={styles.popularityLabel}>Reviews</Text>
                   </View>
                 </View>
@@ -1092,82 +819,43 @@ export default function RestaurantDetailScreen({ route, navigation }) {
       </ScrollView>
 
       {/* ── Review Modal ─────────────────── */}
-      <Modal
-        visible={showReviewModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowReviewModal(false)}
-      >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
+      <Modal visible={showReviewModal} transparent animationType="slide"
+        onRequestClose={() => setShowReviewModal(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowReviewModal(false)}
-          >
-            <TouchableOpacity
-              activeOpacity={1}
-              style={[
-                styles.reviewModal,
-                { paddingBottom: insets.bottom + SIZES.lg },
-              ]}
-            >
-              {/* Drag handle */}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1}
+            onPress={() => setShowReviewModal(false)}>
+            <TouchableOpacity activeOpacity={1}
+              style={[styles.reviewModal, { paddingBottom: insets.bottom + SIZES.lg }]}>
               <View style={styles.modalHandle} />
-
               <Text style={styles.reviewModalTitle}>
                 {editingReview ? '✏️ Edit Review' : '⭐ Write a Review'}
               </Text>
-              <Text style={styles.reviewModalSubtitle}>
-                {restaurant.name}
-              </Text>
+              <Text style={styles.reviewModalSubtitle}>{restaurant.name}</Text>
 
-              {/* Star Rating */}
               <View style={styles.starPickerContainer}>
                 <Text style={styles.starPickerLabel}>Your Rating</Text>
-                <StarRating
-                  rating={reviewRating}
-                  size={40}
-                  onRate={setReviewRating}
-                />
-                <Text style={styles.ratingLabel}>
-                  {RATING_LABELS[reviewRating] || ''}
-                </Text>
+                <StarRating rating={reviewRating} size={40} onRate={setReviewRating} />
+                <Text style={styles.ratingLabel}>{RATING_LABELS[reviewRating] || ''}</Text>
               </View>
 
-              {/* Comment */}
               <View style={styles.reviewInputWrapper}>
                 <TextInput
                   style={styles.reviewInput}
                   placeholder="Share your experience... (optional)"
                   placeholderTextColor={COLORS.textMuted}
                   value={reviewComment}
-                  onChangeText={v =>
-                    setReviewComment(v.slice(0, MAX_REVIEW_COMMENT))
-                  }
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
+                  onChangeText={v => setReviewComment(v.slice(0, MAX_REVIEW_COMMENT))}
+                  multiline numberOfLines={4} textAlignVertical="top"
                   maxLength={MAX_REVIEW_COMMENT}
                 />
-                <Text style={styles.charCount}>
-                  {reviewComment.length}/{MAX_REVIEW_COMMENT}
-                </Text>
+                <Text style={styles.charCount}>{reviewComment.length}/{MAX_REVIEW_COMMENT}</Text>
               </View>
 
-              {/* Submit */}
               <TouchableOpacity
-                style={[
-                  styles.submitReviewBtn,
-                  reviewLoading && { opacity: 0.7 },
-                ]}
-                onPress={handleSubmitReview}
-                disabled={reviewLoading}
-                activeOpacity={0.8}
-              >
+                style={[styles.submitReviewBtn, reviewLoading && { opacity: 0.7 }]}
+                onPress={handleSubmitReview} disabled={reviewLoading} activeOpacity={0.8}>
                 {reviewLoading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
@@ -1177,10 +865,7 @@ export default function RestaurantDetailScreen({ route, navigation }) {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.cancelReviewBtn}
-                onPress={() => setShowReviewModal(false)}
-              >
+              <TouchableOpacity style={styles.cancelReviewBtn} onPress={() => setShowReviewModal(false)}>
                 <Text style={styles.cancelReviewBtnText}>Cancel</Text>
               </TouchableOpacity>
             </TouchableOpacity>
@@ -1198,446 +883,191 @@ const styles = StyleSheet.create({
   outerContainer: { flex: 1, backgroundColor: COLORS.background },
   container:      { flex: 1 },
 
-  // ── States ────────────────────────────────
   centered: {
-    flex:            1,
-    justifyContent:  'center',
-    alignItems:      'center',
-    padding:         SIZES.xl,
-    gap:             SIZES.sm,
-    backgroundColor: COLORS.background,
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    padding: SIZES.xl, gap: SIZES.sm, backgroundColor: COLORS.background,
   },
   loadingText: { fontSize: FONTS.md, color: COLORS.textMuted, marginTop: SIZES.md },
   errorTitle:  { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text },
   errorText:   { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center' },
-  backBtn: {
-    backgroundColor:   COLORS.primary,
-    paddingHorizontal: SIZES.xl,
-    paddingVertical:   SIZES.md,
-    borderRadius:      RADIUS.lg,
-    marginTop:         SIZES.md,
+  goBackBtn: {
+    backgroundColor: COLORS.primary, paddingHorizontal: SIZES.xl,
+    paddingVertical: SIZES.md, borderRadius: RADIUS.lg, marginTop: SIZES.md,
   },
-  backBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
+  goBackBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
 
-  // ── Cover ─────────────────────────────────
-  coverContainer: {
-  height:   260,
-  position: 'relative',
-  overflow: 'visible',
-},
+  coverContainer: { height: 260, position: 'relative' },
   coverImage:     { width: '100%', height: '100%' },
   coverOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  coverBtn: {
-	backgroundColor: 'rgba(0,0,0,0.5)',
-	padding:         10,
-	borderRadius:    20,
-	width:           42,
-	height:          42,
-	justifyContent:  'center',
-	alignItems:      'center',
-	},
-  coverBtnsRight: {
-	position:      'absolute',
-	right:         16,
-	flexDirection: 'row',
-	gap:           10,
-	zIndex:        10,
-	},
   statusBadge: {
-    position:          'absolute',
-    bottom:            SIZES.md,
-    left:              SIZES.md,
-    flexDirection:     'row',
-    alignItems:        'center',
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.xs,
-    borderRadius:      RADIUS.round,
-    gap:               SIZES.xs,
+    position: 'absolute', bottom: SIZES.md, left: SIZES.md,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: SIZES.md, paddingVertical: SIZES.xs,
+    borderRadius: RADIUS.round, gap: SIZES.xs,
   },
   statusDot: {
-    width:           8,
-    height:          8,
-    borderRadius:    4,
+    width: 8, height: 8, borderRadius: 4,
     backgroundColor: 'rgba(255,255,255,0.8)',
   },
   statusText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.sm },
 
-  // ── Info Card ─────────────────────────────
-  infoCard: {
-    backgroundColor: COLORS.surface,
-    padding:         SIZES.lg,
-    ...SHADOW,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    gap:           SIZES.md,
-    marginBottom:  SIZES.sm,
-    alignItems:    'center',
-  },
-  logo: {
-    width:        64,
-    height:       64,
-    borderRadius: RADIUS.md,
-    borderWidth:  1,
-    borderColor:  COLORS.border,
-  },
+  infoCard:     { backgroundColor: COLORS.surface, padding: SIZES.lg, ...SHADOW },
+  nameRow:      { flexDirection: 'row', gap: SIZES.md, marginBottom: SIZES.sm, alignItems: 'center' },
+  logo:         { width: 64, height: 64, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border },
   logoFallback: {
-    width:           64,
-    height:          64,
-    borderRadius:    RADIUS.md,
-    backgroundColor: COLORS.border,
-    justifyContent:  'center',
-    alignItems:      'center',
+    width: 64, height: 64, borderRadius: RADIUS.md,
+    backgroundColor: COLORS.border, justifyContent: 'center', alignItems: 'center',
   },
-  restaurantName: {
-    fontSize:   FONTS.xxl,
-    fontWeight: 'bold',
-    color:      COLORS.text,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           4,
-    marginTop:     4,
-    flexWrap:      'wrap',
-  },
+  restaurantName: { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text },
+  metaRow:     { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' },
   rating:      { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
   reviewCount: { fontSize: FONTS.sm, color: COLORS.textMuted },
   dot:         { color: COLORS.textMuted },
   priceRange:  { fontSize: FONTS.md, color: COLORS.primary, fontWeight: '600' },
-  locationLine: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           4,
-    marginTop:     4,
-  },
+  locationLine: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   locationText: { fontSize: FONTS.xs, color: COLORS.textMuted },
-  description: {
-    fontSize:     FONTS.md,
-    color:        COLORS.textLight,
-    lineHeight:   22,
-    marginBottom: SIZES.sm,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap:      'wrap',
-    gap:           SIZES.xs,
-    marginBottom:  SIZES.sm,
-  },
-  tag: {
-    backgroundColor:   COLORS.primary + '15',
-    paddingHorizontal: SIZES.sm,
-    paddingVertical:   4,
-    borderRadius:      RADIUS.round,
-  },
-  tagText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '500' },
+  description:  { fontSize: FONTS.md, color: COLORS.textLight, lineHeight: 22, marginBottom: SIZES.sm },
+  tagsRow:      { flexDirection: 'row', flexWrap: 'wrap', gap: SIZES.xs, marginBottom: SIZES.sm },
+  tag:          { backgroundColor: COLORS.primary + '15', paddingHorizontal: SIZES.sm, paddingVertical: 4, borderRadius: RADIUS.round },
+  tagText:      { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '500' },
   actionButtons: {
-    flexDirection:     'row',
-    justifyContent:    'space-around',
-    paddingVertical:   SIZES.md,
-    borderTopWidth:    1,
-    borderBottomWidth: 1,
-    borderColor:       COLORS.border,
-    marginBottom:      SIZES.sm,
+    flexDirection: 'row', justifyContent: 'space-around',
+    paddingVertical: SIZES.md, borderTopWidth: 1, borderBottomWidth: 1,
+    borderColor: COLORS.border, marginBottom: SIZES.sm,
   },
   actionBtn:     { alignItems: 'center', gap: 6 },
-  actionBtnIcon: {
-    width:          44,
-    height:         44,
-    borderRadius:   22,
-    justifyContent: 'center',
-    alignItems:     'center',
-  },
-  actionText: { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '500' },
-  servicesRow: {
-    flexDirection: 'row',
-    gap:           SIZES.sm,
-    flexWrap:      'wrap',
-    marginTop:     SIZES.xs,
-  },
+  actionBtnIcon: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  actionText:    { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '500' },
+  servicesRow:   { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap', marginTop: SIZES.xs },
   serviceBadge: {
-    backgroundColor:   COLORS.primary + '12',
-    paddingHorizontal: SIZES.sm,
-    paddingVertical:   4,
-    borderRadius:      RADIUS.round,
-    borderWidth:       1,
-    borderColor:       COLORS.primary + '25',
+    backgroundColor: COLORS.primary + '12', paddingHorizontal: SIZES.sm,
+    paddingVertical: 4, borderRadius: RADIUS.round,
+    borderWidth: 1, borderColor: COLORS.primary + '25',
   },
-  serviceBadgeText: {
-    fontSize:   FONTS.sm,
-    color:      COLORS.primary,
-    fontWeight: '500',
-  },
+  serviceBadgeText: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '500' },
   announcement: {
-    flexDirection:   'row',
-    alignItems:      'flex-start',
-    gap:             SIZES.sm,
-    backgroundColor: WARNING_COLOR + '15',
-    padding:         SIZES.md,
-    borderRadius:    RADIUS.md,
-    marginTop:       SIZES.md,
-    borderLeftWidth: 4,
-    borderLeftColor: WARNING_COLOR,
+    flexDirection: 'row', alignItems: 'flex-start', gap: SIZES.sm,
+    backgroundColor: WARNING_COLOR + '15', padding: SIZES.md,
+    borderRadius: RADIUS.md, marginTop: SIZES.md,
+    borderLeftWidth: 4, borderLeftColor: WARNING_COLOR,
   },
-  announcementText: {
-    fontSize:   FONTS.md,
-    color:      COLORS.text,
-    lineHeight: 20,
-    flex:       1,
-  },
+  announcementText: { fontSize: FONTS.md, color: COLORS.text, lineHeight: 20, flex: 1 },
 
-  // ── Tab Bar ───────────────────────────────
   tabBar: {
-    flexDirection:     'row',
-    backgroundColor:   COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    flexDirection: 'row', backgroundColor: COLORS.surface,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   tab: {
-    flex:              1,
-    paddingVertical:   SIZES.md,
-    alignItems:        'center',
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+    flex: 1, paddingVertical: SIZES.md, alignItems: 'center',
+    borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabActive:     { borderBottomColor: COLORS.primary },
   tabText:       { fontSize: FONTS.md, color: COLORS.textMuted, fontWeight: '500' },
   tabTextActive: { color: COLORS.primary, fontWeight: '700' },
 
-  // ── Menu Tab ──────────────────────────────
-  categoryTabs:   { marginVertical: SIZES.md },
+  categoryTabs: { marginVertical: SIZES.md },
   categoryTab: {
-    paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
-    borderRadius:      RADIUS.round,
-    backgroundColor:   COLORS.surface,
-    marginRight:       SIZES.sm,
-    borderWidth:       1,
-    borderColor:       COLORS.border,
+    paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
+    borderRadius: RADIUS.round, backgroundColor: COLORS.surface,
+    marginRight: SIZES.sm, borderWidth: 1, borderColor: COLORS.border,
   },
   categoryTabActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  categoryTabText:       { fontSize: FONTS.sm, color: COLORS.text,    fontWeight: '500' },
+  categoryTabText:       { fontSize: FONTS.sm, color: COLORS.text, fontWeight: '500' },
   categoryTabTextActive: { color: '#FFFFFF', fontWeight: '600' },
   menuSection:           { paddingHorizontal: SIZES.md },
   categoryTitle: {
-    fontSize:     FONTS.lg,
-    fontWeight:   'bold',
-    color:        COLORS.text,
-    marginTop:    SIZES.lg,
-    marginBottom: SIZES.sm,
+    fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text,
+    marginTop: SIZES.lg, marginBottom: SIZES.sm,
   },
-  categoryCount: {
-    fontSize:   FONTS.md,
-    fontWeight: 'normal',
-    color:      COLORS.textMuted,
-  },
+  categoryCount: { fontSize: FONTS.md, fontWeight: 'normal', color: COLORS.textMuted },
 
-  // ── Reviews Tab ───────────────────────────
   reviewsTab:     { padding: SIZES.md },
   ratingsSummary: {
-    alignItems:      'center',
-    backgroundColor: COLORS.surface,
-    padding:         SIZES.lg,
-    borderRadius:    RADIUS.xl,
-    marginBottom:    SIZES.md,
-    gap:             SIZES.sm,
-    ...SHADOW,
+    alignItems: 'center', backgroundColor: COLORS.surface,
+    padding: SIZES.lg, borderRadius: RADIUS.xl,
+    marginBottom: SIZES.md, gap: SIZES.sm, ...SHADOW,
   },
   avgRatingNumber:  { fontSize: 56, fontWeight: 'bold', color: COLORS.text },
   totalReviewsText: { fontSize: FONTS.md, color: COLORS.textMuted },
   ratingBreakdown:  { width: '100%', gap: SIZES.xs, marginTop: SIZES.sm },
-  breakdownRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           SIZES.sm,
-  },
-  breakdownStar:  { fontSize: FONTS.sm, width: 32 },
+  breakdownRow:     { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
+  breakdownStar:    { fontSize: FONTS.sm, width: 32 },
   breakdownBarBg: {
-    flex:            1,
-    height:          8,
-    backgroundColor: COLORS.border,
-    borderRadius:    4,
-    overflow:        'hidden',
+    flex: 1, height: 8, backgroundColor: COLORS.border,
+    borderRadius: 4, overflow: 'hidden',
   },
-  breakdownBar: {
-    height:          '100%',
-    backgroundColor: WARNING_COLOR,
-    borderRadius:    4,
-  },
-  breakdownCount: {
-    fontSize:  FONTS.sm,
-    color:     COLORS.textMuted,
-    width:     20,
-    textAlign: 'right',
-  },
+  breakdownBar:   { height: '100%', backgroundColor: WARNING_COLOR, borderRadius: 4 },
+  breakdownCount: { fontSize: FONTS.sm, color: COLORS.textMuted, width: 20, textAlign: 'right' },
   myReviewSection: { marginBottom: SIZES.md },
   myReviewLabel: {
-    fontSize:      FONTS.xs,
-    fontWeight:    '700',
-    color:         COLORS.textMuted,
-    letterSpacing: 1.2,
-    marginBottom:  SIZES.sm,
+    fontSize: FONTS.xs, fontWeight: '700', color: COLORS.textMuted,
+    letterSpacing: 1.2, marginBottom: SIZES.sm,
   },
   writeReviewBtn: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'center',
-    backgroundColor: COLORS.primary,
-    paddingVertical: SIZES.md,
-    borderRadius:    RADIUS.lg,
-    gap:             SIZES.sm,
-    marginBottom:    SIZES.lg,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.primary, paddingVertical: SIZES.md,
+    borderRadius: RADIUS.lg, gap: SIZES.sm, marginBottom: SIZES.lg,
   },
   writeReviewText: { color: '#FFFFFF', fontSize: FONTS.md, fontWeight: 'bold' },
   loginPrompt: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'center',
-    gap:             SIZES.sm,
-    backgroundColor: COLORS.primary + '10',
-    padding:         SIZES.md,
-    borderRadius:    RADIUS.lg,
-    marginBottom:    SIZES.lg,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: SIZES.sm, backgroundColor: COLORS.primary + '10',
+    padding: SIZES.md, borderRadius: RADIUS.lg, marginBottom: SIZES.lg,
   },
-  loginPromptText: {
-    color:      COLORS.primary,
-    fontWeight: '600',
-    fontSize:   FONTS.md,
-  },
+  loginPromptText: { color: COLORS.primary, fontWeight: '600', fontSize: FONTS.md },
 
-  // ── Info Tab ──────────────────────────────
   infoTab:     { padding: SIZES.md, gap: SIZES.md },
   infoSection: {
-    backgroundColor: COLORS.surface,
-    padding:         SIZES.md,
-    borderRadius:    RADIUS.lg,
-    gap:             SIZES.sm,
-    ...SHADOW,
+    backgroundColor: COLORS.surface, padding: SIZES.md,
+    borderRadius: RADIUS.lg, gap: SIZES.sm, ...SHADOW,
   },
   infoSectionTitle: {
-    fontSize:     FONTS.lg,
-    fontWeight:   'bold',
-    color:        COLORS.text,
-    marginBottom: SIZES.xs,
+    fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text, marginBottom: SIZES.xs,
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           SIZES.sm,
-  },
-  infoText: {
-    fontSize:   FONTS.md,
-    color:      COLORS.textLight,
-    lineHeight: 22,
-    flex:       1,
-  },
-  infoLink: {
-    fontSize:           FONTS.md,
-    color:              COLORS.primary,
-    textDecorationLine: 'underline',
-    flex:               1,
-  },
+  infoRow:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
+  infoText: { fontSize: FONTS.md, color: COLORS.textLight, lineHeight: 22, flex: 1 },
+  infoLink: { fontSize: FONTS.md, color: COLORS.primary, textDecorationLine: 'underline', flex: 1 },
   infoCTA: {
-    backgroundColor:   COLORS.primary + '15',
-    paddingHorizontal: SIZES.sm,
-    paddingVertical:   3,
-    borderRadius:      RADIUS.round,
+    backgroundColor: COLORS.primary + '15', paddingHorizontal: SIZES.sm,
+    paddingVertical: 3, borderRadius: RADIUS.round,
   },
-  infoCTAText: {
-    fontSize:   FONTS.xs,
-    color:      COLORS.primary,
-    fontWeight: '600',
-  },
-  popularityRow:  { flexDirection: 'row', justifyContent: 'space-around', marginTop: SIZES.sm },
-  popularityStat: { alignItems: 'center' },
-  popularityValue:{ fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.primary },
-  popularityLabel:{ fontSize: FONTS.xs, color: COLORS.textMuted },
+  infoCTAText:     { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '600' },
+  popularityRow:   { flexDirection: 'row', justifyContent: 'space-around', marginTop: SIZES.sm },
+  popularityStat:  { alignItems: 'center' },
+  popularityValue: { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.primary },
+  popularityLabel: { fontSize: FONTS.xs, color: COLORS.textMuted },
 
-  // ── Empty State ───────────────────────────
-  emptyState: {
-    alignItems:     'center',
-    paddingVertical: SIZES.xxl,
-    gap:            SIZES.sm,
-  },
+  emptyState:   { alignItems: 'center', paddingVertical: SIZES.xxl, gap: SIZES.sm },
   emptyTitle:   { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.text },
   emptySubtext: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center' },
 
-  // ── Review Modal ──────────────────────────
-  modalOverlay: {
-    flex:            1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent:  'flex-end',
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   reviewModal: {
-    backgroundColor:      COLORS.surface,
-    borderTopLeftRadius:  28,
-    borderTopRightRadius: 28,
-    padding:              SIZES.lg,
-    gap:                  SIZES.md,
+    backgroundColor: COLORS.surface, borderTopLeftRadius: 28,
+    borderTopRightRadius: 28, padding: SIZES.lg, gap: SIZES.md,
   },
   modalHandle: {
-    width:           40,
-    height:          4,
-    backgroundColor: COLORS.border,
-    borderRadius:    2,
-    alignSelf:       'center',
-    marginBottom:    SIZES.xs,
+    width: 40, height: 4, backgroundColor: COLORS.border,
+    borderRadius: 2, alignSelf: 'center', marginBottom: SIZES.xs,
   },
-  reviewModalTitle: {
-    fontSize:   FONTS.xxl,
-    fontWeight: 'bold',
-    color:      COLORS.text,
-    textAlign:  'center',
-  },
-  reviewModalSubtitle: {
-    fontSize:  FONTS.md,
-    color:     COLORS.textMuted,
-    textAlign: 'center',
-    marginTop: -SIZES.sm,
-  },
-  starPickerContainer: {
-    alignItems:     'center',
-    gap:            SIZES.sm,
-    paddingVertical: SIZES.md,
-  },
-  starPickerLabel: { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
-  ratingLabel: {
-    fontSize:   FONTS.lg,
-    fontWeight: 'bold',
-    color:      COLORS.primary,
-    height:     28,
-  },
-  reviewInputWrapper: { gap: 4 },
+  reviewModalTitle:    { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' },
+  reviewModalSubtitle: { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center', marginTop: -SIZES.sm },
+  starPickerContainer: { alignItems: 'center', gap: SIZES.sm, paddingVertical: SIZES.md },
+  starPickerLabel:     { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text },
+  ratingLabel:         { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.primary, height: 28 },
+  reviewInputWrapper:  { gap: 4 },
   reviewInput: {
-    backgroundColor:   COLORS.background,
-    borderRadius:      RADIUS.lg,
-    padding:           SIZES.md,
-    fontSize:          FONTS.md,
-    color:             COLORS.text,
-    height:            100,
-    textAlignVertical: 'top',
-    borderWidth:       1,
-    borderColor:       COLORS.border,
+    backgroundColor: COLORS.background, borderRadius: RADIUS.lg,
+    padding: SIZES.md, fontSize: FONTS.md, color: COLORS.text,
+    height: 100, textAlignVertical: 'top',
+    borderWidth: 1, borderColor: COLORS.border,
   },
-  charCount: {
-    fontSize:  FONTS.xs,
-    color:     COLORS.textMuted,
-    textAlign: 'right',
-  },
-  submitReviewBtn: {
-    backgroundColor: COLORS.primary,
-    padding:         SIZES.md,
-    borderRadius:    RADIUS.lg,
-    alignItems:      'center',
-  },
-  submitReviewBtnText: {
-    color:      '#FFFFFF',
-    fontSize:   FONTS.lg,
-    fontWeight: 'bold',
-  },
+  charCount:          { fontSize: FONTS.xs, color: COLORS.textMuted, textAlign: 'right' },
+  submitReviewBtn:    { backgroundColor: COLORS.primary, padding: SIZES.md, borderRadius: RADIUS.lg, alignItems: 'center' },
+  submitReviewBtnText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
   cancelReviewBtn:     { alignItems: 'center', paddingVertical: SIZES.sm },
   cancelReviewBtnText: { color: COLORS.textMuted, fontSize: FONTS.md },
 });
