@@ -333,7 +333,9 @@ export default function FavoriteDishesScreen({ navigation }) {
                 returnKeyType="search"
               />
               {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')}>
+                <TouchableOpacity onPress={() => setSearch('')}
+				 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+				>
                   <Ionicons
                     name="close-circle"
                     size={18}
@@ -616,13 +618,14 @@ const styles = StyleSheet.create({
     top:             SIZES.sm,
     right:           SIZES.sm,
     backgroundColor: '#FFFFFF',
-    width:           32,
-    height:          32,
-    borderRadius:    16,
+    width:           36,
+    height:          36,
+    borderRadius:    18,
     justifyContent:  'center',
     alignItems:      'center',
-    ...SHADOW,
-    elevation:       4,
+    elevation:       10,
+	zIndex:          10,
+	...SHADOW,
   },
 
   // ── Separator ─────────────────────────────
