@@ -26,70 +26,89 @@ import { CLOUDINARY_CONFIG } from '../config/cloudinary';
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 // ─────────────────────────────────────────────
-// INTERNAL UPLOAD HELPERS
+// INTERNAL UPLOAD HELPER
+// ✅ Uses XMLHttpRequest instead of fetch
+//    fetch + FormData causes "unsupported FormDataPart
+//    implementation" error in React Native
 // ─────────────────────────────────────────────
+const uploadRestaurantImage = (imageUri, restaurantId, type) => {
+  return new Promise(async (resolve) => {
+    try {
+      // ── Step 1: Compress ──────────────────
+      const isLogo     = type === 'logo';
+      const compressed = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: isLogo ? 400 : 1200 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
 
-/**
- * Upload a restaurant image to Cloudinary
- * @param {string} imageUri    - local image URI
- * @param {string} restaurantId
- * @param {string} type        - 'logo' | 'cover'
- * @returns {Promise<{success, url, publicId}>}
- */
-const uploadRestaurantImage = async (imageUri, restaurantId, type) => {
-  try {
-    // ── Step 1: Compress ──────────────────────
-    const isLogo = type === 'logo';
-    const compressed = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: isLogo ? 400 : 1200 } }],
-      {
-        compress: 0.8,
-        format:   ImageManipulator.SaveFormat.JPEG,
-      }
-    );
+      // ── Step 2: Build FormData ────────────
+      // ✅ React Native accepts plain objects in FormData
+      //    as long as they have uri, type, name
+      const formData = new FormData();
+      formData.append('file', {
+        uri:  compressed.uri,
+        type: 'image/jpeg',
+        name: `${type}_${restaurantId}_${Date.now()}.jpg`,
+      });
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder',        folders.restaurants);
+      formData.append('public_id',     `${type}_${restaurantId}`);
 
-    // ── Step 2: Build FormData ────────────────
-    const formData = new FormData();
-    formData.append('file', {
-      uri:  compressed.uri,
-      type: 'image/jpeg',
-      name: `restaurant_${type}_${restaurantId}_${Date.now()}.jpg`,
-    });
-    formData.append('upload_preset', uploadPreset);
-    // ✅ Goes to whats_cooking/restaurants/
-    formData.append('folder', folders.restaurants);
-    // ✅ Consistent public_id for easy management
-    formData.append('public_id', `${type}_${restaurantId}`);
+      // ── Step 3: Upload via XHR ────────────
+      // ✅ XMLHttpRequest handles multipart/form-data
+      //    correctly in React Native — fetch does not
+      const xhr = new XMLHttpRequest();
 
-    // ── Step 3: Upload ────────────────────────
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method:  'POST',
-        body:    formData,
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    );
+      xhr.open(
+        'POST',
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+      );
 
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || 'Cloudinary upload failed');
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const data = JSON.parse(xhr.responseText);
+          console.log(`✅ ${type} uploaded:`, data.secure_url);
+          resolve({
+            success:  true,
+            url:      data.secure_url,
+            publicId: data.public_id,
+            width:    data.width,
+            height:   data.height,
+          });
+        } else {
+          let errMsg = 'Upload failed';
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            errMsg = errData.error?.message || errMsg;
+          } catch {}
+          console.error(`❌ ${type} upload failed:`, errMsg);
+          resolve({ success: false, error: errMsg });
+        }
+      };
+
+      xhr.onerror = () => {
+        console.error(`❌ ${type} upload network error`);
+        resolve({ success: false, error: 'Network error during upload' });
+      };
+
+      xhr.ontimeout = () => {
+        console.error(`❌ ${type} upload timed out`);
+        resolve({ success: false, error: 'Upload timed out' });
+      };
+
+      // ✅ 60 second timeout for large images
+      xhr.timeout = 60000;
+
+      // ✅ DO NOT set Content-Type header manually
+      //    XHR sets it automatically with the correct boundary
+      xhr.send(formData);
+
+    } catch (error) {
+      console.error(`❌ uploadRestaurantImage (${type}) error:`, error);
+      resolve({ success: false, error: error.message });
     }
-
-    const data = await response.json();
-
-    return {
-      success:  true,
-      url:      data.secure_url,
-      publicId: data.public_id,
-      width:    data.width,
-      height:   data.height,
-    };
-  } catch (error) {
-    console.error(`❌ uploadRestaurantImage (${type}) error:`, error);
-    return { success: false, error: error.message };
-  }
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -114,7 +133,7 @@ export const useRestaurants = () => {
           id: d.id,
           ...d.data(),
         }));
-        // ✅ Sort by rating in memory — no composite index needed
+        // ✅ Sort by rating client-side — no composite index needed
         data.sort((a, b) =>
           (b.averageRating || 0) - (a.averageRating || 0)
         );
@@ -149,44 +168,42 @@ export const useRestaurants = () => {
         return updateRestaurant(existingId, data, logoUri, coverUri);
       }
 
-      // ✅ Generate ID FIRST so we can use it in Cloudinary public_id
+      // ✅ Generate ID first so we can use it in Cloudinary public_id
       const newRef       = doc(collection(db, 'restaurants'));
       const restaurantId = newRef.id;
 
-      // ── Upload Logo ───────────────────────
-      let logoUrl           = '';
-      let logoPublicId      = '';
-      let coverUrl          = '';
-      let coverPublicId     = '';
+      let logoUrl       = '';
+      let logoPublicId  = '';
+      let coverUrl      = '';
+      let coverPublicId = '';
 
+      // ── Upload Logo ───────────────────────
       if (logoUri) {
-        console.log('⬆️ Uploading restaurant logo to Cloudinary...');
+        console.log('⬆️ Uploading logo...');
         const result = await uploadRestaurantImage(
           logoUri, restaurantId, 'logo'
         );
         if (result.success) {
           logoUrl      = result.url;
           logoPublicId = result.publicId;
-          console.log('✅ Logo uploaded:', result.url);
         } else {
-          console.error('❌ Logo upload failed:', result.error);
-          // Continue without logo — not a blocking error
+          // ✅ Non-blocking — continue without logo
+          console.warn('Logo upload failed, continuing without it');
         }
       }
 
       // ── Upload Cover ──────────────────────
       if (coverUri) {
-        console.log('⬆️ Uploading restaurant cover to Cloudinary...');
+        console.log('⬆️ Uploading cover...');
         const result = await uploadRestaurantImage(
           coverUri, restaurantId, 'cover'
         );
         if (result.success) {
           coverUrl      = result.url;
           coverPublicId = result.publicId;
-          console.log('✅ Cover uploaded:', result.url);
         } else {
-          console.error('❌ Cover upload failed:', result.error);
-          // Continue without cover — not a blocking error
+          // ✅ Non-blocking — continue without cover
+          console.warn('Cover upload failed, continuing without it');
         }
       }
 
@@ -196,20 +213,19 @@ export const useRestaurants = () => {
         id: restaurantId,
 
         // ✅ Cloudinary image fields
-        // Replaces: logoUrl, coverUrl, logoPath, coverPath
         logoUrl,
-        logoPublicId,           // for future management
+        logoPublicId,
         coverUrl,
-        coverPublicId,          // for future management
+        coverPublicId,
 
-        // ✅ Keep cloudinaryUrl aliases for consistency
+        // ✅ Aliases for consistency
         logoCloudinaryUrl:  logoUrl,
         coverCloudinaryUrl: coverUrl,
 
         // ✅ Default stats
-        averageRating:   0,
-        totalReviews:    0,
-        totalFavorites:  0,
+        averageRating:  0,
+        totalReviews:   0,
+        totalFavorites: 0,
 
         // ✅ Default status
         isActive:        true,
@@ -217,13 +233,25 @@ export const useRestaurants = () => {
         isVerified:      false,
         isApproved:      false,
 
-        // ✅ Default subscription
+        // ✅ Default subscription — 14 day free trial
         subscription: {
           plan:        'free_trial',
           status:      'active',
           trialEndsAt: new Date(
             Date.now() + 14 * 24 * 60 * 60 * 1000
           ).toISOString(),
+        },
+
+        analytics: {
+          totalViews:         0,
+          weeklyViews:        0,
+          monthlyViews:       0,
+          totalCalls:         0,
+          totalWhatsApp:      0,
+          totalDirections:    0,
+          totalWebsiteClicks: 0,
+          totalTimeSpent:     0,
+          totalSessions:      0,
         },
 
         createdAt: serverTimestamp(),
@@ -263,24 +291,27 @@ export const useRestaurants = () => {
 
       // ── Update Logo ───────────────────────
       if (newLogoUri) {
-        console.log('⬆️ Updating restaurant logo on Cloudinary...');
+        console.log('⬆️ Updating logo...');
         const result = await uploadRestaurantImage(
           newLogoUri, restaurantId, 'logo'
         );
         if (result.success) {
-          updates.logoUrl            = result.url;
-          updates.logoPublicId       = result.publicId;
-          updates.logoCloudinaryUrl  = result.url;
-          console.log('✅ Logo updated:', result.url);
+          updates.logoUrl           = result.url;
+          updates.logoPublicId      = result.publicId;
+          updates.logoCloudinaryUrl = result.url;
         } else {
-          // ✅ Keep existing logo — don't break the update
-          console.error('❌ Logo update failed:', result.error);
+          // ✅ Keep existing logo — don't fail the whole update
+          console.warn('Logo update failed:', result.error);
+          return {
+            success: false,
+            error:   `Logo update failed: ${result.error}`,
+          };
         }
       }
 
       // ── Update Cover ──────────────────────
       if (newCoverUri) {
-        console.log('⬆️ Updating restaurant cover on Cloudinary...');
+        console.log('⬆️ Updating cover...');
         const result = await uploadRestaurantImage(
           newCoverUri, restaurantId, 'cover'
         );
@@ -288,10 +319,13 @@ export const useRestaurants = () => {
           updates.coverUrl            = result.url;
           updates.coverPublicId       = result.publicId;
           updates.coverCloudinaryUrl  = result.url;
-          console.log('✅ Cover updated:', result.url);
         } else {
-          // ✅ Keep existing cover — don't break the update
-          console.error('❌ Cover update failed:', result.error);
+          // ✅ Keep existing cover — don't fail the whole update
+          console.warn('Cover update failed:', result.error);
+          return {
+            success: false,
+            error:   `Cover update failed: ${result.error}`,
+          };
         }
       }
 
@@ -329,13 +363,12 @@ export const useRestaurants = () => {
   // TOGGLE FAVORITE
   // ─────────────────────────────────────────
   const toggleFavorite = async (userId, restaurantId, isFavorited) => {
-    // ✅ Guard — guests cannot favorite
     if (!userId) {
-      return { success: false, error: 'Must be logged in to favorite' };
+      return { success: false, error: 'Must be logged in to favourite' };
     }
 
     try {
-      const userRef       = doc(db, 'users', userId);
+      const userRef       = doc(db, 'users',       userId);
       const restaurantRef = doc(db, 'restaurants', restaurantId);
 
       if (isFavorited) {
@@ -353,6 +386,7 @@ export const useRestaurants = () => {
           totalFavorites: increment(1),
         });
       }
+
       return { success: true };
     } catch (error) {
       console.error('❌ toggleFavorite error:', error);
@@ -364,7 +398,6 @@ export const useRestaurants = () => {
   // ADD REVIEW
   // ─────────────────────────────────────────
   const addReview = async (restaurantId, userId, rating, comment) => {
-    // ✅ Guard — guests cannot review
     if (!userId) {
       return { success: false, error: 'Must be logged in to review' };
     }
