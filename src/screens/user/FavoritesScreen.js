@@ -305,7 +305,9 @@ export default function FavoritesScreen({ navigation }) {
           returnKeyType="search"
         />
         {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
+          <TouchableOpacity onPress={() => setSearch('')}
+		  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+		  >
             <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
           </TouchableOpacity>
         )}
