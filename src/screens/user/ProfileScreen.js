@@ -50,7 +50,6 @@ const uploadAvatarToCloudinary = (imageUri, userId) => {
       });
       formData.append('upload_preset', uploadPreset);
       formData.append('folder',        folders.profiles);
-      // ✅ Same public_id overwrites old avatar automatically
       formData.append('public_id',     `avatar_${userId}`);
 
       // ✅ XMLHttpRequest — avoids FormDataPart error
@@ -74,8 +73,8 @@ const uploadAvatarToCloudinary = (imageUri, userId) => {
         }
       };
 
-      xhr.onerror   = () => resolve({ success: false, error: 'Network error'     });
-      xhr.ontimeout = () => resolve({ success: false, error: 'Upload timed out'  });
+      xhr.onerror   = () => resolve({ success: false, error: 'Network error'    });
+      xhr.ontimeout = () => resolve({ success: false, error: 'Upload timed out' });
       xhr.timeout   = 60000;
 
       // ✅ DO NOT set Content-Type — XHR sets it automatically
@@ -175,7 +174,6 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
   const plan    = PLANS[planId] || PLANS.free_trial;
   const exp     = restaurant?.subscription?.expiresAt;
 
-  // ✅ Handle both Firestore Timestamp and ISO string
   const expDate  = exp?.toDate ? exp.toDate() : exp ? new Date(exp) : null;
   const daysLeft = expDate
     ? Math.ceil((expDate - new Date()) / (1000 * 60 * 60 * 24))
@@ -256,7 +254,6 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
         </View>
       </TouchableOpacity>
 
-      {/* Payment Pending Note */}
       {subStatus === 'awaiting_confirmation' && (
         <View style={styles.pendingNote}>
           <Ionicons name="time-outline" size={16} color={WARNING_COLOR} />
@@ -292,7 +289,6 @@ export default function ProfileScreen({ navigation }) {
   const favDishesCount        = userProfile?.favoriteDishes?.length       || 0;
   const dietaryPrefsCount     = userProfile?.dietaryPreferences?.length   || 0;
 
-  // ── App version ───────────────────────────
   const appVersion = Application.nativeApplicationVersion || '1.0.0';
 
   // ─────────────────────────────────────────
@@ -335,7 +331,6 @@ export default function ProfileScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // AVATAR UPLOAD
-  // ✅ XMLHttpRequest — fixes FormDataPart error
   // ─────────────────────────────────────────
   const handleAvatarPress = useCallback(() => {
     Alert.alert(
@@ -384,7 +379,6 @@ export default function ProfileScreen({ navigation }) {
       const imageUri = result.assets[0].uri;
       setAvatarUploading(true);
 
-      // ✅ Upload via XMLHttpRequest
       const uploadResult = await uploadAvatarToCloudinary(imageUri, user.uid);
 
       if (!uploadResult.success) {
@@ -392,7 +386,7 @@ export default function ProfileScreen({ navigation }) {
         return;
       }
 
-      // ✅ Save to Firestore — onSnapshot updates avatar automatically
+      // ✅ onSnapshot in useAuth updates avatar automatically
       await updateDoc(doc(db, 'users', user.uid), {
         avatar:    uploadResult.url,
         updatedAt: serverTimestamp(),
@@ -679,7 +673,7 @@ export default function ProfileScreen({ navigation }) {
           }
         />
 
-        {/* ✅ Privacy Policy — navigates to full screen */}
+        {/* ✅ Privacy Policy — full screen instead of Alert */}
         <ProfileButton
           icon="shield-checkmark-outline"
           label="Privacy Policy"

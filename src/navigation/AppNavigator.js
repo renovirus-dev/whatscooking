@@ -74,7 +74,8 @@ catch (e) { console.log('❌ OnboardingScreen:', e.message); OnboardingScreen = 
 // ── User ──────────────────────────────────────
 let HomeScreen, ExploreScreen, RestaurantDetailScreen,
     FavoritesScreen, ProfileScreen, EditProfileScreen,
-    FavoriteDishesScreen, NotificationsScreen;
+    FavoriteDishesScreen, NotificationsScreen,
+    PrivacyPolicyScreen;
 
 try { HomeScreen             = require('../screens/user/HomeScreen').default;             }
 catch (e) { console.log('❌ HomeScreen:', e.message);             HomeScreen             = makePlaceholder('Home');             }
@@ -92,6 +93,9 @@ try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').d
 catch (e) { console.log('❌ FavoriteDishesScreen:', e.message);   FavoriteDishesScreen   = makePlaceholder('Favourite Dishes'); }
 try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
 catch (e) { console.log('❌ NotificationsScreen:', e.message);    NotificationsScreen    = makePlaceholder('Notifications');    }
+// ✅ Privacy Policy Screen
+try { PrivacyPolicyScreen    = require('../screens/user/PrivacyPolicyScreen').default;    }
+catch (e) { console.log('❌ PrivacyPolicyScreen:', e.message);    PrivacyPolicyScreen    = makePlaceholder('Privacy Policy');   }
 
 // ── Owner ─────────────────────────────────────
 let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
@@ -155,11 +159,7 @@ function LoadingScreen({ onTimeout }) {
       </Text>
       {showTimeout && (
         <View style={{ alignItems: 'center', gap: 8, marginTop: 8 }}>
-          <Text style={{
-            fontSize:   13,
-            color:      MUTED,
-            textAlign:  'center',
-          }}>
+          <Text style={{ fontSize: 13, color: MUTED, textAlign: 'center' }}>
             Taking longer than expected...
           </Text>
           <TouchableOpacity
@@ -610,8 +610,8 @@ function UserTabs() {
 
 // ─────────────────────────────────────────────
 // OWNER TABS
-// ✅ Added Explore tab so owners can browse
-//    other restaurants like a regular customer
+// ✅ Explore tab so owners can browse other
+//    restaurants like a regular customer
 // ─────────────────────────────────────────────
 function OwnerTabs() {
   return (
@@ -690,15 +690,19 @@ function UserNavigator() {
         component={SubscriptionScreen}
         options={{ title: 'Subscription Plans' }}
       />
+      {/* ✅ Privacy Policy */}
+      <Stack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{ title: 'Privacy Policy' }}
+      />
     </Stack.Navigator>
   );
 }
 
 // ─────────────────────────────────────────────
 // OWNER NAVIGATOR
-// ✅ Full browse experience for owners
-//    They can explore, save favourites and
-//    view other restaurants just like users
+// ✅ Full browse + privacy policy for owners
 // ─────────────────────────────────────────────
 function OwnerNavigator() {
   return (
@@ -759,7 +763,6 @@ function OwnerNavigator() {
         component={OwnerDashboardScreen}
         options={{ title: 'My Dashboard' }}
       />
-      {/* ✅ Favourites — owners can save other restaurants */}
       <Stack.Screen
         name="Favorites"
         component={FavoritesScreen}
@@ -770,11 +773,16 @@ function OwnerNavigator() {
         component={FavoriteDishesScreen}
         options={{ title: 'Favourite Dishes' }}
       />
-      {/* ✅ Home — owners can browse the home feed */}
       <Stack.Screen
         name="Home"
         component={HomeScreen}
         options={{ title: "What's Cooking" }}
+      />
+      {/* ✅ Privacy Policy */}
+      <Stack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{ title: 'Privacy Policy' }}
       />
     </Stack.Navigator>
   );
@@ -802,6 +810,12 @@ function AdminNavigator() {
           ...adminHeaderStyle,
           title: route.params?.name || 'Restaurant',
         })}
+      />
+      {/* ✅ Privacy Policy for admin too */}
+      <Stack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{ ...adminHeaderStyle, title: 'Privacy Policy' }}
       />
     </Stack.Navigator>
   );
