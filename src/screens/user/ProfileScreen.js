@@ -31,46 +31,61 @@ const INFO_COLOR    = COLORS.info    || '#3498DB';
 
 // ─────────────────────────────────────────────
 // UPLOAD AVATAR TO CLOUDINARY
+// ✅ Uses XMLHttpRequest — fixes FormDataPart error
 // ─────────────────────────────────────────────
-const uploadAvatarToCloudinary = async (imageUri, userId) => {
-  try {
-    const compressed = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: 400 } }],
-      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
-    );
+const uploadAvatarToCloudinary = (imageUri, userId) => {
+  return new Promise(async (resolve) => {
+    try {
+      const compressed = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 400 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
+      );
 
-    const formData = new FormData();
-    formData.append('file', {
-      uri:  compressed.uri,
-      type: 'image/jpeg',
-      name: `avatar_${userId}_${Date.now()}.jpg`,
-    });
-    formData.append('upload_preset', uploadPreset);
-    formData.append('folder', folders.profiles);
-    // ✅ Use userId as public_id so it overwrites old avatar
-    formData.append('public_id', `avatar_${userId}`);
+      const formData = new FormData();
+      formData.append('file', {
+        uri:  compressed.uri,
+        type: 'image/jpeg',
+        name: `avatar_${userId}_${Date.now()}.jpg`,
+      });
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder',        folders.profiles);
+      // ✅ Same public_id overwrites old avatar automatically
+      formData.append('public_id',     `avatar_${userId}`);
 
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method:  'POST',
-        body:    formData,
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    );
+      // ✅ XMLHttpRequest — avoids FormDataPart error
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        'POST',
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+      );
 
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || 'Upload failed');
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const data = JSON.parse(xhr.responseText);
+          resolve({ success: true, url: data.secure_url });
+        } else {
+          let errMsg = 'Upload failed';
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            errMsg = errData.error?.message || errMsg;
+          } catch {}
+          resolve({ success: false, error: errMsg });
+        }
+      };
+
+      xhr.onerror   = () => resolve({ success: false, error: 'Network error'     });
+      xhr.ontimeout = () => resolve({ success: false, error: 'Upload timed out'  });
+      xhr.timeout   = 60000;
+
+      // ✅ DO NOT set Content-Type — XHR sets it automatically
+      xhr.send(formData);
+
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      resolve({ success: false, error: err.message });
     }
-
-    const data = await response.json();
-    return { success: true, url: data.secure_url };
-  } catch (err) {
-    console.error('Avatar upload error:', err);
-    return { success: false, error: err.message };
-  }
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -272,8 +287,7 @@ export default function ProfileScreen({ navigation }) {
   const isOwner = userProfile?.role === 'restaurant_owner';
   const isAdmin = userProfile?.role === 'admin';
 
-  // ✅ These counts update automatically because useAuth now uses
-  // onSnapshot — no extra polling needed
+  // ✅ Real-time counts via onSnapshot in useAuth
   const savedRestaurantsCount = userProfile?.favoriteRestaurants?.length || 0;
   const favDishesCount        = userProfile?.favoriteDishes?.length       || 0;
   const dietaryPrefsCount     = userProfile?.dietaryPreferences?.length   || 0;
@@ -313,8 +327,6 @@ export default function ProfileScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // PULL TO REFRESH
-  // ✅ userProfile updates automatically via onSnapshot in useAuth
-  // Pull to refresh is just visual feedback now
   // ─────────────────────────────────────────
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
@@ -323,8 +335,7 @@ export default function ProfileScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // AVATAR UPLOAD
-  // ✅ Pick → compress → upload to Cloudinary → save URL to Firestore
-  // onSnapshot in useAuth will pick up the avatar change automatically
+  // ✅ XMLHttpRequest — fixes FormDataPart error
   // ─────────────────────────────────────────
   const handleAvatarPress = useCallback(() => {
     Alert.alert(
@@ -373,7 +384,7 @@ export default function ProfileScreen({ navigation }) {
       const imageUri = result.assets[0].uri;
       setAvatarUploading(true);
 
-      // Upload to Cloudinary
+      // ✅ Upload via XMLHttpRequest
       const uploadResult = await uploadAvatarToCloudinary(imageUri, user.uid);
 
       if (!uploadResult.success) {
@@ -381,8 +392,7 @@ export default function ProfileScreen({ navigation }) {
         return;
       }
 
-      // ✅ Save to Firestore — onSnapshot in useAuth updates userProfile
-      // automatically so the new avatar shows without any extra setState
+      // ✅ Save to Firestore — onSnapshot updates avatar automatically
       await updateDoc(doc(db, 'users', user.uid), {
         avatar:    uploadResult.url,
         updatedAt: serverTimestamp(),
@@ -562,7 +572,6 @@ export default function ProfileScreen({ navigation }) {
       </View>
 
       {/* ── Stats Row ───────────────────── */}
-      {/* ✅ These update in real-time via onSnapshot in useAuth */}
       <View style={styles.statsRow}>
         <TouchableOpacity
           style={styles.statItem}
@@ -669,17 +678,14 @@ export default function ProfileScreen({ navigation }) {
             )
           }
         />
+
+        {/* ✅ Privacy Policy — navigates to full screen */}
         <ProfileButton
           icon="shield-checkmark-outline"
           label="Privacy Policy"
-          onPress={() =>
-            Alert.alert(
-              '🔒 Privacy Policy',
-              "What's Cooking respects your privacy.\nWe only collect data needed to provide our service.",
-              [{ text: 'OK' }]
-            )
-          }
+          onPress={() => navigation.navigate('PrivacyPolicy')}
         />
+
         <ProfileButton
           icon="information-circle-outline"
           label="About"
