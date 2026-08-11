@@ -36,48 +36,63 @@ const MAX_BIO = 200;
 
 // ─────────────────────────────────────────────
 // UPLOAD AVATAR TO CLOUDINARY
+// ✅ Uses XMLHttpRequest — fixes FormDataPart error
 // ─────────────────────────────────────────────
-const uploadAvatarToCloudinary = async (imageUri, userId) => {
-  try {
-    // ✅ Compress first
-    const compressed = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: 400 } }],
-      { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
-    );
+const uploadAvatarToCloudinary = (imageUri, userId) => {
+  return new Promise(async (resolve) => {
+    try {
+      // ✅ Compress first
+      const compressed = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 400 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
+      );
 
-    const formData = new FormData();
-    formData.append('file', {
-      uri:  compressed.uri,
-      type: 'image/jpeg',
-      name: `avatar_${userId}_${Date.now()}.jpg`,
-    });
-    formData.append('upload_preset', uploadPreset);
-    // ✅ Goes to whats_cooking/profiles/
-    formData.append('folder', folders.profiles);
-    // ✅ Same public_id overwrites old avatar automatically
-    formData.append('public_id', `avatar_${userId}`);
+      const formData = new FormData();
+      formData.append('file', {
+        uri:  compressed.uri,
+        type: 'image/jpeg',
+        name: `avatar_${userId}_${Date.now()}.jpg`,
+      });
+      formData.append('upload_preset', uploadPreset);
+      // ✅ Goes to whats_cooking/profiles/
+      formData.append('folder',    folders.profiles);
+      // ✅ Same public_id overwrites old avatar automatically
+      formData.append('public_id', `avatar_${userId}`);
 
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method:  'POST',
-        body:    formData,
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    );
+      // ✅ XMLHttpRequest — avoids FormDataPart error
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        'POST',
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+      );
 
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || 'Upload failed');
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const data = JSON.parse(xhr.responseText);
+          resolve({ success: true, url: data.secure_url });
+        } else {
+          let errMsg = 'Upload failed';
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            errMsg = errData.error?.message || errMsg;
+          } catch {}
+          resolve({ success: false, error: errMsg });
+        }
+      };
+
+      xhr.onerror   = () => resolve({ success: false, error: 'Network error'    });
+      xhr.ontimeout = () => resolve({ success: false, error: 'Upload timed out' });
+      xhr.timeout   = 60000;
+
+      // ✅ DO NOT set Content-Type — XHR sets it automatically
+      xhr.send(formData);
+
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      resolve({ success: false, error: err.message });
     }
-
-    const data = await response.json();
-    return { success: true, url: data.secure_url };
-  } catch (err) {
-    console.error('Avatar upload error:', err);
-    return { success: false, error: err.message };
-  }
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -103,6 +118,7 @@ export default function EditProfileScreen({ navigation }) {
   const [dietary, setDietary] = useState(
     userProfile?.dietaryPreferences || []
   );
+
   const [notifications, setNotifications] = useState({
     pushEnabled: userProfile?.notifications?.pushEnabled ?? true,
     menuUpdates: userProfile?.notifications?.menuUpdates ?? true,
@@ -118,7 +134,7 @@ export default function EditProfileScreen({ navigation }) {
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   // ── Save State ────────────────────────────
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]         = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
 
   // ─────────────────────────────────────────
@@ -132,12 +148,13 @@ export default function EditProfileScreen({ navigation }) {
       form.phone     !== (userProfile?.phone     || '') ||
       form.bio       !== (userProfile?.bio       || '');
 
-    const dietaryChanged = JSON.stringify([...dietary].sort()) !==
+    const dietaryChanged =
+      JSON.stringify([...dietary].sort()) !==
       JSON.stringify([...(userProfile?.dietaryPreferences || [])].sort());
 
     const notifChanged =
-      notifications.pushEnabled !== (userProfile?.notifications?.pushEnabled ?? true) ||
-      notifications.menuUpdates !== (userProfile?.notifications?.menuUpdates ?? true) ||
+      notifications.pushEnabled !== (userProfile?.notifications?.pushEnabled ?? true)  ||
+      notifications.menuUpdates !== (userProfile?.notifications?.menuUpdates ?? true)  ||
       notifications.promotions  !== (userProfile?.notifications?.promotions  ?? false);
 
     const avatarChanged = !!avatarUri || avatarRemoved;
@@ -206,7 +223,8 @@ export default function EditProfileScreen({ navigation }) {
           quality:       1,
         });
       } else {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
           Alert.alert('Permission needed', 'Please allow photo library access');
           return;
@@ -261,14 +279,14 @@ export default function EditProfileScreen({ navigation }) {
         if (uploadResult.success) {
           avatarUrl = uploadResult.url;
         } else {
-          // Ask if they want to continue without photo
+          // ✅ Ask if they want to continue without photo
           const continueWithout = await new Promise(resolve => {
             Alert.alert(
               '⚠️ Photo Upload Failed',
               'Could not upload your photo. Save profile without it?',
               [
                 { text: 'Cancel',      onPress: () => resolve(false), style: 'cancel' },
-                { text: 'Save Anyway', onPress: () => resolve(true) },
+                { text: 'Save Anyway', onPress: () => resolve(true)  },
               ]
             );
           });
@@ -363,7 +381,7 @@ export default function EditProfileScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.xl }}
       >
 
-        {/* ── Avatar Section ─────────────────── */}
+        {/* ── Avatar Section ──────────────── */}
         <View style={styles.avatarSection}>
           <TouchableOpacity
             style={styles.avatarContainer}
@@ -412,7 +430,7 @@ export default function EditProfileScreen({ navigation }) {
           </Text>
         </View>
 
-        {/* ── Basic Info ────────────────────── */}
+        {/* ── Basic Info ──────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>👤 Basic Information</Text>
 
@@ -519,7 +537,7 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── Dietary Preferences ───────────── */}
+        {/* ── Dietary Preferences ─────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🥗 Dietary Preferences</Text>
           <Text style={styles.sectionHint}>
@@ -566,7 +584,7 @@ export default function EditProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── Notifications ─────────────────── */}
+        {/* ── Notifications ───────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🔔 Notifications</Text>
           {[
@@ -610,7 +628,6 @@ export default function EditProfileScreen({ navigation }) {
                 <Text style={styles.notifLabel}>{notif.label}</Text>
                 <Text style={styles.notifDesc}>{notif.desc}</Text>
               </View>
-              {/* ✅ Using Switch instead of custom toggle */}
               <Switch
                 value={!!notifications[notif.key]}
                 onValueChange={() => toggleNotif(notif.key)}
@@ -627,7 +644,7 @@ export default function EditProfileScreen({ navigation }) {
           ))}
         </View>
 
-        {/* ── Security ──────────────────────── */}
+        {/* ── Security ────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🔒 Security</Text>
           <TouchableOpacity
@@ -650,7 +667,7 @@ export default function EditProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Save Button ───────────────────── */}
+        {/* ── Save Button ─────────────────── */}
         <TouchableOpacity
           style={[
             styles.saveBtn,
@@ -667,7 +684,11 @@ export default function EditProfileScreen({ navigation }) {
             </View>
           ) : (
             <>
-              <Ionicons name="checkmark-circle-outline" size={22} color="#FFFFFF" />
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={22}
+                color="#FFFFFF"
+              />
               <Text style={styles.saveBtnText}>
                 {hasChanges ? 'Save Changes' : 'No Changes'}
               </Text>
@@ -688,10 +709,10 @@ const styles = StyleSheet.create({
 
   // ── Avatar Section ────────────────────────
   avatarSection: {
-    alignItems:     'center',
+    alignItems:      'center',
     paddingVertical: SIZES.xl,
     backgroundColor: COLORS.primary,
-    gap:            SIZES.sm,
+    gap:             SIZES.sm,
   },
   avatarContainer: { position: 'relative' },
   avatar: {
@@ -751,15 +772,23 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   sectionTitle: { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text },
-  sectionHint:  { fontSize: FONTS.sm, color: COLORS.textMuted, marginTop: -SIZES.sm },
+  sectionHint:  {
+    fontSize:  FONTS.sm,
+    color:     COLORS.textMuted,
+    marginTop: -SIZES.sm,
+  },
 
   // ── Form Fields ───────────────────────────
   row:      { flexDirection: 'row', gap: SIZES.md },
   field:    { gap: SIZES.xs },
-  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  label:    { fontSize: FONTS.sm, fontWeight: '600', color: COLORS.text },
-  fieldHint:{ fontSize: FONTS.xs, color: COLORS.textMuted },
-  charCount:{ fontSize: FONTS.xs, color: COLORS.textMuted },
+  labelRow: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'center',
+  },
+  label:     { fontSize: FONTS.sm, fontWeight: '600', color: COLORS.text },
+  fieldHint: { fontSize: FONTS.xs, color: COLORS.textMuted },
+  charCount: { fontSize: FONTS.xs, color: COLORS.textMuted },
 
   input: {
     backgroundColor:   COLORS.background,
@@ -847,9 +876,9 @@ const styles = StyleSheet.create({
 
   // ── Security ──────────────────────────────
   securityBtn: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           SIZES.md,
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             SIZES.md,
     paddingVertical: SIZES.sm,
   },
   securityBtnText: {
@@ -872,6 +901,10 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   saveBtnDisabled: { opacity: 0.5 },
-  saveBtnLoading:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
+  saveBtnLoading:  {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.sm,
+  },
   saveBtnText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
 });
