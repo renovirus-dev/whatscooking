@@ -1,8 +1,9 @@
 // ============================================
 // FILE: src/utils/localFoodImages.js
 // ============================================
-// ✅ Only references files that actually exist
-// All _2 variants removed
+// ✅ Local images for instant offline display
+// ✅ TheMealDB for better online food photos
+// ✅ Falls back to local if TheMealDB fails
 
 const LOCAL_IMAGES = {
   // ── Jamaican ───────────────────────────────
@@ -83,88 +84,337 @@ const LOCAL_IMAGES = {
   combo:       require('../../assets/food/general/combo_1.jpg'),
 };
 
-// ─── Keyword → image key ──────────────────────
+// ─────────────────────────────────────────────
+// THEMEALDB SEARCH TERM MAP
+// Maps dish names to better TheMealDB queries
+// TheMealDB has 300+ real food photos — free
+// ─────────────────────────────────────────────
+const MEALDB_SEARCH_MAP = {
+  // ── Jamaican → closest TheMealDB match ────
+  'jerk chicken':        'Jerk chicken',
+  'jerk pork':           'Jerk chicken',
+  'jerk fish':           'Jerk chicken',
+  'jerk':                'Jerk chicken',
+  'oxtail':              'Beef stew',
+  'brown stew chicken':  'Chicken stew',
+  'stew peas':           'Red beans',
+  'ackee':               'Saltfish',
+  'ackee and saltfish':  'Saltfish',
+  'curry goat':          'Lamb curry',
+  'curry chicken':       'Chicken curry',
+  'curry shrimp':        'Prawn curry',
+  'curry':               'Chicken curry',
+  'escovitch fish':      'Grilled fish',
+  'steam fish':          'Steamed fish',
+  'pepper shrimp':       'Shrimp',
+  'callaloo':            'Spinach',
+  'fried plantain':      'Plantain',
+  'plantain':            'Plantain',
+  'fried dumpling':      'Doughnut',
+  'boiled dumpling':     'Dumpling',
+  'festival':            'Doughnut',
+  'dumpling':            'Dumpling',
+  'beef patty':          'Beef pasty',
+  'patty':               'Beef pasty',
+  'rice and peas':       'Rice',
+  'rice':                'Rice',
+  'bammy':               'Flatbread',
+  'breadfruit':          'Bread',
+  'rundown':             'Mackerel',
+  'mackerel':            'Mackerel',
+  'saltfish':            'Saltfish',
+  'porridge':            'Oatmeal',
+  'soup':                'Chicken soup',
+  'sorrel':              'Punch',
+
+  // ── International ─────────────────────────
+  'burger':              'Beef burger',
+  'cheeseburger':        'Cheeseburger',
+  'pizza':               'Pizza',
+  'pasta':               'Spaghetti',
+  'spaghetti':           'Spaghetti bolognese',
+  'carbonara':           'Spaghetti carbonara',
+  'lasagna':             'Lasagne',
+  'risotto':             'Risotto',
+  'salad':               'Caesar salad',
+  'sandwich':            'Club sandwich',
+  'wrap':                'Wrap',
+  'steak':               'Beef steak',
+  'salmon':              'Salmon',
+  'lobster':             'Lobster',
+  'shrimp':              'Prawns',
+  'prawn':               'Prawn',
+  'chicken':             'Chicken',
+  'fish':                'Fish',
+  'wings':               'Chicken wings',
+  'ribs':                'Pork ribs',
+  'taco':                'Tacos',
+  'tacos':               'Tacos',
+  'burrito':             'Burrito',
+  'nachos':              'Nachos',
+  'sushi':               'Sushi',
+  'ramen':               'Ramen',
+  'noodles':             'Noodles',
+  'fried rice':          'Fried rice',
+  'pad thai':            'Pad Thai',
+  'curry':               'Chicken curry',
+  'biryani':             'Chicken biryani',
+  'kebab':               'Kebab',
+  'hummus':              'Hummus',
+  'shawarma':            'Shawarma',
+  'gyro':                'Gyros',
+  'hot dog':             'Hot dog',
+  'hotdog':              'Hot dog',
+  'stir fry':            'Stir fry',
+  'fried chicken':       'Fried chicken',
+  'bbq':                 'BBQ',
+  'pork chop':           'Pork chop',
+  'lamb chop':           'Lamb chops',
+
+  // ── Breakfast ─────────────────────────────
+  'pancakes':            'Pancakes',
+  'pancake':             'Pancakes',
+  'waffles':             'Waffles',
+  'waffle':              'Waffles',
+  'eggs':                'Eggs',
+  'omelette':            'Omelette',
+  'french toast':        'French toast',
+  'cereal':              'Cereal',
+  'bacon':               'Bacon',
+  'granola':             'Granola',
+
+  // ── Desserts ──────────────────────────────
+  'cake':                'Chocolate cake',
+  'cheesecake':          'Cheesecake',
+  'ice cream':           'Ice cream',
+  'brownie':             'Brownies',
+  'cookie':              'Cookies',
+  'donut':               'Donuts',
+  'tiramisu':            'Tiramisu',
+  'mousse':              'Chocolate mousse',
+  'pudding':             'Bread pudding',
+  'tart':                'Fruit tart',
+  'crepe':               'Crepes',
+  'banana bread':        'Banana bread',
+
+  // ── Beverages ─────────────────────────────
+  'juice':               'Orange juice',
+  'smoothie':            'Smoothie',
+  'coffee':              'Coffee',
+  'lemonade':            'Lemonade',
+  'milkshake':           'Milkshake',
+};
+
+// ─── TheMealDB Memory Cache ───────────────────
+const mealDBCache = new Map();
+
+// ─────────────────────────────────────────────
+// SEARCH THEMEALDB
+// Returns image URL or null
+// ✅ Completely free — no API key needed
+// ─────────────────────────────────────────────
+const searchTheMealDB = async (dishName) => {
+  if (!dishName?.trim()) return null;
+
+  const lower    = dishName.toLowerCase().trim();
+  const cacheKey = lower;
+
+  // ✅ Return cached result
+  if (mealDBCache.has(cacheKey)) {
+    return mealDBCache.get(cacheKey);
+  }
+
+  // ✅ Get best search term from map
+  let searchTerm = null;
+
+  // Exact match
+  if (MEALDB_SEARCH_MAP[lower]) {
+    searchTerm = MEALDB_SEARCH_MAP[lower];
+  }
+
+  // Partial match — name contains a key
+  if (!searchTerm) {
+    for (const [key, term] of Object.entries(MEALDB_SEARCH_MAP)) {
+      if (lower.includes(key)) {
+        searchTerm = term;
+        break;
+      }
+    }
+  }
+
+  // ✅ Fall back to the raw dish name
+  if (!searchTerm) searchTerm = dishName.trim();
+
+  try {
+    const response = await fetch(
+      `https://www.themealdb.com/api/json/v1/1/search.php` +
+      `?s=${encodeURIComponent(searchTerm)}`
+    );
+
+    if (!response.ok) {
+      mealDBCache.set(cacheKey, null);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.meals && data.meals.length > 0) {
+      const url = data.meals[0].strMealThumb;
+      console.log(`✅ MealDB found image for "${dishName}": ${url}`);
+      mealDBCache.set(cacheKey, url);
+      return url;
+    }
+
+    // ✅ Try first word as fallback
+    const firstWord = lower.split(' ')[0];
+    if (firstWord && firstWord.length > 3 && firstWord !== lower) {
+      const response2 = await fetch(
+        `https://www.themealdb.com/api/json/v1/1/search.php` +
+        `?s=${encodeURIComponent(firstWord)}`
+      );
+      if (response2.ok) {
+        const data2 = await response2.json();
+        if (data2.meals && data2.meals.length > 0) {
+          const url = data2.meals[0].strMealThumb;
+          mealDBCache.set(cacheKey, url);
+          return url;
+        }
+      }
+    }
+
+    // ✅ Cache null so we don't retry
+    mealDBCache.set(cacheKey, null);
+    return null;
+
+  } catch (err) {
+    console.log('TheMealDB error:', err.message);
+    mealDBCache.set(cacheKey, null);
+    return null;
+  }
+};
+
+// ─────────────────────────────────────────────
+// GET MULTIPLE MEALDB IMAGES
+// Returns array — used in image picker modal
+// ─────────────────────────────────────────────
+export const getMealDBImages = async (dishName, count = 6) => {
+  if (!dishName?.trim()) return [];
+
+  const lower      = dishName.toLowerCase().trim();
+  const searchTerm = MEALDB_SEARCH_MAP[lower] || dishName.trim();
+
+  try {
+    const response = await fetch(
+      `https://www.themealdb.com/api/json/v1/1/search.php` +
+      `?s=${encodeURIComponent(searchTerm)}`
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    if (!data.meals) return [];
+
+    return data.meals.slice(0, count).map(meal => ({
+      id:          `mealdb_${meal.idMeal}`,
+      url:         meal.strMealThumb,
+      thumbUrl:    meal.strMealThumb + '/preview',
+      description: meal.strMeal,
+      source:      'TheMealDB',
+      credit:      'TheMealDB',
+    }));
+  } catch (err) {
+    console.log('getMealDBImages error:', err.message);
+    return [];
+  }
+};
+
+// ─────────────────────────────────────────────
+// CLEAR MEALDB CACHE
+// ─────────────────────────────────────────────
+export const clearMealDBCache = () => {
+  mealDBCache.clear();
+  console.log('🗑️ MealDB cache cleared');
+};
+
+// ─── Keyword → local image key ───────────────
 const KEYWORD_MAP = [
-  // Jamaican — FIRST
-  { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'],             key: 'jerk'       },
-  { keywords: ['oxtail', 'ox tail'],                                            key: 'oxtail'     },
-  { keywords: ['ackee and saltfish', 'ackee & saltfish', 'ackee'],            key: 'ackee'      },
-  { keywords: ['fried plantain', 'ripe plantain', 'plantain'],                key: 'plantain'   },
-  { keywords: ['fried dumpling', 'boiled dumpling', 'festival', 'dumpling'],  key: 'dumpling'   },
-  { keywords: ['beef patty', 'chicken patty', 'coco bread', 'patty'],        key: 'patty'      },
-  { keywords: ['callaloo', 'calaloo'],                                          key: 'callaloo'   },
-  { keywords: ['escovitch', 'escoveitch'],                                      key: 'escovitch'  },
-  { keywords: ['stew peas', 'stew chicken', 'brown stew'],                    key: 'oxtail'     },
-  { keywords: ['sorrel'],                                                        key: 'sorrel'     },
-  { keywords: ['rice and peas', 'rice & peas', 'cook up rice', 'pelau'],     key: 'rice_peas'  },
-  { keywords: ['bammy', 'bami'],                                                key: 'bammy'      },
-  { keywords: ['curry goat', 'curry chicken', 'curried'],                     key: 'curry'      },
+  // Jamaican — FIRST priority
+  { keywords: ['jerk chicken', 'jerk pork', 'jerk fish', 'jerk'],            key: 'jerk'       },
+  { keywords: ['oxtail', 'ox tail'],                                           key: 'oxtail'     },
+  { keywords: ['ackee and saltfish', 'ackee & saltfish', 'ackee'],           key: 'ackee'      },
+  { keywords: ['fried plantain', 'ripe plantain', 'plantain'],               key: 'plantain'   },
+  { keywords: ['fried dumpling', 'boiled dumpling', 'festival', 'dumpling'], key: 'dumpling'   },
+  { keywords: ['beef patty', 'chicken patty', 'coco bread', 'patty'],       key: 'patty'      },
+  { keywords: ['callaloo', 'calaloo'],                                         key: 'callaloo'   },
+  { keywords: ['escovitch', 'escoveitch'],                                     key: 'escovitch'  },
+  { keywords: ['stew peas', 'stew chicken', 'brown stew'],                   key: 'oxtail'     },
+  { keywords: ['sorrel'],                                                       key: 'sorrel'     },
+  { keywords: ['rice and peas', 'rice & peas', 'cook up rice', 'pelau'],    key: 'rice_peas'  },
+  { keywords: ['bammy', 'bami'],                                               key: 'bammy'      },
+  { keywords: ['curry goat', 'curry chicken', 'curried'],                    key: 'curry'      },
   // Japanese
-  { keywords: ['sushi', 'sashimi', 'maki', 'nigiri'],                         key: 'sushi'      },
-  { keywords: ['ramen', 'udon', 'soba'],                                        key: 'ramen'      },
-  { keywords: ['tempura'],                                                       key: 'tempura'    },
-  { keywords: ['teriyaki'],                                                      key: 'thaicurry'  },
-  { keywords: ['miso'],                                                          key: 'soup'       },
+  { keywords: ['sushi', 'sashimi', 'maki', 'nigiri'],                        key: 'sushi'      },
+  { keywords: ['ramen', 'udon', 'soba'],                                       key: 'ramen'      },
+  { keywords: ['tempura'],                                                      key: 'tempura'    },
+  { keywords: ['teriyaki'],                                                     key: 'thaicurry'  },
+  { keywords: ['miso'],                                                         key: 'soup'       },
   // Mexican
-  { keywords: ['taco', 'tacos'],                                                key: 'taco'       },
-  { keywords: ['burrito'],                                                       key: 'burrito'    },
-  { keywords: ['nacho', 'nachos'],                                               key: 'nachos'     },
-  { keywords: ['quesadilla'],                                                    key: 'taco'       },
-  { keywords: ['guacamole'],                                                     key: 'nachos'     },
+  { keywords: ['taco', 'tacos'],                                               key: 'taco'       },
+  { keywords: ['burrito'],                                                      key: 'burrito'    },
+  { keywords: ['nacho', 'nachos'],                                              key: 'nachos'     },
+  { keywords: ['quesadilla'],                                                   key: 'taco'       },
+  { keywords: ['guacamole'],                                                    key: 'nachos'     },
   // Thai
-  { keywords: ['pad thai', 'padthai'],                                           key: 'padthai'    },
-  { keywords: ['thai curry', 'green curry', 'red curry'],                       key: 'thaicurry'  },
-  { keywords: ['spring roll', 'springroll'],                                     key: 'dimsum'     },
-  { keywords: ['thai'],                                                           key: 'padthai'    },
+  { keywords: ['pad thai', 'padthai'],                                          key: 'padthai'    },
+  { keywords: ['thai curry', 'green curry', 'red curry'],                      key: 'thaicurry'  },
+  { keywords: ['spring roll', 'springroll'],                                    key: 'dimsum'     },
+  { keywords: ['thai'],                                                          key: 'padthai'    },
   // Chinese
-  { keywords: ['dim sum', 'dimsum'],                                             key: 'dimsum'     },
-  { keywords: ['wonton'],                                                        key: 'wonton'     },
-  { keywords: ['chow mein', 'lo mein', 'mei fun', 'noodle'],                   key: 'noodles'    },
-  { keywords: ['fried rice', 'egg fried rice'],                                 key: 'friedrice'  },
-  { keywords: ['chinese'],                                                        key: 'dimsum'     },
+  { keywords: ['dim sum', 'dimsum'],                                            key: 'dimsum'     },
+  { keywords: ['wonton'],                                                       key: 'wonton'     },
+  { keywords: ['chow mein', 'lo mein', 'mei fun', 'noodle'],                  key: 'noodles'    },
+  { keywords: ['fried rice', 'egg fried rice'],                                key: 'friedrice'  },
+  { keywords: ['chinese'],                                                       key: 'dimsum'     },
   // Mediterranean
-  { keywords: ['hummus'],                                                        key: 'hummus'     },
-  { keywords: ['falafel'],                                                       key: 'hummus'     },
-  { keywords: ['shawarma'],                                                      key: 'shawarma'   },
-  { keywords: ['kebab', 'kabob', 'shish'],                                      key: 'kebab'      },
-  { keywords: ['gyro'],                                                          key: 'gyro'       },
+  { keywords: ['hummus'],                                                       key: 'hummus'     },
+  { keywords: ['falafel'],                                                      key: 'hummus'     },
+  { keywords: ['shawarma'],                                                     key: 'shawarma'   },
+  { keywords: ['kebab', 'kabob', 'shish'],                                     key: 'kebab'      },
+  { keywords: ['gyro'],                                                         key: 'gyro'       },
   // Indian
-  { keywords: ['biryani'],                                                       key: 'biryani'    },
-  { keywords: ['samosa'],                                                        key: 'appetizer'  },
-  { keywords: ['tandoori'],                                                      key: 'curry'      },
-  { keywords: ['naan', 'roti', 'paratha'],                                       key: 'naan'       },
-  { keywords: ['curry', 'masala', 'tikka', 'korma'],                           key: 'curry'      },
+  { keywords: ['biryani'],                                                      key: 'biryani'    },
+  { keywords: ['samosa'],                                                       key: 'appetizer'  },
+  { keywords: ['tandoori'],                                                     key: 'curry'      },
+  { keywords: ['naan', 'roti', 'paratha'],                                      key: 'naan'       },
+  { keywords: ['curry', 'masala', 'tikka', 'korma'],                          key: 'curry'      },
   // Italian
-  { keywords: ['pizza', 'pepperoni', 'margherita'],                             key: 'pizza'      },
-  { keywords: ['pasta', 'spaghetti', 'fettuccine', 'penne'],                   key: 'pasta'      },
-  { keywords: ['lasagna', 'lasagne'],                                            key: 'lasagna'    },
-  { keywords: ['risotto'],                                                       key: 'pasta'      },
+  { keywords: ['pizza', 'pepperoni', 'margherita'],                            key: 'pizza'      },
+  { keywords: ['pasta', 'spaghetti', 'fettuccine', 'penne'],                  key: 'pasta'      },
+  { keywords: ['lasagna', 'lasagne'],                                           key: 'lasagna'    },
+  { keywords: ['risotto'],                                                      key: 'pasta'      },
   // American
-  { keywords: ['burger', 'beef burger', 'chicken burger'],                      key: 'burger'     },
-  { keywords: ['hot dog', 'hotdog'],                                             key: 'hotdog'     },
-  { keywords: ['buffalo wings', 'chicken wings', 'wings'],                     key: 'wings'      },
-  { keywords: ['sandwich', 'sub', 'wrap', 'panini'],                            key: 'sandwich'   },
-  { keywords: ['french fries', 'fries', 'chips'],                               key: 'fries'      },
-  { keywords: ['steak', 'ribeye', 'sirloin'],                                   key: 'steak'      },
+  { keywords: ['burger', 'beef burger', 'chicken burger'],                     key: 'burger'     },
+  { keywords: ['hot dog', 'hotdog'],                                            key: 'hotdog'     },
+  { keywords: ['buffalo wings', 'chicken wings', 'wings'],                    key: 'wings'      },
+  { keywords: ['sandwich', 'sub', 'wrap', 'panini'],                           key: 'sandwich'   },
+  { keywords: ['french fries', 'fries', 'chips'],                              key: 'fries'      },
+  { keywords: ['steak', 'ribeye', 'sirloin'],                                  key: 'steak'      },
   // BBQ
-  { keywords: ['bbq', 'barbeque', 'barbecue'],                                  key: 'bbq'        },
-  { keywords: ['ribs'],                                                          key: 'ribs'       },
+  { keywords: ['bbq', 'barbeque', 'barbecue'],                                 key: 'bbq'        },
+  { keywords: ['ribs'],                                                         key: 'ribs'       },
   // General
-  { keywords: ['fried chicken', 'grilled chicken', 'chicken'],                 key: 'wings'      },
-  { keywords: ['snapper', 'salmon', 'tilapia', 'cod', 'tuna', 'fish'],        key: 'fish'       },
-  { keywords: ['shrimp', 'prawn', 'lobster', 'crab', 'seafood'],              key: 'shrimp'     },
-  { keywords: ['rice and peas', 'rice'],                                         key: 'friedrice'  },
-  { keywords: ['soup', 'broth', 'chowder', 'bisque'],                          key: 'soup'       },
-  { keywords: ['salad', 'caesar', 'coleslaw'],                                  key: 'salad'      },
-  { keywords: ['ice cream', 'gelato', 'sorbet', 'sundae'],                     key: 'dessert'    },
-  { keywords: ['smoothie', 'milkshake', 'lemonade', 'juice'],                  key: 'beverage'   },
-  { keywords: ['pancake', 'waffle', 'omelette', 'eggs', 'breakfast'],         key: 'breakfast'  },
-  { keywords: ['cake', 'brownie', 'cookie', 'pastry', 'muffin', 'donut'],     key: 'dessert'    },
-  { keywords: ['bread', 'loaf', 'croissant'],                                   key: 'appetizer'  },
-  { keywords: ['combo', 'meal deal'],                                            key: 'combo'      },
+  { keywords: ['fried chicken', 'grilled chicken', 'chicken'],                key: 'wings'      },
+  { keywords: ['snapper', 'salmon', 'tilapia', 'cod', 'tuna', 'fish'],       key: 'fish'       },
+  { keywords: ['shrimp', 'prawn', 'lobster', 'crab', 'seafood'],             key: 'shrimp'     },
+  { keywords: ['soup', 'broth', 'chowder', 'bisque'],                         key: 'soup'       },
+  { keywords: ['salad', 'caesar', 'coleslaw'],                                 key: 'salad'      },
+  { keywords: ['ice cream', 'gelato', 'sorbet', 'sundae'],                    key: 'dessert'    },
+  { keywords: ['smoothie', 'milkshake', 'lemonade', 'juice'],                 key: 'beverage'   },
+  { keywords: ['pancake', 'waffle', 'omelette', 'eggs', 'breakfast'],        key: 'breakfast'  },
+  { keywords: ['cake', 'brownie', 'cookie', 'pastry', 'muffin', 'donut'],    key: 'dessert'    },
+  { keywords: ['bread', 'loaf', 'croissant'],                                  key: 'appetizer'  },
+  { keywords: ['combo', 'meal deal'],                                           key: 'combo'      },
 ];
 
-// ─── Category → image key ─────────────────────
+// ─── Category → local image key ──────────────
 const CATEGORY_TO_KEY = {
   appetizer:      'appetizer',
   soup:           'soup',
@@ -181,10 +431,13 @@ const CATEGORY_TO_KEY = {
   dinner_special: 'main_course',
 };
 
-// ─── getLocalFoodImage ────────────────────────
+// ─────────────────────────────────────────────
+// GET LOCAL FOOD IMAGE (sync — instant)
+// Used as placeholder while MealDB loads
+// ─────────────────────────────────────────────
 export function getLocalFoodImage(
   itemName = '',
-  category = ''
+  category = '',
 ) {
   const nameLower = (itemName || '').toLowerCase().trim();
   const catLower  = (category  || '').toLowerCase().trim();
@@ -208,11 +461,19 @@ export function getLocalFoodImage(
   return LOCAL_IMAGES[catKey] || LOCAL_IMAGES['main_course'];
 }
 
-// ─── getImageSource ───────────────────────────
+// ─────────────────────────────────────────────
+// GET IMAGE SOURCE (sync — for MenuItemCard)
+// Used everywhere a menu item image is shown
+// ─────────────────────────────────────────────
 export function getImageSource(item) {
   const url = item?.imageUrl || item?.autoImageUrl || '';
 
-  // Firebase Storage URL — user uploaded custom photo
+  // ✅ Cloudinary URL — user uploaded photo
+  if (url?.includes('cloudinary')) {
+    return { uri: url };
+  }
+
+  // ✅ Firebase Storage URL — legacy
   if (
     url &&
     (
@@ -223,11 +484,59 @@ export function getImageSource(item) {
     return { uri: url };
   }
 
-  // Local bundled image
+  // ✅ Any other valid URL
+  if (url && url.startsWith('http')) {
+    return { uri: url };
+  }
+
+  // ✅ Local bundled image fallback
   return getLocalFoodImage(
     item?.name     || '',
     item?.category || 'main_course'
   );
+}
+
+// ─────────────────────────────────────────────
+// GET BEST IMAGE SOURCE (async — with MealDB)
+// ✅ Shows local image instantly
+// ✅ Tries TheMealDB for better photo
+// ✅ Returns { source, fromMealDB }
+//    source   — pass directly to <Image source={} />
+//    fromMealDB — true if MealDB found a better image
+// ─────────────────────────────────────────────
+export async function getBestImageSource(item) {
+  // ✅ If item already has a Cloudinary or custom URL
+  //    use it — don't fetch from MealDB
+  const url = item?.imageUrl    ||
+              item?.cloudinaryUrl ||
+              item?.autoImageUrl  || '';
+
+  if (
+    url && (
+      url.includes('cloudinary') ||
+      url.startsWith('https://firebasestorage') ||
+      url.startsWith('https://storage.googleapis') ||
+      (url.startsWith('http') && !url.includes('themealdb'))
+    )
+  ) {
+    return { source: { uri: url }, fromMealDB: false };
+  }
+
+  // ✅ Try TheMealDB for a better photo
+  const mealDBUrl = await searchTheMealDB(
+    item?.name     || '',
+    item?.category || ''
+  );
+
+  if (mealDBUrl) {
+    return { source: { uri: mealDBUrl }, fromMealDB: true };
+  }
+
+  // ✅ Fall back to local image
+  return {
+    source:      getLocalFoodImage(item?.name || '', item?.category || ''),
+    fromMealDB:  false,
+  };
 }
 
 export default LOCAL_IMAGES;
