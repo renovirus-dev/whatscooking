@@ -17,8 +17,11 @@ import {
 import { db }        from '../firebase/config';
 import { useAuth }   from '../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
-import { getImageSource }  from '../utils/localFoodImages';
-import { getThumbUrl }     from '../utils/uploadToCloudinary';
+import {
+  getImageSource,
+  getBestImageSource,
+}  from '../utils/localFoodImages';
+import { getThumbUrl } from '../utils/uploadToCloudinary';
 
 // ─── Safe Color Fallbacks ─────────────────────
 const WARNING_COLOR = COLORS.warning || '#F39C12';
@@ -44,28 +47,39 @@ const DIETARY_BADGES = {
 };
 
 // ─────────────────────────────────────────────
-// GET IMAGE SOURCE
+// HAS CUSTOM IMAGE
+// Returns true if item has a real uploaded image
+// so we skip the MealDB fetch entirely
 // ─────────────────────────────────────────────
-const getMenuItemImageSource = (item) => {
+const hasCustomImage = (item) => {
+  return !!(
+    item?.cloudinaryUrl ||
+    (item?.imageUrl && item.imageUrl.startsWith('http'))
+  );
+};
+
+// ─────────────────────────────────────────────
+// GET INITIAL IMAGE SOURCE (sync — instant)
+// Used as placeholder before MealDB loads
+// ─────────────────────────────────────────────
+const getInitialImageSource = (item) => {
   if (item?.cloudinaryUrl) {
     return { uri: getThumbUrl(item.cloudinaryUrl, 200, 200) };
   }
   if (item?.imageUrl && item.imageUrl.startsWith('http')) {
     return { uri: item.imageUrl };
   }
+  // ✅ Local image shown instantly — no delay
   return getImageSource(item);
 };
 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
-// ✅ showHeart prop — hides heart buttons when false
-//    Use showHeart={false} in FavoriteDishesScreen
-//    to avoid showing a duplicate heart
 // ─────────────────────────────────────────────
 export default function MenuItemCard({
   item,
   onLoginRequired,
-  showHeart = true,   // ✅ new prop
+  showHeart = true,
 }) {
   const insets = useSafeAreaInsets();
   const { user, userProfile } = useAuth();
@@ -81,17 +95,64 @@ export default function MenuItemCard({
   const [favLoading, setFavLoading]     = useState(false);
   const [imageError, setImageError]     = useState(false);
 
-  // ✅ Optimistic local state — initialised from userProfile
+  // ✅ Start with local image instantly — no waiting
+  const [imageSource, setImageSource] = useState(
+    () => getInitialImageSource(item)
+  );
+
+  // ✅ Optimistic favourite state
   const [localFavorited, setLocalFavorited] = useState(
     () => userProfile?.favoriteDishes?.includes(item.id) || false
   );
 
-  // ✅ Sync whenever onSnapshot updates userProfile in useAuth
+  // ✅ Sync favourite when userProfile updates
   useEffect(() => {
     if (userProfile?.favoriteDishes !== undefined) {
       setLocalFavorited(userProfile.favoriteDishes.includes(item.id));
     }
   }, [userProfile?.favoriteDishes, item.id]);
+
+  // ─────────────────────────────────────────
+  // MEALDB IMAGE FETCH
+  // ✅ Only runs if item has NO custom image
+  // ✅ Shows local image while loading
+  // ✅ Upgrades to MealDB image if found
+  // ✅ Cancelled if component unmounts
+  // ─────────────────────────────────────────
+  useEffect(() => {
+    // ✅ Skip fetch if item already has a real image
+    if (hasCustomImage(item) || imageError) return;
+
+    let cancelled = false;
+
+    const fetchMealDBImage = async () => {
+      try {
+        const { source, fromMealDB } = await getBestImageSource(item);
+
+        if (cancelled || !isMounted.current) return;
+
+        if (fromMealDB) {
+          // ✅ MealDB found a better image — upgrade silently
+          setImageSource(source);
+          console.log(`🍽️ MealDB image loaded for: ${item.name}`);
+        }
+      } catch (err) {
+        // ✅ Silent fail — local image already showing
+        console.log('MealDB fetch skipped:', err.message);
+      }
+    };
+
+    fetchMealDBImage();
+
+    return () => { cancelled = true; };
+  }, [item.id, item.name, item.category, imageError]);
+
+  // ✅ Update image source when item changes
+  useEffect(() => {
+    if (!imageError) {
+      setImageSource(getInitialImageSource(item));
+    }
+  }, [item.cloudinaryUrl, item.imageUrl]);
 
   const isFavorited = localFavorited;
 
@@ -99,9 +160,13 @@ export default function MenuItemCard({
     ([key]) => item.dietaryInfo?.[key]
   );
 
-  const imageSource = imageError
-    ? getImageSource(item)
-    : getMenuItemImageSource(item);
+  // ✅ On image error — fall back to local image
+  const handleImageError = useCallback(() => {
+    if (isMounted.current) {
+      setImageError(true);
+      setImageSource(getImageSource(item));
+    }
+  }, [item]);
 
   // ── Handlers ──────────────────────────────
   const handleCardPress = useCallback(() => {
@@ -115,7 +180,6 @@ export default function MenuItemCard({
 
   const handleFavourite = useCallback(async (e) => {
     e?.stopPropagation?.();
-    console.log('❤️ Dish favourite tapped!');
 
     if (!user) {
       if (onLoginRequired) {
@@ -128,7 +192,7 @@ export default function MenuItemCard({
 
     if (!isMounted.current) return;
 
-    // ✅ Optimistic update BEFORE async call
+    // ✅ Optimistic update
     const newValue = !localFavorited;
     setLocalFavorited(newValue);
 
@@ -142,11 +206,8 @@ export default function MenuItemCard({
         await updateDoc(userRef, { favoriteDishes: arrayUnion(item.id) });
       }
 
-      console.log(`✅ Dish favourite ${newValue ? 'added' : 'removed'}:`, item.id);
-
     } catch (err) {
       console.error('handleFavourite error:', err);
-
       // ✅ Revert on failure
       if (isMounted.current) {
         setLocalFavorited(!newValue);
@@ -164,7 +225,7 @@ export default function MenuItemCard({
       <TouchableOpacity
         style={[
           styles.card,
-          !item.isAvailable && styles.cardUnavailable,
+          !item.isAvailable    && styles.cardUnavailable,
           item.isSpecialOfTheDay && styles.cardSpecial,
         ]}
         onPress={handleCardPress}
@@ -218,10 +279,10 @@ export default function MenuItemCard({
             source={imageSource}
             style={[styles.image, !item.isAvailable && styles.imageGray]}
             resizeMode="cover"
-            onError={() => { if (isMounted.current) setImageError(true); }}
+            onError={handleImageError}
           />
 
-          {/* ✅ Only show heart button when showHeart is true */}
+          {/* ✅ Heart button */}
           {showHeart && (
             <TouchableOpacity
               style={styles.heartBtn}
@@ -270,7 +331,7 @@ export default function MenuItemCard({
               source={imageSource}
               style={styles.modalImage}
               resizeMode="cover"
-              onError={() => { if (isMounted.current) setImageError(true); }}
+              onError={handleImageError}
             />
 
             {/* Close button */}
@@ -283,7 +344,7 @@ export default function MenuItemCard({
               <Ionicons name="close" size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            {/* ✅ Only show modal heart when showHeart is true */}
+            {/* ✅ Modal heart */}
             {showHeart && (
               <TouchableOpacity
                 style={styles.modalHeartBtn}
@@ -323,11 +384,15 @@ export default function MenuItemCard({
                 </View>
 
                 <View style={styles.modalPriceRow}>
-                  <Text style={styles.modalPrice}>${item.price?.toFixed(2)}</Text>
+                  <Text style={styles.modalPrice}>
+                    ${item.price?.toFixed(2)}
+                  </Text>
                   {item.totalFavorites > 0 && (
                     <View style={styles.favCount}>
                       <Ionicons name="heart" size={14} color={COLORS.error} />
-                      <Text style={styles.favCountText}>{item.totalFavorites} saved</Text>
+                      <Text style={styles.favCountText}>
+                        {item.totalFavorites} saved
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -340,7 +405,9 @@ export default function MenuItemCard({
                   <View style={styles.dietaryList}>
                     {activeDietary.map(([key, d]) => (
                       <View key={key} style={styles.dietaryBadge}>
-                        <Text style={styles.dietaryBadgeText}>{d.icon} {d.label}</Text>
+                        <Text style={styles.dietaryBadgeText}>
+                          {d.icon} {d.label}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -350,14 +417,24 @@ export default function MenuItemCard({
                   <View style={styles.modalExtras}>
                     {!!item.servingSize && (
                       <View style={styles.extraItem}>
-                        <Ionicons name="restaurant-outline" size={14} color={COLORS.textMuted} />
+                        <Ionicons
+                          name="restaurant-outline"
+                          size={14}
+                          color={COLORS.textMuted}
+                        />
                         <Text style={styles.extraText}>{item.servingSize}</Text>
                       </View>
                     )}
                     {!!item.preparationTime && (
                       <View style={styles.extraItem}>
-                        <Ionicons name="time-outline" size={14} color={COLORS.textMuted} />
-                        <Text style={styles.extraText}>{item.preparationTime} min prep</Text>
+                        <Ionicons
+                          name="time-outline"
+                          size={14}
+                          color={COLORS.textMuted}
+                        />
+                        <Text style={styles.extraText}>
+                          {item.preparationTime} min prep
+                        </Text>
                       </View>
                     )}
                   </View>
@@ -375,22 +452,37 @@ export default function MenuItemCard({
 
                 {item.viewCount > 0 && (
                   <View style={styles.viewCountRow}>
-                    <Ionicons name="eye-outline" size={14} color={COLORS.textMuted} />
-                    <Text style={styles.viewCountText}>Viewed {item.viewCount} times</Text>
+                    <Ionicons
+                      name="eye-outline"
+                      size={14}
+                      color={COLORS.textMuted}
+                    />
+                    <Text style={styles.viewCountText}>
+                      Viewed {item.viewCount} times
+                    </Text>
                   </View>
                 )}
 
                 {!item.isAvailable && (
                   <View style={styles.unavailableBanner}>
-                    <Ionicons name="close-circle-outline" size={18} color={COLORS.error} />
-                    <Text style={styles.unavailableBannerText}>Not available today</Text>
+                    <Ionicons
+                      name="close-circle-outline"
+                      size={18}
+                      color={COLORS.error}
+                    />
+                    <Text style={styles.unavailableBannerText}>
+                      Not available today
+                    </Text>
                   </View>
                 )}
 
-                {/* ✅ Only show Save Favourite button when showHeart is true */}
+                {/* ✅ Save Favourite Button */}
                 {showHeart && (
                   <TouchableOpacity
-                    style={[styles.modalFavBtn, isFavorited && styles.modalFavBtnActive]}
+                    style={[
+                      styles.modalFavBtn,
+                      isFavorited && styles.modalFavBtnActive,
+                    ]}
                     onPress={handleFavourite}
                     disabled={favLoading}
                     activeOpacity={0.8}
@@ -411,7 +503,9 @@ export default function MenuItemCard({
                           styles.modalFavBtnText,
                           isFavorited && styles.modalFavBtnTextActive,
                         ]}>
-                          {isFavorited ? 'Saved to Favourites ✓' : 'Save to Favourites'}
+                          {isFavorited
+                            ? 'Saved to Favourites ✓'
+                            : 'Save to Favourites'}
                         </Text>
                       </>
                     )}
@@ -500,7 +594,10 @@ const styles = StyleSheet.create({
   prepTime: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   prepTimeText:    { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableText: {
-    fontSize: FONTS.xs, color: COLORS.error, marginTop: 4, fontWeight: '500',
+    fontSize:   FONTS.xs,
+    color:      COLORS.error,
+    marginTop:  4,
+    fontWeight: '500',
   },
 
   // ── Image + Heart ─────────────────────────
@@ -664,8 +761,8 @@ const styles = StyleSheet.create({
     paddingVertical:   3,
     borderRadius:      RADIUS.round,
   },
-  tagText:      { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '500' },
-  viewCountRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  tagText:       { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '500' },
+  viewCountRow:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   viewCountText: { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableBanner: {
     flexDirection:   'row',
@@ -678,7 +775,9 @@ const styles = StyleSheet.create({
     borderColor:     COLORS.error + '30',
   },
   unavailableBannerText: {
-    fontSize: FONTS.md, color: COLORS.error, fontWeight: '500',
+    fontSize:   FONTS.md,
+    color:      COLORS.error,
+    fontWeight: '500',
   },
 
   modalFavBtn: {
