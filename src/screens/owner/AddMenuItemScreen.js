@@ -25,7 +25,7 @@ import { getLocalFoodImage } from '../../utils/localFoodImages';
 import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
 import { getThumbUrl }       from '../../utils/uploadToCloudinary';
 
-// ─── Cloudinary Upload ────────────────────────
+// ─── Cloudinary Config ────────────────────────
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 const CATEGORIES = [
@@ -49,6 +49,103 @@ const DIETARY = [
   { id: 'isSpicy',      label: '🌶️ Spicy'       },
 ];
 
+// ─────────────────────────────────────────────
+// UPLOAD IMAGE TO CLOUDINARY
+// ✅ Uses XMLHttpRequest — fixes FormDataPart error
+//    fetch + Content-Type: multipart/form-data
+//    breaks in React Native
+// ─────────────────────────────────────────────
+const uploadImageToCloudinary = (imageUri, onProgress) => {
+  return new Promise(async (resolve) => {
+    try {
+      // ── Step 1: Compress ──────────────────
+      const compressed = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 1200 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      onProgress?.(25);
+
+      // ── Step 2: Build FormData ────────────
+      const formData = new FormData();
+      formData.append('file', {
+        uri:  compressed.uri,
+        type: 'image/jpeg',
+        name: `menu_item_${Date.now()}.jpg`,
+      });
+      formData.append('upload_preset', uploadPreset);
+      // ✅ Upload to whats_cooking/menu_items/
+      formData.append('folder', folders.menuItems);
+
+      onProgress?.(50);
+
+      // ── Step 3: Upload via XHR ────────────
+      // ✅ XMLHttpRequest handles multipart correctly
+      //    DO NOT set Content-Type header manually
+      const xhr = new XMLHttpRequest();
+
+      xhr.open(
+        'POST',
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+      );
+
+      // ✅ Track upload progress
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round(50 + (e.loaded / e.total) * 40);
+          onProgress?.(pct);
+        }
+      });
+
+      xhr.onload = () => {
+        onProgress?.(100);
+        if (xhr.status === 200) {
+          const data = JSON.parse(xhr.responseText);
+          resolve({
+            success:  true,
+            url:      data.secure_url,
+            publicId: data.public_id,
+            width:    data.width,
+            height:   data.height,
+          });
+        } else {
+          let errMsg = 'Upload failed';
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            errMsg = errData.error?.message || errMsg;
+          } catch {}
+          console.error('Cloudinary upload error:', errMsg);
+          resolve({ success: false, error: errMsg });
+        }
+      };
+
+      xhr.onerror = () => {
+        console.error('Cloudinary upload network error');
+        resolve({ success: false, error: 'Network error during upload' });
+      };
+
+      xhr.ontimeout = () => {
+        console.error('Cloudinary upload timed out');
+        resolve({ success: false, error: 'Upload timed out' });
+      };
+
+      // ✅ 60 second timeout for large images
+      xhr.timeout = 60000;
+
+      // ✅ DO NOT set Content-Type — XHR sets it automatically
+      xhr.send(formData);
+
+    } catch (err) {
+      console.error('uploadImageToCloudinary error:', err);
+      resolve({ success: false, error: err.message });
+    }
+  });
+};
+
+// ─────────────────────────────────────────────
+// MAIN SCREEN
+// ─────────────────────────────────────────────
 export default function AddMenuItemScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const { restaurantId, item: existingItem } = route.params || {};
@@ -84,14 +181,13 @@ export default function AddMenuItemScreen({ route, navigation }) {
   const [regenerateCount, setRegenerateCount] = useState(0);
 
   // ── Upload State ──────────────────────────
-  const [uploading, setUploading]   = useState(false);
+  const [uploading, setUploading]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading]               = useState(false);
 
   // ─────────────────────────────────────────
   // IMAGE HELPERS
   // ─────────────────────────────────────────
-
   const getAutoImage = useCallback(() => {
     return getLocalFoodImage(form.name, form.category);
   }, [form.name, form.category]);
@@ -103,95 +199,18 @@ export default function AddMenuItemScreen({ route, navigation }) {
   const getDisplaySource = useCallback(() => {
     if (isShowingNewPhoto)      return { uri: newImageUri };
     if (isShowingExistingPhoto) {
-      // ✅ Use Cloudinary thumb transform for faster loading
       return { uri: getThumbUrl(existingImageUrl, 400, 300) };
     }
     return getAutoImage();
   }, [
-    newImageUri,
-    existingImageUrl,
-    isShowingNewPhoto,
-    isShowingExistingPhoto,
+    newImageUri, existingImageUrl,
+    isShowingNewPhoto, isShowingExistingPhoto,
     getAutoImage,
   ]);
 
   // ─────────────────────────────────────────
-  // CLOUDINARY UPLOAD
-  // ─────────────────────────────────────────
-
-  /**
-   * Compress → upload to Cloudinary → return secure_url
-   */
-  const uploadImageToCloudinary = async (imageUri) => {
-    try {
-      setUploading(true);
-      setUploadProgress(0);
-
-      // ── Step 1: Compress image ─────────────
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: 1200 } }],
-        {
-          compress: 0.8,
-          format:   ImageManipulator.SaveFormat.JPEG,
-        }
-      );
-
-      setUploadProgress(25);
-
-      // ── Step 2: Build form data ────────────
-      const formData = new FormData();
-      formData.append('file', {
-        uri:  compressed.uri,
-        type: 'image/jpeg',
-        name: `menu_item_${Date.now()}.jpg`,
-      });
-      formData.append('upload_preset', uploadPreset);
-      // ✅ Upload to whats_cooking/menu_items/
-      formData.append('folder', folders.menuItems);
-
-      setUploadProgress(50);
-
-      // ── Step 3: Upload to Cloudinary ───────
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-        {
-          method:  'POST',
-          body:    formData,
-          headers: { 'Content-Type': 'multipart/form-data' },
-        }
-      );
-
-      setUploadProgress(85);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'Upload failed');
-      }
-
-      const data = await response.json();
-      setUploadProgress(100);
-
-      return {
-        success:   true,
-        url:       data.secure_url,   // ← save to Firestore
-        publicId:  data.public_id,    // ← save for future deletion
-        width:     data.width,
-        height:    data.height,
-      };
-    } catch (err) {
-      console.error('Cloudinary upload error:', err);
-      return { success: false, error: err.message };
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  };
-
-  // ─────────────────────────────────────────
   // FORM HANDLERS
   // ─────────────────────────────────────────
-
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
@@ -209,9 +228,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
   // ─────────────────────────────────────────
   // IMAGE HANDLERS
   // ─────────────────────────────────────────
-
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission needed', 'Please allow photo library access');
       return;
@@ -220,7 +239,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
       mediaTypes:    ['images'],
       allowsEditing: true,
       aspect:        [4, 3],
-      quality:       1, // we compress in uploadImageToCloudinary
+      quality:       1,
     });
     if (!result.canceled) {
       setNewImageUri(result.assets[0].uri);
@@ -245,15 +264,14 @@ export default function AddMenuItemScreen({ route, navigation }) {
     }
   };
 
-  // ✅ Show action sheet: camera or library
   const handlePickImage = () => {
     Alert.alert(
       '📷 Add Photo',
       'Choose image source',
       [
-        { text: '📷 Take Photo',          onPress: takePhoto   },
-        { text: '🖼️ Choose from Library', onPress: pickImage   },
-        { text: 'Cancel', style: 'cancel'                      },
+        { text: '📷 Take Photo',          onPress: takePhoto  },
+        { text: '🖼️ Choose from Library', onPress: pickImage  },
+        { text: 'Cancel', style: 'cancel'                     },
       ]
     );
   };
@@ -271,14 +289,11 @@ export default function AddMenuItemScreen({ route, navigation }) {
   };
 
   // ─────────────────────────────────────────
-  // SCAN MENU PAGE
-  // Navigate to scanner with this item's context
+  // SCAN MENU ITEM
   // ─────────────────────────────────────────
-
   const handleScanMenuItem = () => {
     navigation.navigate('MenuScanner', {
       restaurantId,
-      // Pre-fill form if user scans a single item
       onScanComplete: (scannedData) => {
         if (scannedData?.name)        updateForm('name',        scannedData.name);
         if (scannedData?.price)       updateForm('price',       scannedData.price.toString());
@@ -291,7 +306,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
   // ─────────────────────────────────────────
   // SAVE HANDLER
   // ─────────────────────────────────────────
-
   const handleSave = async () => {
     // ── Validation ────────────────────────
     if (!form.name.trim()) {
@@ -310,45 +324,69 @@ export default function AddMenuItemScreen({ route, navigation }) {
     setLoading(true);
 
     try {
-      // ── Step 1: Upload image if new one picked ──
-      let cloudinaryUrl = null;
+      let cloudinaryUrl      = null;
       let cloudinaryPublicId = null;
 
+      // ── Upload new image via XHR ──────────
       if (isShowingNewPhoto && newImageUri) {
-        const uploadResult = await uploadImageToCloudinary(newImageUri);
+        setUploading(true);
+        setUploadProgress(0);
+
+        const uploadResult = await uploadImageToCloudinary(
+          newImageUri,
+          (pct) => setUploadProgress(pct)
+        );
+
+        setUploading(false);
+        setUploadProgress(0);
+
         if (!uploadResult.success) {
-          Alert.alert(
-            '⚠️ Image Upload Failed',
-            `${uploadResult.error}\n\nSave without image?`,
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => setLoading(false) },
-              {
-                text: 'Save Anyway',
-                onPress: async () => await saveMenuItem(null, null),
-              },
-            ]
-          );
-          return;
+          // ✅ Ask user if they want to continue without image
+          const continueWithout = await new Promise(resolve => {
+            Alert.alert(
+              '⚠️ Image Upload Failed',
+              `${uploadResult.error}\n\nSave without image?`,
+              [
+                {
+                  text:    'Cancel',
+                  style:   'cancel',
+                  onPress: () => resolve(false),
+                },
+                {
+                  text:    'Save Anyway',
+                  onPress: () => resolve(true),
+                },
+              ]
+            );
+          });
+
+          if (!continueWithout) {
+            setLoading(false);
+            return;
+          }
+        } else {
+          cloudinaryUrl      = uploadResult.url;
+          cloudinaryPublicId = uploadResult.publicId;
         }
-        cloudinaryUrl      = uploadResult.url;
-        cloudinaryPublicId = uploadResult.publicId;
       }
 
-      // Keep existing Cloudinary URL if no new image
+      // ── Keep existing Cloudinary URL ──────
       if (isShowingExistingPhoto && existingImageUrl) {
         cloudinaryUrl      = existingImageUrl;
         cloudinaryPublicId = existingItem?.cloudinaryPublicId || null;
       }
 
       await saveMenuItem(cloudinaryUrl, cloudinaryPublicId);
+
     } catch (err) {
+      console.error('handleSave error:', err);
       Alert.alert('Error', err.message);
       setLoading(false);
+      setUploading(false);
     }
   };
 
   const saveMenuItem = async (cloudinaryUrl, cloudinaryPublicId) => {
-    // ── Build data object ──────────────────
     const data = {
       name:            form.name.trim(),
       description:     form.description.trim(),
@@ -362,16 +400,15 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .map(t => t.trim())
                          .filter(Boolean),
 
-      // ✅ Cloudinary fields (replaces Firebase Storage)
-      imageUrl:            cloudinaryUrl      || null,
-      cloudinaryUrl:       cloudinaryUrl      || null,
-      cloudinaryPublicId:  cloudinaryPublicId || null,
+      // ✅ Cloudinary fields
+      imageUrl:           cloudinaryUrl      || null,
+      cloudinaryUrl:      cloudinaryUrl      || null,
+      cloudinaryPublicId: cloudinaryPublicId || null,
 
-      // ✅ Keep auto image fallback data
-      // so getLocalFoodImage(name, category) still works
-      autoImageUrl:   null,
-      imageName:      form.name.trim(),
-      imageCategory:  form.category,
+      // ✅ Auto image fallback fields
+      autoImageUrl:  null,
+      imageName:     form.name.trim(),
+      imageCategory: form.category,
     };
 
     let result;
@@ -397,7 +434,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
   // ─────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────
-
   const displaySource = getDisplaySource();
   const isUploading   = uploading || loading;
 
@@ -456,7 +492,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
                 <Text style={styles.uploadProgressText}>
                   Uploading {uploadProgress}%
                 </Text>
-                {/* Progress Bar */}
                 <View style={styles.progressBarBg}>
                   <View style={[
                     styles.progressBarFill,
@@ -466,11 +501,13 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* Camera Overlay (when not uploading) */}
+            {/* Camera Overlay */}
             {!uploading && (
               <View style={styles.imageOverlay}>
                 <Ionicons name="camera" size={24} color="#FFFFFF" />
-                <Text style={styles.imageOverlayText}>Tap to change photo</Text>
+                <Text style={styles.imageOverlayText}>
+                  Tap to change photo
+                </Text>
               </View>
             )}
 
@@ -485,7 +522,11 @@ export default function AddMenuItemScreen({ route, navigation }) {
                 )}
                 {isShowingExistingPhoto && (
                   <View style={[styles.badge, styles.badgeExisting]}>
-                    <Ionicons name="cloud-done-outline" size={12} color="#FFFFFF" />
+                    <Ionicons
+                      name="cloud-done-outline"
+                      size={12}
+                      color="#FFFFFF"
+                    />
                     <Text style={styles.badgeText}>Cloudinary</Text>
                   </View>
                 )}
@@ -714,10 +755,14 @@ export default function AddMenuItemScreen({ route, navigation }) {
             />
           </View>
 
-          {/* ── Upload Status Card ───────────── */}
+          {/* Upload Status Card */}
           {isShowingNewPhoto && !uploading && (
             <View style={styles.uploadStatusCard}>
-              <Ionicons name="cloud-upload-outline" size={20} color={COLORS.primary} />
+              <Ionicons
+                name="cloud-upload-outline"
+                size={20}
+                color={COLORS.primary}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.uploadStatusTitle}>
                   Ready to Upload
@@ -729,7 +774,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* ── Save Button ─────────────────── */}
+          {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveBtn, isUploading && styles.saveBtnDisabled]}
             onPress={handleSave}
@@ -740,7 +785,9 @@ export default function AddMenuItemScreen({ route, navigation }) {
               <View style={styles.saveBtnLoading}>
                 <ActivityIndicator color="#FFFFFF" />
                 <Text style={styles.saveBtnText}>
-                  {uploading ? `Uploading ${uploadProgress}%...` : 'Saving...'}
+                  {uploading
+                    ? `Uploading ${uploadProgress}%...`
+                    : 'Saving...'}
                 </Text>
               </View>
             ) : (
@@ -764,7 +811,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
 // ─────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex:            1,
     backgroundColor: COLORS.background,
   },
 
@@ -824,7 +871,7 @@ const styles = StyleSheet.create({
 
   // ── Upload Overlay ────────────────────────
   uploadOverlay: {
-    position:       'absolute',
+    position:        'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent:  'center',
@@ -879,9 +926,9 @@ const styles = StyleSheet.create({
     borderRadius:      RADIUS.round,
     gap:               4,
   },
-  badgeAuto:     { backgroundColor: COLORS.primary             },
-  badgeExisting: { backgroundColor: COLORS.info || '#3498DB'   },
-  badgeNew:      { backgroundColor: COLORS.success             },
+  badgeAuto:     { backgroundColor: COLORS.primary           },
+  badgeExisting: { backgroundColor: COLORS.info || '#3498DB' },
+  badgeNew:      { backgroundColor: COLORS.success           },
   badgeText: {
     color:      '#FFFFFF',
     fontSize:   FONTS.xs,
@@ -942,7 +989,7 @@ const styles = StyleSheet.create({
     borderColor:       COLORS.border,
   },
   textarea: {
-    height:          80,
+    height:            80,
     textAlignVertical: 'top',
   },
 
@@ -959,8 +1006,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor:     COLORS.primary,
   },
-  categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text        },
-  categoryBtnTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  categoryBtnText:       { fontSize: FONTS.sm, color: COLORS.text },
+  categoryBtnTextActive: { color: '#FFFFFF', fontWeight: '600'    },
 
   // ── Dietary ───────────────────────────────
   dietaryGrid: {
@@ -980,8 +1027,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.success + '15',
     borderColor:     COLORS.success,
   },
-  dietaryText:       { fontSize: FONTS.sm, color: COLORS.text    },
-  dietaryTextActive: { color: COLORS.success, fontWeight: '600'  },
+  dietaryText:       { fontSize: FONTS.sm, color: COLORS.text   },
+  dietaryTextActive: { color: COLORS.success, fontWeight: '600' },
 
   // ── Upload Status Card ────────────────────
   uploadStatusCard: {
@@ -1018,7 +1065,11 @@ const styles = StyleSheet.create({
     ...SHADOW,
   },
   saveBtnDisabled: { opacity: 0.7 },
-  saveBtnLoading:  { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm },
+  saveBtnLoading: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.sm,
+  },
   saveBtnText: {
     color:      '#FFFFFF',
     fontSize:   FONTS.xl,
