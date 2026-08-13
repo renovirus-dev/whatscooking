@@ -19,68 +19,91 @@ import {
 import * as ImageManipulator from 'expo-image-manipulator';
 import { db }                from '../firebase/config';
 import { CLOUDINARY_CONFIG } from '../config/cloudinary';
-import { getLocalFoodImage } from '../utils/localFoodImages';
 
 // ─── Cloudinary Config ────────────────────────
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 // ─────────────────────────────────────────────
 // INTERNAL CLOUDINARY UPLOAD
-// Used only inside this hook
+// ✅ Uses XMLHttpRequest — fixes FormDataPart error
+//    fetch + Content-Type: multipart/form-data
+//    breaks in React Native
 // ─────────────────────────────────────────────
-const uploadMenuItemImage = async (imageUri, itemId) => {
-  try {
-    // ── Step 1: Compress ──────────────────────
-    const compressed = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: 1200 } }],
-      {
-        compress: 0.8,
-        format:   ImageManipulator.SaveFormat.JPEG,
-      }
-    );
+const uploadMenuItemImage = (imageUri, itemId) => {
+  return new Promise(async (resolve) => {
+    try {
+      // ── Step 1: Compress ──────────────────
+      const compressed = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: 1200 } }],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
 
-    // ── Step 2: Build FormData ────────────────
-    const formData = new FormData();
-    formData.append('file', {
-      uri:  compressed.uri,
-      type: 'image/jpeg',
-      name: `menu_item_${itemId}_${Date.now()}.jpg`,
-    });
-    formData.append('upload_preset', uploadPreset);
-    // ✅ Goes to whats_cooking/menu_items/
-    formData.append('folder', folders.menuItems);
-    // ✅ Use itemId as public_id for easy management
-    formData.append('public_id', `menu_item_${itemId}`);
+      // ── Step 2: Build FormData ────────────
+      const formData = new FormData();
+      formData.append('file', {
+        uri:  compressed.uri,
+        type: 'image/jpeg',
+        name: `menu_item_${itemId}_${Date.now()}.jpg`,
+      });
+      formData.append('upload_preset', uploadPreset);
+      // ✅ Goes to whats_cooking/menu_items/
+      formData.append('folder',     folders.menuItems);
+      // ✅ Use itemId as public_id for easy management
+      formData.append('public_id',  `menu_item_${itemId}`);
 
-    // ── Step 3: Upload ────────────────────────
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method:  'POST',
-        body:    formData,
-        headers: { 'Content-Type': 'multipart/form-data' },
-      }
-    );
+      // ── Step 3: Upload via XHR ────────────
+      // ✅ XMLHttpRequest handles multipart correctly
+      //    DO NOT set Content-Type header manually
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        'POST',
+        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+      );
 
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error?.message || 'Cloudinary upload failed');
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          const data = JSON.parse(xhr.responseText);
+          console.log('✅ Menu item image uploaded:', data.secure_url);
+          resolve({
+            success:  true,
+            url:      data.secure_url,
+            publicId: data.public_id,
+            width:    data.width,
+            height:   data.height,
+          });
+        } else {
+          let errMsg = 'Cloudinary upload failed';
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            errMsg = errData.error?.message || errMsg;
+          } catch {}
+          console.error('❌ uploadMenuItemImage failed:', errMsg);
+          resolve({ success: false, error: errMsg });
+        }
+      };
+
+      xhr.onerror = () => {
+        console.error('❌ uploadMenuItemImage network error');
+        resolve({ success: false, error: 'Network error during upload' });
+      };
+
+      xhr.ontimeout = () => {
+        console.error('❌ uploadMenuItemImage timed out');
+        resolve({ success: false, error: 'Upload timed out' });
+      };
+
+      // ✅ 60 second timeout for large images
+      xhr.timeout = 60000;
+
+      // ✅ DO NOT set Content-Type — XHR sets it automatically
+      xhr.send(formData);
+
+    } catch (error) {
+      console.error('❌ uploadMenuItemImage error:', error);
+      resolve({ success: false, error: error.message });
     }
-
-    const data = await response.json();
-
-    return {
-      success:   true,
-      url:       data.secure_url,   // ← save to Firestore as imageUrl
-      publicId:  data.public_id,    // ← save for future reference
-      width:     data.width,
-      height:    data.height,
-    };
-  } catch (error) {
-    console.error('❌ uploadMenuItemImage error:', error);
-    return { success: false, error: error.message };
-  }
+  });
 };
 
 // ─────────────────────────────────────────────
@@ -110,7 +133,7 @@ export const useMenu = (restaurantId) => {
           ...d.data(),
         }));
 
-        // Sort by category then name
+        // ✅ Sort by category then name client-side
         items.sort((a, b) => {
           const catCompare =
             (a.category || '').localeCompare(b.category || '');
@@ -140,14 +163,13 @@ export const useMenu = (restaurantId) => {
       const newRef = doc(collection(db, 'menuItems'));
       const itemId = newRef.id;
 
-      // ── Image handling ────────────────────
       let imageUrl           = '';
       let cloudinaryUrl      = '';
       let cloudinaryPublicId = '';
       let isAutoImage        = false;
 
       if (imageUri) {
-        // ✅ User picked a photo → upload to Cloudinary
+        // ✅ User picked a photo → upload via XHR
         console.log('⬆️ Uploading menu item image to Cloudinary...');
         const result = await uploadMenuItemImage(imageUri, itemId);
 
@@ -156,9 +178,8 @@ export const useMenu = (restaurantId) => {
           cloudinaryUrl      = result.url;
           cloudinaryPublicId = result.publicId;
           isAutoImage        = false;
-          console.log('✅ Image uploaded to Cloudinary:', result.url);
         } else {
-          // ✅ Upload failed → fall back to local image
+          // ✅ Upload failed → fall back to local auto image
           console.warn('⚠️ Cloudinary upload failed:', result.error);
           console.log('ℹ️ Falling back to local auto image');
           imageUrl    = '';
@@ -166,19 +187,16 @@ export const useMenu = (restaurantId) => {
         }
       } else {
         // ✅ No photo → use local bundled image
-        // getLocalFoodImage(name, category) generates at display time
-        // Zero storage cost, works offline
         imageUrl    = '';
         isAutoImage = true;
         console.log('ℹ️ Using local auto image for:', data.name);
       }
 
       // ── Clean data ────────────────────────
-      // Remove fields that shouldn't go to Firestore directly
       const {
-        autoImageUrl,    // old Firebase field — remove
-        imageName,       // we recalculate from name
-        imageCategory,   // we recalculate from category
+        autoImageUrl,
+        imageName,
+        imageCategory,
         ...cleanData
       } = data;
 
@@ -189,12 +207,11 @@ export const useMenu = (restaurantId) => {
         restaurantId,
 
         // ✅ Cloudinary fields
-        imageUrl,              // primary image URL (Cloudinary or '')
-        cloudinaryUrl,         // same as imageUrl — explicit Cloudinary ref
-        cloudinaryPublicId,    // for future management/deletion
+        imageUrl,
+        cloudinaryUrl,
+        cloudinaryPublicId,
 
         // ✅ Auto image fallback metadata
-        // UI uses these to call getLocalFoodImage(name, category)
         isAutoImage,
         imageName:     data.name     || '',
         imageCategory: data.category || '',
@@ -223,7 +240,6 @@ export const useMenu = (restaurantId) => {
   // ─────────────────────────────────────────
   const updateMenuItem = async (itemId, data, newImageUri) => {
     try {
-      // ── Clean data ────────────────────────
       const {
         autoImageUrl,
         imageName,
@@ -233,16 +249,13 @@ export const useMenu = (restaurantId) => {
 
       const updates = {
         ...cleanData,
-        // ✅ Always update auto image metadata
-        // in case name or category changed
         imageName:     data.name     || '',
         imageCategory: data.category || '',
         updatedAt:     serverTimestamp(),
       };
 
-      // ── Handle image update ───────────────
       if (newImageUri) {
-        // ✅ User picked a NEW photo → upload to Cloudinary
+        // ✅ User picked a NEW photo → upload via XHR
         console.log('⬆️ Updating menu item image on Cloudinary...');
         const result = await uploadMenuItemImage(newImageUri, itemId);
 
@@ -256,20 +269,18 @@ export const useMenu = (restaurantId) => {
           // ✅ Upload failed → keep existing image
           console.warn('⚠️ Image update failed — keeping existing image');
           console.warn('Error:', result.error);
-          // Don't update imageUrl — keep whatever was there
         }
       } else if (data.imageUrl === null) {
-        // ✅ User explicitly removed photo → switch to local auto image
+        // ✅ User explicitly removed photo → switch to auto image
         updates.imageUrl           = '';
         updates.cloudinaryUrl      = '';
         updates.cloudinaryPublicId = '';
         updates.isAutoImage        = true;
         console.log('ℹ️ Switched to local auto image');
       } else if (data.cloudinaryUrl) {
-        // ✅ Keeping existing Cloudinary image — no changes needed
+        // ✅ Keeping existing Cloudinary image — no change
         console.log('ℹ️ Keeping existing Cloudinary image');
       }
-      // else: no image change at all — cleanData already has imageUrl
 
       await updateDoc(doc(db, 'menuItems', itemId), updates);
       console.log('✅ Menu item updated:', itemId);
@@ -318,10 +329,6 @@ export const useMenu = (restaurantId) => {
   // ─────────────────────────────────────────
   const deleteMenuItem = async (itemId) => {
     try {
-      // ⚠️ Note: Cloudinary image stays in storage
-      // To delete from Cloudinary you need a Cloud Function
-      // The publicId is saved as cloudinaryPublicId in Firestore
-      // TODO: Call Cloud Function to delete from Cloudinary
       await deleteDoc(doc(db, 'menuItems', itemId));
       console.log('✅ Menu item deleted:', itemId);
       console.log('⚠️ Cloudinary image not deleted — needs Cloud Function');
@@ -435,19 +442,16 @@ export const useMenu = (restaurantId) => {
 
   // ─────────────────────────────────────────
   // REGENERATE AUTO IMAGE
-  // ✅ With Cloudinary — just clear the URL
-  // Local image generates from name + category at display time
   // ─────────────────────────────────────────
   const regenerateAutoImage = async (itemId, name, category) => {
     try {
       await updateDoc(doc(db, 'menuItems', itemId), {
-        imageUrl:          '',   // ✅ Empty = use local image
-        cloudinaryUrl:     '',
-        isAutoImage:       true,
-        // ✅ Update metadata in case name/category changed
-        imageName:         name     || '',
-        imageCategory:     category || '',
-        updatedAt:         serverTimestamp(),
+        imageUrl:      '',
+        cloudinaryUrl: '',
+        isAutoImage:   true,
+        imageName:     name     || '',
+        imageCategory: category || '',
+        updatedAt:     serverTimestamp(),
       });
       console.log('✅ Switched to auto image for item:', itemId);
       return { success: true };
@@ -460,13 +464,9 @@ export const useMenu = (restaurantId) => {
   // ─────────────────────────────────────────
   // ADD SCANNED MENU ITEMS (BULK)
   // For the MenuScanner feature
-  // Adds multiple items at once from OCR scan
   // ─────────────────────────────────────────
   const addScannedMenuItems = async (scannedItems) => {
-    const results = {
-      success: [],
-      failed:  [],
-    };
+    const results = { success: [], failed: [] };
 
     for (const item of scannedItems) {
       try {
@@ -479,10 +479,9 @@ export const useMenu = (restaurantId) => {
             dietaryInfo: item.dietaryInfo || {},
             tags:        item.tags        || [],
             servingSize: item.servingSize || '',
-            // ✅ No image for scanned items — use local auto image
             isAutoImage: true,
           },
-          null // no imageUri for scanned items
+          null // ✅ No image for scanned items — use local auto image
         );
 
         if (result.success) {
@@ -518,6 +517,6 @@ export const useMenu = (restaurantId) => {
     getTodaysMenu,
     getUserReview,
     regenerateAutoImage,
-    addScannedMenuItems,   // 🆕 for MenuScanner
+    addScannedMenuItems,
   };
 };
