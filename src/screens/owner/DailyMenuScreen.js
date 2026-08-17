@@ -11,7 +11,6 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -21,12 +20,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   collection, query, where, onSnapshot,
 } from 'firebase/firestore';
-import { db }      from '../../firebase/config';
-import { useAuth } from '../../hooks/useAuth';
-import { useMenu } from '../../hooks/useMenu';
+import { db }        from '../../firebase/config';
+import { useAuth }   from '../../hooks/useAuth';
+import { useMenu }   from '../../hooks/useMenu';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import { getImageSource }  from '../../utils/localFoodImages';
-import { getThumbUrl }     from '../../utils/uploadToCloudinary';
+import FoodImage     from '../../components/FoodImage';
+import { getThumbUrl } from '../../utils/uploadToCloudinary';
 
 // ─── Category Labels ──────────────────────────
 const CATEGORY_LABELS = {
@@ -43,15 +42,19 @@ const CATEGORY_LABELS = {
   other:       '🍴 Other',
 };
 
-// ✅ Get image source - handles Cloudinary, Firebase, local
-const getMenuItemImage = (item) => {
+// ─────────────────────────────────────────────
+// GET CLOUDINARY URL FOR ITEM
+// Returns optimised thumb URL or null
+// FoodImage uses this directly — skips MealDB
+// ─────────────────────────────────────────────
+const getCloudinaryUrl = (item) => {
   if (item?.cloudinaryUrl) {
-    return { uri: getThumbUrl(item.cloudinaryUrl, 100, 100) };
+    return getThumbUrl(item.cloudinaryUrl, 100, 100);
   }
-  if (item?.imageUrl && item.imageUrl.startsWith('http')) {
-    return { uri: item.imageUrl };
+  if (item?.imageUrl?.startsWith('http')) {
+    return item.imageUrl;
   }
-  return getImageSource(item);
+  return null;
 };
 
 const MAX_CHEF_MESSAGE = 200;
@@ -61,13 +64,13 @@ export default function DailyMenuScreen({ navigation }) {
   const { user } = useAuth();
 
   // ── State ─────────────────────────────────
-  const [restaurantId, setRestaurantId]   = useState(null);
-  const [selectedIds, setSelectedIds]     = useState([]);
-  const [specialIds, setSpecialIds]       = useState([]);
-  const [chefMessage, setChefMessage]     = useState('');
-  const [saving, setSaving]               = useState(false);
-  const [published, setPublished]         = useState(false);
-  const [menuLoading, setMenuLoading]     = useState(false);
+  const [restaurantId, setRestaurantId]     = useState(null);
+  const [selectedIds, setSelectedIds]       = useState([]);
+  const [specialIds, setSpecialIds]         = useState([]);
+  const [chefMessage, setChefMessage]       = useState('');
+  const [saving, setSaving]                 = useState(false);
+  const [published, setPublished]           = useState(false);
+  const [menuLoading, setMenuLoading]       = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
 
   const { menuItems, setDailyMenu, getTodaysMenu } = useMenu(restaurantId);
@@ -83,7 +86,7 @@ export default function DailyMenuScreen({ navigation }) {
       if (!snap.empty) {
         const id = snap.docs[0].id;
         setRestaurantId(id);
-        // ✅ Reset state when restaurant changes
+        // Reset state when restaurant changes
         setSelectedIds([]);
         setSpecialIds([]);
         setChefMessage('');
@@ -95,7 +98,6 @@ export default function DailyMenuScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // LOAD TODAY'S MENU
-  // ✅ Wrapped in useCallback
   // ─────────────────────────────────────────
   const loadTodaysMenu = useCallback(async () => {
     if (!restaurantId || menuItems.length === 0) return;
@@ -108,7 +110,7 @@ export default function DailyMenuScreen({ navigation }) {
         setChefMessage(todaysMenu.chefMessage      || '');
         setPublished(true);
       } else {
-        // ✅ Default: all available items selected
+        // Default: all available items selected
         setSelectedIds(
           menuItems
             .filter(i => i.isAvailable)
@@ -124,7 +126,6 @@ export default function DailyMenuScreen({ navigation }) {
     }
   }, [restaurantId, menuItems, getTodaysMenu]);
 
-  // Load today's menu when ready
   useEffect(() => {
     if (restaurantId && menuItems.length > 0) {
       loadTodaysMenu();
@@ -135,7 +136,10 @@ export default function DailyMenuScreen({ navigation }) {
   // CATEGORIES
   // ─────────────────────────────────────────
   const categories = useMemo(() => {
-    const cats = ['all', ...new Set(menuItems.map(i => i.category || 'other'))];
+    const cats = [
+      'all',
+      ...new Set(menuItems.map(i => i.category || 'other')),
+    ];
     return cats;
   }, [menuItems]);
 
@@ -144,7 +148,9 @@ export default function DailyMenuScreen({ navigation }) {
   // ─────────────────────────────────────────
   const filteredItems = useMemo(() => {
     if (activeCategory === 'all') return menuItems;
-    return menuItems.filter(i => (i.category || 'other') === activeCategory);
+    return menuItems.filter(
+      i => (i.category || 'other') === activeCategory
+    );
   }, [menuItems, activeCategory]);
 
   // ─────────────────────────────────────────
@@ -152,28 +158,31 @@ export default function DailyMenuScreen({ navigation }) {
   // ─────────────────────────────────────────
   const toggleItem = useCallback((id) => {
     setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+      prev.includes(id)
+        ? prev.filter(i => i !== id)
+        : [...prev, id]
     );
   }, []);
 
-  // ✅ Toggle special - must be selected first
+  // Toggle special — auto-selects item if not selected
   const toggleSpecial = useCallback((id) => {
     if (!selectedIds.includes(id)) {
-      // Auto-select if not already selected
       setSelectedIds(prev => [...prev, id]);
     }
     setSpecialIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+      prev.includes(id)
+        ? prev.filter(i => i !== id)
+        : [...prev, id]
     );
   }, [selectedIds]);
 
-  const selectAll   = useCallback(() => {
+  const selectAll = useCallback(() => {
     setSelectedIds(menuItems.map(i => i.id));
   }, [menuItems]);
 
   const deselectAll = useCallback(() => {
     setSelectedIds([]);
-    setSpecialIds([]); // ✅ Clear specials too
+    setSpecialIds([]);
   }, []);
 
   const selectAvailableOnly = useCallback(() => {
@@ -182,7 +191,6 @@ export default function DailyMenuScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // PUBLISH
-  // ✅ Now passes specials too
   // ─────────────────────────────────────────
   const handlePublish = useCallback(async () => {
     if (selectedIds.length === 0) {
@@ -196,7 +204,7 @@ export default function DailyMenuScreen({ navigation }) {
     setSaving(true);
     const result = await setDailyMenu(
       selectedIds,
-      specialIds,  // ✅ Was always [] before
+      specialIds,
       chefMessage.trim()
     );
     setSaving(false);
@@ -294,7 +302,7 @@ export default function DailyMenuScreen({ navigation }) {
         )}
       </View>
 
-      {/* ── Loading today's menu ─────────────── */}
+      {/* ── Loading ─────────────────────────── */}
       {menuLoading ? (
         <View style={styles.menuLoading}>
           <ActivityIndicator size="small" color={COLORS.primary} />
@@ -341,7 +349,10 @@ export default function DailyMenuScreen({ navigation }) {
                 onPress={deselectAll}
                 style={styles.statsBtn}
               >
-                <Text style={[styles.statsBtnText, { color: COLORS.error }]}>
+                <Text style={[
+                  styles.statsBtnText,
+                  { color: COLORS.error },
+                ]}>
                   Clear
                 </Text>
               </TouchableOpacity>
@@ -436,7 +447,7 @@ export default function DailyMenuScreen({ navigation }) {
                   onPress={() => toggleItem(item.id)}
                   activeOpacity={0.7}
                 >
-                  {/* Checkbox */}
+                  {/* ── Checkbox ────────────────── */}
                   <View style={[
                     styles.checkbox,
                     isSelected && styles.checkboxActive,
@@ -446,14 +457,18 @@ export default function DailyMenuScreen({ navigation }) {
                     )}
                   </View>
 
-                  {/* ✅ Image with Cloudinary optimization */}
-                  <Image
-                    source={getMenuItemImage(item)}
-                    style={styles.itemImage}
-                    resizeMode="cover"
-                  />
+                  {/* ── Image ───────────────────── */}
+                  {/* ✅ FoodImage: Cloudinary → MealDB → local */}
+                  <View style={styles.itemImageWrapper}>
+                    <FoodImage
+                      item={item}
+                      cloudinaryUrl={getCloudinaryUrl(item)}
+                      style={styles.itemImage}
+                      resizeMode="cover"
+                    />
+                  </View>
 
-                  {/* Info */}
+                  {/* ── Info ────────────────────── */}
                   <View style={styles.itemInfo}>
                     <View style={styles.itemNameRow}>
                       <Text style={styles.itemName} numberOfLines={1}>
@@ -474,12 +489,11 @@ export default function DailyMenuScreen({ navigation }) {
                     )}
                   </View>
 
-                  {/* Price + Special toggle */}
+                  {/* ── Price + Star ─────────────── */}
                   <View style={styles.itemRight}>
                     <Text style={styles.itemPrice}>
                       ${item.price?.toFixed(2)}
                     </Text>
-                    {/* ✅ Star button to mark as special */}
                     <TouchableOpacity
                       style={[
                         styles.starBtn,
@@ -532,7 +546,11 @@ export default function DailyMenuScreen({ navigation }) {
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <>
-              <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+              <Ionicons
+                name="cloud-upload-outline"
+                size={18}
+                color="#FFFFFF"
+              />
               <Text style={styles.publishBtnText}>
                 {published ? 'Update Menu' : 'Publish Menu'}
               </Text>
@@ -581,7 +599,11 @@ const styles = StyleSheet.create({
     borderRadius:      RADIUS.lg,
     marginTop:         SIZES.md,
   },
-  addItemsBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
+  addItemsBtnText: {
+    color:      '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize:   FONTS.md,
+  },
 
   // ── Header ────────────────────────────────
   header: {
@@ -708,9 +730,16 @@ const styles = StyleSheet.create({
     borderWidth:       1,
     borderColor:       COLORS.border,
   },
-  categoryTabActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  categoryTabText:       { fontSize: FONTS.xs, color: COLORS.textMuted, fontWeight: '500' },
-  categoryTabTextActive: { color: '#FFFFFF', fontWeight: '600'                            },
+  categoryTabActive: {
+    backgroundColor: COLORS.primary,
+    borderColor:     COLORS.primary,
+  },
+  categoryTabText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    fontWeight: '500',
+  },
+  categoryTabTextActive: { color: '#FFFFFF', fontWeight: '600' },
 
   // ── List ──────────────────────────────────
   list: { padding: SIZES.md, gap: SIZES.sm },
@@ -731,26 +760,36 @@ const styles = StyleSheet.create({
   itemRowSpecial:     { borderColor: '#FFD700',      backgroundColor: '#FFD700' + '05'      },
   itemRowUnavailable: { opacity: 0.6                                                         },
 
+  // ── Checkbox ──────────────────────────────
   checkbox: {
-    width:           24,
-    height:          24,
-    borderRadius:    6,
-    borderWidth:     2,
-    borderColor:     COLORS.border,
-    justifyContent:  'center',
-    alignItems:      'center',
+    width:          24,
+    height:         24,
+    borderRadius:   6,
+    borderWidth:    2,
+    borderColor:    COLORS.border,
+    justifyContent: 'center',
+    alignItems:     'center',
   },
   checkboxActive: {
     backgroundColor: COLORS.primary,
     borderColor:     COLORS.primary,
   },
 
+  // ── Item Image ────────────────────────────
+  // ✅ Wrapper needed so FoodImage fills correctly
+  itemImageWrapper: {
+    width:        50,
+    height:       50,
+    borderRadius: RADIUS.md,
+    overflow:     'hidden',
+  },
   itemImage: {
     width:        50,
     height:       50,
     borderRadius: RADIUS.md,
   },
 
+  // ── Item Info ─────────────────────────────
   itemInfo: { flex: 1 },
   itemNameRow: {
     flexDirection: 'row',
@@ -770,10 +809,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   itemCategory: {
-    fontSize:        FONTS.xs,
-    color:           COLORS.textMuted,
-    textTransform:   'capitalize',
-    marginTop:       2,
+    fontSize:      FONTS.xs,
+    color:         COLORS.textMuted,
+    textTransform: 'capitalize',
+    marginTop:     2,
   },
   unavailableLabel: {
     fontSize:  FONTS.xs,
@@ -781,6 +820,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  // ── Item Right ────────────────────────────
   itemRight: {
     alignItems: 'center',
     gap:        SIZES.xs,
@@ -813,7 +853,7 @@ const styles = StyleSheet.create({
     borderTopColor:    COLORS.border,
     ...SHADOW,
   },
-  publishInfo:    { gap: 2 },
+  publishInfo:  { gap: 2 },
   publishCount: {
     fontSize:   FONTS.xl,
     fontWeight: 'bold',

@@ -10,7 +10,6 @@ import {
   StyleSheet,
   Switch,
   Alert,
-  Image,
   ActivityIndicator,
   TextInput,
   ScrollView,
@@ -22,11 +21,11 @@ import {
   onSnapshot, doc, updateDoc,
   deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
-import { db }      from '../../firebase/config';
-import { useAuth } from '../../hooks/useAuth';
+import { db }        from '../../firebase/config';
+import { useAuth }   from '../../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import { getImageSource }  from '../../utils/localFoodImages';
-import { getThumbUrl }     from '../../utils/uploadToCloudinary';
+import FoodImage     from '../../components/FoodImage';
+import { getThumbUrl } from '../../utils/uploadToCloudinary';
 
 const INFO_COLOR = COLORS.info || '#3498DB';
 
@@ -45,19 +44,18 @@ const CATEGORY_LABELS = {
   other:       '🍴 Other',
 };
 
-// ─── Get image source ─────────────────────────
-// ✅ Updated to handle Cloudinary URLs with optimization
-const getMenuItemImage = (item) => {
-  // ✅ Cloudinary URL → use thumb transform
+// ─────────────────────────────────────────────
+// GET CLOUDINARY URL FOR ITEM
+// Returns optimised thumb URL or null
+// ─────────────────────────────────────────────
+const getCloudinaryUrl = (item) => {
   if (item?.cloudinaryUrl) {
-    return { uri: getThumbUrl(item.cloudinaryUrl, 128, 128) };
+    return getThumbUrl(item.cloudinaryUrl, 128, 128);
   }
-  // ✅ Legacy Firebase URL
-  if (item?.imageUrl && item.imageUrl.startsWith('http')) {
-    return { uri: item.imageUrl };
+  if (item?.imageUrl?.startsWith('http')) {
+    return item.imageUrl;
   }
-  // ✅ Local auto image fallback
-  return getImageSource(item);
+  return null;
 };
 
 export default function ManageMenuScreen({ navigation }) {
@@ -82,12 +80,10 @@ export default function ManageMenuScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // FIRESTORE LISTENERS
-  // ✅ Merged into one effect chain
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
 
-    // Step 1: Get restaurant
     const restaurantQ = query(
       collection(db, 'restaurants'),
       where('ownerId', '==', user.uid)
@@ -117,7 +113,6 @@ export default function ManageMenuScreen({ navigation }) {
   useEffect(() => {
     if (!restaurantId) return;
 
-    // Step 2: Get menu items
     const menuQ = query(
       collection(db, 'menuItems'),
       where('restaurantId', '==', restaurantId)
@@ -143,7 +138,6 @@ export default function ManageMenuScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // FILTERED + SORTED + SEARCHED ITEMS
-  // ✅ All in one useMemo
   // ─────────────────────────────────────────
   const processedItems = useMemo(() => {
     let items = [...menuItems];
@@ -188,7 +182,7 @@ export default function ManageMenuScreen({ navigation }) {
   // GROUP BY CATEGORY
   // ─────────────────────────────────────────
   const groupedItems = useMemo(() => {
-    if (sortBy !== 'category') return null; // flat list for other sorts
+    if (sortBy !== 'category') return null;
     return processedItems.reduce((acc, item) => {
       const cat = item.category || 'other';
       if (!acc[cat]) acc[cat] = [];
@@ -244,8 +238,6 @@ export default function ManageMenuScreen({ navigation }) {
           onPress: async () => {
             try {
               await deleteDoc(doc(db, 'menuItems', item.id));
-              // ✅ Note: Cloudinary image stays until manually deleted
-              // publicId is saved as item.cloudinaryPublicId
             } catch (err) {
               if (isMounted.current) {
                 Alert.alert('Error', 'Could not delete item');
@@ -265,24 +257,28 @@ export default function ManageMenuScreen({ navigation }) {
       key={menuItem.id}
       style={[
         styles.itemCard,
-        !menuItem.isAvailable && styles.itemCardDim,
+        !menuItem.isAvailable      && styles.itemCardDim,
         menuItem.isSpecialOfTheDay && styles.itemCardSpecial,
       ]}
     >
-      {/* ✅ Image with Cloudinary optimization */}
-      <Image
-        source={getMenuItemImage(menuItem)}
-        style={styles.itemImage}
-        resizeMode="cover"
-      />
+      {/* ✅ FoodImage — handles Cloudinary, MealDB, local fallback */}
+      <View style={styles.itemImageWrapper}>
+        <FoodImage
+          item={menuItem}
+          cloudinaryUrl={getCloudinaryUrl(menuItem)}
+          style={styles.itemImage}
+          resizeMode="cover"
+        />
 
-      {/* Special badge */}
-      {menuItem.isSpecialOfTheDay && (
-        <View style={styles.specialBadge}>
-          <Text style={styles.specialBadgeText}>⭐ Special</Text>
-        </View>
-      )}
+        {/* Special badge overlaid on image */}
+        {menuItem.isSpecialOfTheDay && (
+          <View style={styles.specialBadge}>
+            <Text style={styles.specialBadgeText}>⭐</Text>
+          </View>
+        )}
+      </View>
 
+      {/* ── Item Info ───────────────────── */}
       <View style={styles.itemInfo}>
         <Text style={styles.itemName} numberOfLines={1}>
           {menuItem.name}
@@ -290,11 +286,11 @@ export default function ManageMenuScreen({ navigation }) {
         <Text style={styles.itemPrice}>
           ${menuItem.price?.toFixed(2)}
         </Text>
-        {menuItem.description ? (
+        {!!menuItem.description && (
           <Text style={styles.itemDesc} numberOfLines={1}>
             {menuItem.description}
           </Text>
-        ) : null}
+        )}
 
         {/* Dietary tags */}
         {menuItem.dietaryInfo && (
@@ -323,8 +319,9 @@ export default function ManageMenuScreen({ navigation }) {
         )}
       </View>
 
-      {/* Actions */}
+      {/* ── Actions ─────────────────────── */}
       <View style={styles.itemActions}>
+
         {/* Available toggle */}
         <Switch
           value={!!menuItem.isAvailable}
@@ -440,7 +437,7 @@ export default function ManageMenuScreen({ navigation }) {
           </View>
 
           <View style={styles.headerActions}>
-            {/* ✅ Scan Menu Button */}
+            {/* Scan Menu Button */}
             <TouchableOpacity
               style={styles.scanBtn}
               onPress={() => navigation.navigate('MenuScanner', {
@@ -454,7 +451,9 @@ export default function ManageMenuScreen({ navigation }) {
             {/* Add Item Button */}
             <TouchableOpacity
               style={styles.addBtn}
-              onPress={() => navigation.navigate('AddMenuItem', { restaurantId })}
+              onPress={() => navigation.navigate('AddMenuItem', {
+                restaurantId,
+              })}
               activeOpacity={0.8}
             >
               <Ionicons name="add" size={20} color="#FFFFFF" />
@@ -463,7 +462,7 @@ export default function ManageMenuScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ✅ Search Bar */}
+        {/* Search Bar */}
         <View style={styles.searchBar}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMuted} />
           <TextInput
@@ -476,10 +475,15 @@ export default function ManageMenuScreen({ navigation }) {
             clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}
-			hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-			>
-              <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={COLORS.textMuted}
+              />
             </TouchableOpacity>
           )}
         </View>
@@ -487,17 +491,32 @@ export default function ManageMenuScreen({ navigation }) {
 
       {/* ── Filter + Sort Row ────────────────── */}
       <View style={styles.controlsRow}>
-        {/* Filter tabs */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterScroll}
         >
           {[
-            { key: 'all',         label: 'All',        count: menuItems.length                              },
-            { key: 'available',   label: '✅ On',       count: menuItems.filter(i => i.isAvailable).length  },
-            { key: 'unavailable', label: '❌ Off',      count: menuItems.filter(i => !i.isAvailable).length },
-            { key: 'special',     label: '⭐ Specials', count: menuItems.filter(i => i.isSpecialOfTheDay).length },
+            {
+              key:   'all',
+              label: 'All',
+              count: menuItems.length,
+            },
+            {
+              key:   'available',
+              label: '✅ On',
+              count: menuItems.filter(i => i.isAvailable).length,
+            },
+            {
+              key:   'unavailable',
+              label: '❌ Off',
+              count: menuItems.filter(i => !i.isAvailable).length,
+            },
+            {
+              key:   'special',
+              label: '⭐ Specials',
+              count: menuItems.filter(i => i.isSpecialOfTheDay).length,
+            },
           ].map(f => (
             <TouchableOpacity
               key={f.key}
@@ -520,22 +539,26 @@ export default function ManageMenuScreen({ navigation }) {
         {/* Sort button */}
         <TouchableOpacity
           style={styles.sortBtn}
-		  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           onPress={() => {
             Alert.alert(
               'Sort By',
               '',
               [
-                { text: 'Category',    onPress: () => setSortBy('category')   },
-                { text: 'Name A-Z',    onPress: () => setSortBy('name')        },
-                { text: 'Price ↑',     onPress: () => setSortBy('price_asc')  },
-                { text: 'Price ↓',     onPress: () => setSortBy('price_desc') },
-                { text: 'Cancel', style: 'cancel'                              },
+                { text: 'Category',   onPress: () => setSortBy('category')   },
+                { text: 'Name A-Z',   onPress: () => setSortBy('name')       },
+                { text: 'Price ↑',    onPress: () => setSortBy('price_asc')  },
+                { text: 'Price ↓',    onPress: () => setSortBy('price_desc') },
+                { text: 'Cancel', style: 'cancel'                             },
               ]
             );
           }}
         >
-          <Ionicons name="swap-vertical-outline" size={18} color={COLORS.primary} />
+          <Ionicons
+            name="swap-vertical-outline"
+            size={18}
+            color={COLORS.primary}
+          />
         </TouchableOpacity>
       </View>
 
@@ -543,12 +566,13 @@ export default function ManageMenuScreen({ navigation }) {
       {(searchQuery || filter !== 'all') && (
         <View style={styles.resultsBar}>
           <Text style={styles.resultsText}>
-            {processedItems.length} result{processedItems.length !== 1 ? 's' : ''}
+            {processedItems.length} result
+            {processedItems.length !== 1 ? 's' : ''}
             {searchQuery ? ` for "${searchQuery}"` : ''}
           </Text>
           <TouchableOpacity
             onPress={() => { setSearchQuery(''); setFilter('all'); }}
-			hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.clearFiltersText}>Clear Filters</Text>
           </TouchableOpacity>
@@ -586,15 +610,23 @@ export default function ManageMenuScreen({ navigation }) {
             <View style={styles.emptyActions}>
               <TouchableOpacity
                 style={styles.setupBtn}
-                onPress={() => navigation.navigate('AddMenuItem', { restaurantId })}
+                onPress={() => navigation.navigate('AddMenuItem', {
+                  restaurantId,
+                })}
                 activeOpacity={0.8}
               >
-                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                <Ionicons
+                  name="add-circle-outline"
+                  size={18}
+                  color="#FFFFFF"
+                />
                 <Text style={styles.setupBtnText}>Add First Item</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.scanEmptyBtn}
-                onPress={() => navigation.navigate('MenuScanner', { restaurantId })}
+                onPress={() => navigation.navigate('MenuScanner', {
+                  restaurantId,
+                })}
                 activeOpacity={0.8}
               >
                 <Ionicons name="scan-outline" size={18} color={COLORS.primary} />
@@ -620,13 +652,15 @@ export default function ManageMenuScreen({ navigation }) {
           ]}
           renderItem={({ item: [category, items] }) => (
             <View style={styles.categoryGroup}>
+
               {/* Category Header (only in grouped mode) */}
               {groupedItems && (
                 <View style={styles.categoryHeaderRow}>
                   <Text style={styles.categoryHeader}>
-                    {CATEGORY_LABELS[category] || category
-                      .replace(/_/g, ' ')
-                      .replace(/\b\w/g, c => c.toUpperCase())}
+                    {CATEGORY_LABELS[category] ||
+                      category
+                        .replace(/_/g, ' ')
+                        .replace(/\b\w/g, c => c.toUpperCase())}
                   </Text>
                   <Text style={styles.categoryCount}>
                     {items.length}
@@ -688,8 +722,8 @@ const styles = StyleSheet.create({
     marginTop:         SIZES.md,
     ...SHADOW,
   },
-  setupBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
-  emptyActions: { gap: SIZES.sm, marginTop: SIZES.md, alignItems: 'center' },
+  setupBtnText:  { color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md },
+  emptyActions:  { gap: SIZES.sm, marginTop: SIZES.md, alignItems: 'center' },
   scanEmptyBtn: {
     flexDirection:     'row',
     alignItems:        'center',
@@ -804,8 +838,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     borderColor:     COLORS.primary,
   },
-  filterTabText:       { fontSize: FONTS.xs, color: COLORS.textMuted, fontWeight: '500' },
-  filterTabTextActive: { color: '#FFFFFF', fontWeight: '600'                             },
+  filterTabText: {
+    fontSize:   FONTS.xs,
+    color:      COLORS.textMuted,
+    fontWeight: '500',
+  },
+  filterTabTextActive: { color: '#FFFFFF', fontWeight: '600' },
   sortBtn: {
     width:           36,
     height:          36,
@@ -829,18 +867,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.primary + '20',
   },
-  resultsText:      { fontSize: FONTS.xs, color: COLORS.textMuted },
+  resultsText:      { fontSize: FONTS.xs, color: COLORS.textMuted        },
   clearFiltersText: { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '600' },
 
   // ── List ──────────────────────────────────
   listContent:   { padding: SIZES.md },
   categoryGroup: { marginBottom: SIZES.lg },
   categoryHeaderRow: {
-    flexDirection:  'row',
-    justifyContent: 'space-between',
-    alignItems:     'center',
-    marginBottom:   SIZES.sm,
-    paddingBottom:  6,
+    flexDirection:     'row',
+    justifyContent:    'space-between',
+    alignItems:        'center',
+    marginBottom:      SIZES.sm,
+    paddingBottom:     6,
     borderBottomWidth: 2,
     borderBottomColor: COLORS.primary,
   },
@@ -871,9 +909,20 @@ const styles = StyleSheet.create({
   },
   itemCardDim:     { opacity: 0.5 },
   itemCardSpecial: {
-    borderWidth: 1.5,
-    borderColor: '#FFD700' + '60',
+    borderWidth:     1.5,
+    borderColor:     '#FFD700' + '60',
     backgroundColor: '#FFD700' + '05',
+  },
+
+  // ── Item Image Wrapper ────────────────────
+  // ✅ Needed so FoodImage fills correctly
+  //    and badge can be positioned absolutely
+  itemImageWrapper: {
+    width:        64,
+    height:       64,
+    borderRadius: RADIUS.md,
+    overflow:     'hidden',
+    position:     'relative',
   },
   itemImage: {
     width:        64,
@@ -883,20 +932,20 @@ const styles = StyleSheet.create({
 
   // ── Special Badge ─────────────────────────
   specialBadge: {
-    position:          'absolute',
-    top:               SIZES.sm,
-    left:              SIZES.sm,
-    backgroundColor:   '#FFD700',
-    paddingHorizontal: 6,
-    paddingVertical:   2,
-    borderRadius:      RADIUS.round,
-	zIndex:            5,
-	elevation:         5,
+    position:        'absolute',
+    top:             2,
+    left:            2,
+    backgroundColor: '#FFD700',
+    width:           18,
+    height:          18,
+    borderRadius:    9,
+    justifyContent:  'center',
+    alignItems:      'center',
+    zIndex:          5,
+    elevation:       5,
   },
   specialBadgeText: {
-    fontSize:   9,
-    fontWeight: 'bold',
-    color:      '#333',
+    fontSize: 9,
   },
 
   // ── Item Info ─────────────────────────────
@@ -905,9 +954,9 @@ const styles = StyleSheet.create({
     marginLeft: SIZES.md,
     gap:        2,
   },
-  itemName:  { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text   },
+  itemName:  { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text    },
   itemPrice: { fontSize: FONTS.md, fontWeight: 'bold', color: COLORS.primary },
-  itemDesc:  { fontSize: FONTS.xs, color: COLORS.textMuted                  },
+  itemDesc:  { fontSize: FONTS.xs, color: COLORS.textMuted                   },
   dietaryRow: {
     flexDirection: 'row',
     flexWrap:      'wrap',
@@ -928,8 +977,8 @@ const styles = StyleSheet.create({
 
   // ── Item Actions ──────────────────────────
   itemActions: {
-    alignItems: 'center',
-    gap:        SIZES.sm,
+    alignItems:  'center',
+    gap:         SIZES.sm,
     paddingLeft: SIZES.sm,
   },
   specialBtn: {

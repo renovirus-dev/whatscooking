@@ -21,9 +21,9 @@ import * as ImagePicker      from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { useMenu }           from '../../hooks/useMenu';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import { getLocalFoodImage } from '../../utils/localFoodImages';
 import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
 import { getThumbUrl }       from '../../utils/uploadToCloudinary';
+import FoodImage             from '../../components/FoodImage';
 
 // ─── Cloudinary Config ────────────────────────
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
@@ -52,8 +52,6 @@ const DIETARY = [
 // ─────────────────────────────────────────────
 // UPLOAD IMAGE TO CLOUDINARY
 // ✅ Uses XMLHttpRequest — fixes FormDataPart error
-//    fetch + Content-Type: multipart/form-data
-//    breaks in React Native
 // ─────────────────────────────────────────────
 const uploadImageToCloudinary = (imageUri, onProgress) => {
   return new Promise(async (resolve) => {
@@ -75,14 +73,11 @@ const uploadImageToCloudinary = (imageUri, onProgress) => {
         name: `menu_item_${Date.now()}.jpg`,
       });
       formData.append('upload_preset', uploadPreset);
-      // ✅ Upload to whats_cooking/menu_items/
       formData.append('folder', folders.menuItems);
 
       onProgress?.(50);
 
       // ── Step 3: Upload via XHR ────────────
-      // ✅ XMLHttpRequest handles multipart correctly
-      //    DO NOT set Content-Type header manually
       const xhr = new XMLHttpRequest();
 
       xhr.open(
@@ -90,7 +85,6 @@ const uploadImageToCloudinary = (imageUri, onProgress) => {
         `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
       );
 
-      // ✅ Track upload progress
       xhr.upload.addEventListener('progress', (e) => {
         if (e.lengthComputable) {
           const pct = Math.round(50 + (e.loaded / e.total) * 40);
@@ -130,10 +124,7 @@ const uploadImageToCloudinary = (imageUri, onProgress) => {
         resolve({ success: false, error: 'Upload timed out' });
       };
 
-      // ✅ 60 second timeout for large images
       xhr.timeout = 60000;
-
-      // ✅ DO NOT set Content-Type — XHR sets it automatically
       xhr.send(formData);
 
     } catch (err) {
@@ -186,27 +177,11 @@ export default function AddMenuItemScreen({ route, navigation }) {
   const [loading, setLoading]               = useState(false);
 
   // ─────────────────────────────────────────
-  // IMAGE HELPERS
+  // IMAGE STATE HELPERS
   // ─────────────────────────────────────────
-  const getAutoImage = useCallback(() => {
-    return getLocalFoodImage(form.name, form.category);
-  }, [form.name, form.category]);
-
   const isShowingNewPhoto      = useCustomImage && !!newImageUri;
   const isShowingExistingPhoto = useCustomImage && !newImageUri && !!existingImageUrl;
   const isShowingAutoPhoto     = !useCustomImage;
-
-  const getDisplaySource = useCallback(() => {
-    if (isShowingNewPhoto)      return { uri: newImageUri };
-    if (isShowingExistingPhoto) {
-      return { uri: getThumbUrl(existingImageUrl, 400, 300) };
-    }
-    return getAutoImage();
-  }, [
-    newImageUri, existingImageUrl,
-    isShowingNewPhoto, isShowingExistingPhoto,
-    getAutoImage,
-  ]);
 
   // ─────────────────────────────────────────
   // FORM HANDLERS
@@ -269,8 +244,8 @@ export default function AddMenuItemScreen({ route, navigation }) {
       '📷 Add Photo',
       'Choose image source',
       [
-        { text: '📷 Take Photo',          onPress: takePhoto  },
-        { text: '🖼️ Choose from Library', onPress: pickImage  },
+        { text: '📷 Take Photo',           onPress: takePhoto },
+        { text: '🖼️ Choose from Library',  onPress: pickImage },
         { text: 'Cancel', style: 'cancel'                     },
       ]
     );
@@ -327,7 +302,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
       let cloudinaryUrl      = null;
       let cloudinaryPublicId = null;
 
-      // ── Upload new image via XHR ──────────
+      // ── Upload new image ──────────────────
       if (isShowingNewPhoto && newImageUri) {
         setUploading(true);
         setUploadProgress(0);
@@ -341,7 +316,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
         setUploadProgress(0);
 
         if (!uploadResult.success) {
-          // ✅ Ask user if they want to continue without image
           const continueWithout = await new Promise(resolve => {
             Alert.alert(
               '⚠️ Image Upload Failed',
@@ -434,8 +408,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
   // ─────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────
-  const displaySource = getDisplaySource();
-  const isUploading   = uploading || loading;
+  const isUploading = uploading || loading;
 
   return (
     <KeyboardAvoidingView
@@ -478,14 +451,38 @@ export default function AddMenuItemScreen({ route, navigation }) {
             activeOpacity={0.85}
             disabled={isUploading}
           >
-            <Image
-              key={`${form.name}-${form.category}-${regenerateCount}`}
-              source={displaySource}
-              style={styles.previewImage}
-              resizeMode="cover"
-            />
+            {/* ── Image Display ─────────────── */}
+            {isShowingNewPhoto ? (
+              // ✅ Newly picked photo from camera/gallery
+              <Image
+                source={{ uri: newImageUri }}
+                style={styles.previewImage}
+                resizeMode="cover"
+              />
+            ) : isShowingExistingPhoto ? (
+              // ✅ Existing Cloudinary photo
+              <Image
+                source={{ uri: getThumbUrl(existingImageUrl, 400, 300) }}
+                style={styles.previewImage}
+                resizeMode="cover"
+                onError={(e) =>
+                  console.log('Cloudinary img error:', e.nativeEvent.error)
+                }
+              />
+            ) : (
+              // ✅ Auto: shows local image INSTANTLY
+              //    then upgrades to MealDB image async
+              <FoodImage
+                key={`${form.name}-${form.category}-${regenerateCount}`}
+                name={form.name}
+                category={form.category}
+                style={styles.previewImage}
+                resizeMode="cover"
+                showLoader
+              />
+            )}
 
-            {/* Upload Progress Overlay */}
+            {/* ── Upload Progress Overlay ──── */}
             {uploading && (
               <View style={styles.uploadOverlay}>
                 <ActivityIndicator size="large" color="#FFFFFF" />
@@ -501,7 +498,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* Camera Overlay */}
+            {/* ── Camera Hint Overlay ──────── */}
             {!uploading && (
               <View style={styles.imageOverlay}>
                 <Ionicons name="camera" size={24} color="#FFFFFF" />
@@ -511,7 +508,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* Status Badge */}
+            {/* ── Status Badge ─────────────── */}
             {!uploading && (
               <>
                 {isShowingNewPhoto && (
@@ -534,7 +531,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
                   <View style={[styles.badge, styles.badgeAuto]}>
                     <Ionicons name="sparkles" size={12} color="#FFFFFF" />
                     <Text style={styles.badgeText}>
-                      {form.name.trim() ? 'Auto' : 'Category'}
+                      {form.name.trim() ? 'MealDB' : 'Category'}
                     </Text>
                   </View>
                 )}
@@ -542,7 +539,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Image Action Buttons */}
+          {/* ── Image Action Buttons ─────────── */}
           <View style={styles.imageActions}>
             <TouchableOpacity
               style={styles.imageActionBtn}
@@ -579,7 +576,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* Hint */}
+          {/* ── Image Hint Text ──────────────── */}
           <Text style={styles.imageHint}>
             {uploading
               ? `⬆️ Uploading to Cloudinary... ${uploadProgress}%`
@@ -588,8 +585,8 @@ export default function AddMenuItemScreen({ route, navigation }) {
               : isShowingExistingPhoto
               ? '☁️ Saved on Cloudinary — tap 🔄 for auto or tap image to change'
               : form.name.trim()
-              ? `🤖 Auto image for "${form.name.trim()}" — tap 🔄 for different`
-              : `🍽️ Showing ${form.category.replace(/_/g, ' ')} — type a name for specific image`}
+              ? `🤖 Searching MealDB for "${form.name.trim()}"...`
+              : `🍽️ Showing ${form.category.replace(/_/g, ' ')} — type a name for MealDB image`}
           </Text>
         </View>
 

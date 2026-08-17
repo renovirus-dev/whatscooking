@@ -9,18 +9,15 @@ import {
   StyleSheet, Modal, Alert, ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons }  from '@expo/vector-icons';
+import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   doc, updateDoc, arrayUnion, arrayRemove,
 } from 'firebase/firestore';
-import { db }        from '../firebase/config';
-import { useAuth }   from '../hooks/useAuth';
+import { db }          from '../firebase/config';
+import { useAuth }     from '../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
-import {
-  getImageSource,
-  getBestImageSource,
-}  from '../utils/localFoodImages';
+import FoodImage       from './FoodImage';
 import { getThumbUrl } from '../utils/uploadToCloudinary';
 
 // ─── Safe Color Fallbacks ─────────────────────
@@ -49,7 +46,7 @@ const DIETARY_BADGES = {
 // ─────────────────────────────────────────────
 // HAS CUSTOM IMAGE
 // Returns true if item has a real uploaded image
-// so we skip the MealDB fetch entirely
+// FoodImage will use it directly, skip MealDB
 // ─────────────────────────────────────────────
 const hasCustomImage = (item) => {
   return !!(
@@ -59,18 +56,17 @@ const hasCustomImage = (item) => {
 };
 
 // ─────────────────────────────────────────────
-// GET INITIAL IMAGE SOURCE (sync — instant)
-// Used as placeholder before MealDB loads
+// GET CLOUDINARY URL
+// Returns optimised thumb URL if available
 // ─────────────────────────────────────────────
-const getInitialImageSource = (item) => {
+const getCloudinaryUrl = (item, w = 200, h = 200) => {
   if (item?.cloudinaryUrl) {
-    return { uri: getThumbUrl(item.cloudinaryUrl, 200, 200) };
+    return getThumbUrl(item.cloudinaryUrl, w, h);
   }
-  if (item?.imageUrl && item.imageUrl.startsWith('http')) {
-    return { uri: item.imageUrl };
+  if (item?.imageUrl?.startsWith('http')) {
+    return item.imageUrl;
   }
-  // ✅ Local image shown instantly — no delay
-  return getImageSource(item);
+  return null;
 };
 
 // ─────────────────────────────────────────────
@@ -92,13 +88,7 @@ export default function MenuItemCard({
   }, []);
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [favLoading, setFavLoading]     = useState(false);
-  const [imageError, setImageError]     = useState(false);
-
-  // ✅ Start with local image instantly — no waiting
-  const [imageSource, setImageSource] = useState(
-    () => getInitialImageSource(item)
-  );
+  const [favLoading,   setFavLoading]   = useState(false);
 
   // ✅ Optimistic favourite state
   const [localFavorited, setLocalFavorited] = useState(
@@ -112,63 +102,21 @@ export default function MenuItemCard({
     }
   }, [userProfile?.favoriteDishes, item.id]);
 
-  // ─────────────────────────────────────────
-  // MEALDB IMAGE FETCH
-  // ✅ Only runs if item has NO custom image
-  // ✅ Shows local image while loading
-  // ✅ Upgrades to MealDB image if found
-  // ✅ Cancelled if component unmounts
-  // ─────────────────────────────────────────
-  useEffect(() => {
-    // ✅ Skip fetch if item already has a real image
-    if (hasCustomImage(item) || imageError) return;
-
-    let cancelled = false;
-
-    const fetchMealDBImage = async () => {
-      try {
-        const { source, fromMealDB } = await getBestImageSource(item);
-
-        if (cancelled || !isMounted.current) return;
-
-        if (fromMealDB) {
-          // ✅ MealDB found a better image — upgrade silently
-          setImageSource(source);
-          console.log(`🍽️ MealDB image loaded for: ${item.name}`);
-        }
-      } catch (err) {
-        // ✅ Silent fail — local image already showing
-        console.log('MealDB fetch skipped:', err.message);
-      }
-    };
-
-    fetchMealDBImage();
-
-    return () => { cancelled = true; };
-  }, [item.id, item.name, item.category, imageError]);
-
-  // ✅ Update image source when item changes
-  useEffect(() => {
-    if (!imageError) {
-      setImageSource(getInitialImageSource(item));
-    }
-  }, [item.cloudinaryUrl, item.imageUrl]);
-
   const isFavorited = localFavorited;
 
   const activeDietary = Object.entries(DIETARY_BADGES).filter(
     ([key]) => item.dietaryInfo?.[key]
   );
 
-  // ✅ On image error — fall back to local image
-  const handleImageError = useCallback(() => {
-    if (isMounted.current) {
-      setImageError(true);
-      setImageSource(getImageSource(item));
-    }
-  }, [item]);
+  // ─────────────────────────────────────────
+  // CLOUDINARY URL for card + modal
+  // ─────────────────────────────────────────
+  const cardImageUrl  = getCloudinaryUrl(item, 200, 200);
+  const modalImageUrl = getCloudinaryUrl(item, 600, 400);
 
-  // ── Handlers ──────────────────────────────
+  // ─────────────────────────────────────────
+  // HANDLERS
+  // ─────────────────────────────────────────
   const handleCardPress = useCallback(() => {
     if (isMounted.current) setModalVisible(true);
     try { trackMenuItemView(item.id, item.name, item.restaurantId); } catch {}
@@ -185,7 +133,10 @@ export default function MenuItemCard({
       if (onLoginRequired) {
         onLoginRequired();
       } else {
-        Alert.alert('Sign In Required', 'Please sign in to save favourite dishes');
+        Alert.alert(
+          'Sign In Required',
+          'Please sign in to save favourite dishes'
+        );
       }
       return;
     }
@@ -205,7 +156,6 @@ export default function MenuItemCard({
       } else {
         await updateDoc(userRef, { favoriteDishes: arrayUnion(item.id) });
       }
-
     } catch (err) {
       console.error('handleFavourite error:', err);
       // ✅ Revert on failure
@@ -218,20 +168,22 @@ export default function MenuItemCard({
     }
   }, [user, localFavorited, item.id, onLoginRequired]);
 
-  // ── Render ────────────────────────────────
+  // ─────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────
   return (
     <>
-      {/* ── Card ──────────────────────────── */}
+      {/* ══ CARD ══════════════════════════════ */}
       <TouchableOpacity
         style={[
           styles.card,
-          !item.isAvailable    && styles.cardUnavailable,
+          !item.isAvailable     && styles.cardUnavailable,
           item.isSpecialOfTheDay && styles.cardSpecial,
         ]}
         onPress={handleCardPress}
         activeOpacity={0.85}
       >
-        {/* Left: Info */}
+        {/* ── Left: Info ──────────────────── */}
         <View style={styles.info}>
           <View style={styles.nameRow}>
             <Text style={styles.name} numberOfLines={2}>
@@ -263,7 +215,9 @@ export default function MenuItemCard({
             {!!item.preparationTime && (
               <View style={styles.prepTime}>
                 <Ionicons name="time-outline" size={12} color={COLORS.textMuted} />
-                <Text style={styles.prepTimeText}>{item.preparationTime} min</Text>
+                <Text style={styles.prepTimeText}>
+                  {item.preparationTime} min
+                </Text>
               </View>
             )}
           </View>
@@ -273,13 +227,21 @@ export default function MenuItemCard({
           )}
         </View>
 
-        {/* Right: Image + Heart */}
+        {/* ── Right: Image + Heart ─────────── */}
         <View style={styles.imageWrapper}>
-          <Image
-            source={imageSource}
-            style={[styles.image, !item.isAvailable && styles.imageGray]}
+
+          {/* ✅ FoodImage handles:
+               - Cloudinary URL directly (if exists)
+               - MealDB async fetch (if no custom image)
+               - Local asset fallback (instant)        */}
+          <FoodImage
+            item={item}
+            cloudinaryUrl={cardImageUrl}
+            style={[
+              styles.image,
+              !item.isAvailable && styles.imageGray,
+            ]}
             resizeMode="cover"
-            onError={handleImageError}
           />
 
           {/* ✅ Heart button */}
@@ -310,7 +272,7 @@ export default function MenuItemCard({
         </View>
       </TouchableOpacity>
 
-      {/* ── Detail Modal ──────────────────── */}
+      {/* ══ DETAIL MODAL ══════════════════════ */}
       <Modal
         visible={modalVisible}
         transparent
@@ -324,14 +286,18 @@ export default function MenuItemCard({
         >
           <TouchableOpacity
             activeOpacity={1}
-            style={[styles.modalCard, { paddingBottom: insets.bottom + SIZES.sm }]}
+            style={[
+              styles.modalCard,
+              { paddingBottom: insets.bottom + SIZES.sm },
+            ]}
           >
-            {/* Hero Image */}
-            <Image
-              source={imageSource}
+            {/* ── Hero Image ────────────────── */}
+            {/* ✅ Larger size for modal — 600×400 */}
+            <FoodImage
+              item={item}
+              cloudinaryUrl={modalImageUrl}
               style={styles.modalImage}
               resizeMode="cover"
-              onError={handleImageError}
             />
 
             {/* Close button */}
@@ -552,6 +518,7 @@ const styles = StyleSheet.create({
     backgroundColor: WARNING_COLOR + '05',
   },
 
+  // ── Info ──────────────────────────────────
   info: { flex: 1, justifyContent: 'space-between' },
   nameRow: {
     flexDirection: 'row',
@@ -590,9 +557,9 @@ const styles = StyleSheet.create({
     gap:           SIZES.md,
     marginTop:     SIZES.xs,
   },
-  price:    { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
-  prepTime: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  prepTimeText:    { fontSize: FONTS.xs, color: COLORS.textMuted },
+  price:        { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
+  prepTime:     { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  prepTimeText: { fontSize: FONTS.xs, color: COLORS.textMuted },
   unavailableText: {
     fontSize:   FONTS.xs,
     color:      COLORS.error,
@@ -601,7 +568,11 @@ const styles = StyleSheet.create({
   },
 
   // ── Image + Heart ─────────────────────────
-  imageWrapper: { position: 'relative' },
+  imageWrapper: {
+    position: 'relative',
+    width:    95,
+    height:   95,
+  },
   image: {
     width:        95,
     height:       95,
@@ -622,7 +593,6 @@ const styles = StyleSheet.create({
     zIndex:          10,
     elevation:       10,
   },
-
   expandHint: {
     position:        'absolute',
     bottom:          4,
@@ -650,7 +620,6 @@ const styles = StyleSheet.create({
     width:  '100%',
     height: 220,
   },
-
   closeIconBtn: {
     position:        'absolute',
     top:             12,
@@ -664,7 +633,6 @@ const styles = StyleSheet.create({
     zIndex:          10,
     elevation:       10,
   },
-
   modalHeartBtn: {
     position:        'absolute',
     top:             12,
@@ -678,7 +646,6 @@ const styles = StyleSheet.create({
     zIndex:          10,
     elevation:       10,
   },
-
   modalHandle: {
     width:           40,
     height:          4,
@@ -688,10 +655,8 @@ const styles = StyleSheet.create({
     marginTop:       SIZES.sm,
     marginBottom:    SIZES.xs,
   },
-
   modalScroll: { maxHeight: 440 },
   modalBody:   { padding: SIZES.lg, gap: SIZES.sm },
-
   modalNameRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -748,8 +713,8 @@ const styles = StyleSheet.create({
     gap:           SIZES.lg,
     flexWrap:      'wrap',
   },
-  extraItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  extraText: { fontSize: FONTS.sm, color: COLORS.textMuted },
+  extraItem:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  extraText:    { fontSize: FONTS.sm, color: COLORS.textMuted },
   tagsRow: {
     flexDirection: 'row',
     flexWrap:      'wrap',
@@ -779,7 +744,6 @@ const styles = StyleSheet.create({
     color:      COLORS.error,
     fontWeight: '500',
   },
-
   modalFavBtn: {
     flexDirection:   'row',
     alignItems:      'center',
