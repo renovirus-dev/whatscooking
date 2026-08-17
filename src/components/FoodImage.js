@@ -6,41 +6,41 @@ import { Image, View, ActivityIndicator, StyleSheet } from 'react-native';
 import { getBestImageSource, getLocalFoodImage } from '../utils/localFoodImages';
 import { COLORS } from '../theme';
 
-// ─────────────────────────────────────────────
-// FoodImage Component
-// ✅ Shows local image INSTANTLY (no flicker)
-// ✅ Upgrades to MealDB image when fetched
-// ✅ Falls back to local if MealDB fails
-// ✅ Cancels fetch on unmount (no memory leak)
-// ─────────────────────────────────────────────
 export default function FoodImage({
-  item,           // { name, category, imageUrl, cloudinaryUrl }
-  name,           // OR pass name + category directly
+  item,
+  name,
   category,
+  cloudinaryUrl,
   style,
   resizeMode = 'cover',
   showLoader = false,
+  debounceMs = 800,
 }) {
-  // Build a minimal item object if name/category passed directly
   const itemObj = item || { name, category };
 
-  // ── Instant local fallback ────────────────
-  const localSource = getLocalFoodImage(
+  const getLocal = () => getLocalFoodImage(
     itemObj?.name     || '',
     itemObj?.category || 'main_course'
   );
 
-  const [source,        setSource]        = useState(localSource);
+  const [mealDbSource,  setMealDbSource]  = useState(null);
   const [loadingMealDB, setLoadingMealDB] = useState(false);
-  const [imgError,      setImgError]      = useState(false);
-  const cancelledRef = useRef(false);
+
+  const cancelledRef  = useRef(false);
+  const debounceTimer = useRef(null);
 
   useEffect(() => {
-    // Reset on item change
     cancelledRef.current = false;
-    setImgError(false);
+    setMealDbSource(null);
+    setLoadingMealDB(false);
 
-    // ── If item has Cloudinary/custom URL → use it directly ──
+    // ── 1. Cloudinary URL passed as prop ──────
+    if (cloudinaryUrl) {
+      setMealDbSource({ uri: cloudinaryUrl });
+      return;
+    }
+
+    // ── 2. Item already has custom URL ────────
     const url = itemObj?.imageUrl    ||
                 itemObj?.cloudinaryUrl ||
                 itemObj?.autoImageUrl  || '';
@@ -53,75 +53,88 @@ export default function FoodImage({
         (url.startsWith('http') && !url.includes('themealdb'))
       )
     ) {
-      setSource({ uri: url });
+      setMealDbSource({ uri: url });
       return;
     }
 
-    // ── Show local instantly, then try MealDB ──
-    const newLocal = getLocalFoodImage(
-      itemObj?.name     || '',
-      itemObj?.category || 'main_course'
-    );
-    setSource(newLocal);
-
-    // Only fetch MealDB if there's a name to search
+    // ── 3. No name → show category local image
     if (!itemObj?.name?.trim()) return;
 
-    setLoadingMealDB(true);
+    // ── 4. Debounce MealDB fetch ──────────────
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
-    getBestImageSource(itemObj).then((result) => {
+    debounceTimer.current = setTimeout(async () => {
       if (cancelledRef.current) return;
-      setLoadingMealDB(false);
 
-      if (result?.fromMealDB && result?.source?.uri) {
-        setSource(result.source);
+      setLoadingMealDB(true);
+
+      try {
+        const result = await getBestImageSource(itemObj);
+
+        if (cancelledRef.current) return;
+
+        setLoadingMealDB(false);
+
+        if (result?.fromMealDB && result?.source?.uri) {
+          setMealDbSource(result.source);
+        }
+      } catch (err) {
+        if (!cancelledRef.current) setLoadingMealDB(false);
       }
-      // else keep local — already showing
-    });
+    }, debounceMs);
 
     return () => {
       cancelledRef.current = true;
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
+
   }, [
     itemObj?.name,
     itemObj?.category,
     itemObj?.imageUrl,
     itemObj?.cloudinaryUrl,
+    cloudinaryUrl,
   ]);
 
-  const handleError = () => {
-    if (imgError) return; // already fell back
-    setImgError(true);
-    setSource(localSource); // snap back to local
-  };
+  const localSource = getLocal();
 
   return (
-    <View style={[styles.wrapper, style]}>
+    <View style={[style, { overflow: 'hidden', backgroundColor: '#F0F0F0' }]}>
+
+      {/* Layer 1 — local asset, always visible instantly */}
       <Image
-        source={source}
+        source={localSource}
         style={StyleSheet.absoluteFill}
         resizeMode={resizeMode}
-        onError={handleError}
       />
-      {showLoader && loadingMealDB && (
-        <ActivityIndicator
-          style={styles.loader}
-          color={COLORS.primary}
-          size="small"
+
+      {/* Layer 2 — MealDB or Cloudinary on top when ready */}
+      {!!mealDbSource && (
+        <Image
+          source={mealDbSource}
+          style={StyleSheet.absoluteFill}
+          resizeMode={resizeMode}
+          onError={() => setMealDbSource(null)}
         />
+      )}
+
+      {/* Layer 3 — small spinner while MealDB fetches */}
+      {showLoader && loadingMealDB && (
+        <View style={styles.loaderWrapper}>
+          <ActivityIndicator color={COLORS.primary} size="small" />
+        </View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrapper: {
-    overflow:        'hidden',
-    backgroundColor: '#F0F0F0',
-  },
-  loader: {
-    position: 'absolute',
-    right:    6,
-    bottom:   6,
+  loaderWrapper: {
+    position:        'absolute',
+    bottom:          4,
+    right:           4,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius:    12,
+    padding:         4,
   },
 });

@@ -210,8 +210,9 @@ const mealDBCache = new Map();
 
 // ─────────────────────────────────────────────
 // SEARCH THEMEALDB
-// Returns image URL or null
-// ✅ Completely free — no API key needed
+// ✅ Android safe — AbortController timeout
+// ✅ Explicit headers for Android fetch
+// ✅ Falls back gracefully on any error
 // ─────────────────────────────────────────────
 const searchTheMealDB = async (dishName) => {
   if (!dishName?.trim()) return null;
@@ -219,15 +220,15 @@ const searchTheMealDB = async (dishName) => {
   const lower    = dishName.toLowerCase().trim();
   const cacheKey = lower;
 
-  // ✅ Return cached result
+  // ✅ Return cached result — avoids repeat fetches
   if (mealDBCache.has(cacheKey)) {
     return mealDBCache.get(cacheKey);
   }
 
-  // ✅ Get best search term from map
+  // ✅ Map dish name to best MealDB search term
   let searchTerm = null;
 
-  // Exact match
+  // Exact match first
   if (MEALDB_SEARCH_MAP[lower]) {
     searchTerm = MEALDB_SEARCH_MAP[lower];
   }
@@ -242,11 +243,34 @@ const searchTheMealDB = async (dishName) => {
     }
   }
 
-  // ✅ Fall back to the raw dish name
+  // Fall back to raw dish name
   if (!searchTerm) searchTerm = dishName.trim();
 
+  // ✅ Helper: fetch with timeout (Android needs this)
+  const fetchWithTimeout = async (url, timeoutMs = 8000) => {
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method:  'GET',
+        headers: {
+          'Accept':     'application/json',
+          'Connection': 'keep-alive',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
+  };
+
   try {
-    const response = await fetch(
+    // ── Attempt 1: mapped search term ──────────
+    const response = await fetchWithTimeout(
       `https://www.themealdb.com/api/json/v1/1/search.php` +
       `?s=${encodeURIComponent(searchTerm)}`
     );
@@ -258,36 +282,44 @@ const searchTheMealDB = async (dishName) => {
 
     const data = await response.json();
 
-    if (data.meals && data.meals.length > 0) {
+    if (data?.meals?.length > 0) {
       const url = data.meals[0].strMealThumb;
-      console.log(`✅ MealDB found image for "${dishName}": ${url}`);
       mealDBCache.set(cacheKey, url);
       return url;
     }
 
-    // ✅ Try first word as fallback
+    // ── Attempt 2: first word of dish name ─────
     const firstWord = lower.split(' ')[0];
-    if (firstWord && firstWord.length > 3 && firstWord !== lower) {
-      const response2 = await fetch(
-        `https://www.themealdb.com/api/json/v1/1/search.php` +
-        `?s=${encodeURIComponent(firstWord)}`
-      );
-      if (response2.ok) {
-        const data2 = await response2.json();
-        if (data2.meals && data2.meals.length > 0) {
-          const url = data2.meals[0].strMealThumb;
-          mealDBCache.set(cacheKey, url);
-          return url;
+    if (firstWord && firstWord.length > 3 && firstWord !== searchTerm.toLowerCase()) {
+      try {
+        const response2 = await fetchWithTimeout(
+          `https://www.themealdb.com/api/json/v1/1/search.php` +
+          `?s=${encodeURIComponent(firstWord)}`
+        );
+
+        if (response2.ok) {
+          const data2 = await response2.json();
+          if (data2?.meals?.length > 0) {
+            const url = data2.meals[0].strMealThumb;
+            mealDBCache.set(cacheKey, url);
+            return url;
+          }
         }
+      } catch {
+        // Silent — keep going to null
       }
     }
 
-    // ✅ Cache null so we don't retry
     mealDBCache.set(cacheKey, null);
     return null;
 
   } catch (err) {
-    console.log('TheMealDB error:', err.message);
+    if (err.name === 'AbortError') {
+      console.log(`⏰ MealDB timed out: "${dishName}"`);
+    } else {
+      console.log(`❌ MealDB fetch error: "${dishName}":`, err.message);
+    }
+    // ✅ Cache null so we don't retry same failed query
     mealDBCache.set(cacheKey, null);
     return null;
   }
