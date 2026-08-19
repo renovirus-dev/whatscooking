@@ -61,70 +61,64 @@ function makePlaceholder(name) {
 // ─────────────────────────────────────────────
 // SAFE IMPORTS
 // ─────────────────────────────────────────────
-
-// ── Auth ──────────────────────────────────────
 let LoginScreen, RegisterScreen, OnboardingScreen;
 try { LoginScreen      = require('../screens/auth/LoginScreen').default;      }
-catch (e) { console.log('❌ LoginScreen:', e.message);      LoginScreen      = makePlaceholder('Login');      }
+catch (e) { LoginScreen      = makePlaceholder('Login');      }
 try { RegisterScreen   = require('../screens/auth/RegisterScreen').default;   }
-catch (e) { console.log('❌ RegisterScreen:', e.message);   RegisterScreen   = makePlaceholder('Register');   }
+catch (e) { RegisterScreen   = makePlaceholder('Register');   }
 try { OnboardingScreen = require('../screens/auth/OnboardingScreen').default; }
-catch (e) { console.log('❌ OnboardingScreen:', e.message); OnboardingScreen = makePlaceholder('Onboarding'); }
+catch (e) { OnboardingScreen = makePlaceholder('Onboarding'); }
 
-// ── User ──────────────────────────────────────
 let HomeScreen, ExploreScreen, RestaurantDetailScreen,
     FavoritesScreen, ProfileScreen, EditProfileScreen,
     FavoriteDishesScreen, NotificationsScreen,
     PrivacyPolicyScreen;
 
 try { HomeScreen             = require('../screens/user/HomeScreen').default;             }
-catch (e) { console.log('❌ HomeScreen:', e.message);             HomeScreen             = makePlaceholder('Home');             }
+catch (e) { HomeScreen             = makePlaceholder('Home');             }
 try { ExploreScreen          = require('../screens/user/ExploreScreen').default;          }
-catch (e) { console.log('❌ ExploreScreen:', e.message);          ExploreScreen          = makePlaceholder('Explore');          }
+catch (e) { ExploreScreen          = makePlaceholder('Explore');          }
 try { RestaurantDetailScreen = require('../screens/user/RestaurantDetailScreen').default; }
-catch (e) { console.log('❌ RestaurantDetailScreen:', e.message); RestaurantDetailScreen = makePlaceholder('Restaurant Detail'); }
+catch (e) { RestaurantDetailScreen = makePlaceholder('Restaurant Detail'); }
 try { FavoritesScreen        = require('../screens/user/FavoritesScreen').default;        }
-catch (e) { console.log('❌ FavoritesScreen:', e.message);        FavoritesScreen        = makePlaceholder('Favorites');        }
+catch (e) { FavoritesScreen        = makePlaceholder('Favorites');        }
 try { ProfileScreen          = require('../screens/user/ProfileScreen').default;          }
-catch (e) { console.log('❌ ProfileScreen:', e.message);          ProfileScreen          = makePlaceholder('Profile');          }
+catch (e) { ProfileScreen          = makePlaceholder('Profile');          }
 try { EditProfileScreen      = require('../screens/user/EditProfileScreen').default;      }
-catch (e) { console.log('❌ EditProfileScreen:', e.message);      EditProfileScreen      = makePlaceholder('Edit Profile');     }
+catch (e) { EditProfileScreen      = makePlaceholder('Edit Profile');     }
 try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').default;   }
-catch (e) { console.log('❌ FavoriteDishesScreen:', e.message);   FavoriteDishesScreen   = makePlaceholder('Favourite Dishes'); }
+catch (e) { FavoriteDishesScreen   = makePlaceholder('Favourite Dishes'); }
 try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
-catch (e) { console.log('❌ NotificationsScreen:', e.message);    NotificationsScreen    = makePlaceholder('Notifications');    }
+catch (e) { NotificationsScreen    = makePlaceholder('Notifications');    }
 try { PrivacyPolicyScreen    = require('../screens/user/PrivacyPolicyScreen').default;    }
-catch (e) { console.log('❌ PrivacyPolicyScreen:', e.message);    PrivacyPolicyScreen    = makePlaceholder('Privacy Policy');   }
+catch (e) { PrivacyPolicyScreen    = makePlaceholder('Privacy Policy');   }
 
-// ── Owner ─────────────────────────────────────
 let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
     DailyMenuScreen, RestaurantSetupScreen,
     SubscriptionScreen, AnalyticsScreen, MenuScannerScreen;
 
 try { OwnerDashboardScreen  = require('../screens/owner/OwnerDashboardScreen').default;  }
-catch (e) { console.log('❌ OwnerDashboardScreen:', e.message);  OwnerDashboardScreen  = makePlaceholder('Dashboard');    }
+catch (e) { OwnerDashboardScreen  = makePlaceholder('Dashboard');    }
 try { ManageMenuScreen      = require('../screens/owner/ManageMenuScreen').default;      }
-catch (e) { console.log('❌ ManageMenuScreen:', e.message);      ManageMenuScreen      = makePlaceholder('Manage Menu');  }
+catch (e) { ManageMenuScreen      = makePlaceholder('Manage Menu');  }
 try { AddMenuItemScreen     = require('../screens/owner/AddMenuItemScreen').default;     }
-catch (e) { console.log('❌ AddMenuItemScreen:', e.message);     AddMenuItemScreen     = makePlaceholder('Add Item');     }
+catch (e) { AddMenuItemScreen     = makePlaceholder('Add Item');     }
 try { DailyMenuScreen       = require('../screens/owner/DailyMenuScreen').default;       }
-catch (e) { console.log('❌ DailyMenuScreen:', e.message);       DailyMenuScreen       = makePlaceholder('Daily Menu');   }
+catch (e) { DailyMenuScreen       = makePlaceholder('Daily Menu');   }
 try { RestaurantSetupScreen = require('../screens/owner/RestaurantSetupScreen').default; }
-catch (e) { console.log('❌ RestaurantSetupScreen:', e.message); RestaurantSetupScreen = makePlaceholder('Setup');        }
+catch (e) { RestaurantSetupScreen = makePlaceholder('Setup');        }
 try { SubscriptionScreen    = require('../screens/owner/SubscriptionScreen').default;    }
-catch (e) { console.log('❌ SubscriptionScreen:', e.message);    SubscriptionScreen    = makePlaceholder('Subscription'); }
+catch (e) { SubscriptionScreen    = makePlaceholder('Subscription'); }
 try { AnalyticsScreen       = require('../screens/owner/AnalyticsScreen').default;       }
-catch (e) { console.log('❌ AnalyticsScreen:', e.message);       AnalyticsScreen       = makePlaceholder('Analytics');   }
+catch (e) { AnalyticsScreen       = makePlaceholder('Analytics');   }
 try { MenuScannerScreen     = require('../screens/owner/MenuScannerScreen').default;     }
-catch (e) { console.log('❌ MenuScannerScreen:', e.message);     MenuScannerScreen     = makePlaceholder('Menu Scanner'); }
+catch (e) { MenuScannerScreen     = makePlaceholder('Menu Scanner'); }
 
-// ── Admin ─────────────────────────────────────
 let AdminDashboardScreen, ImageDownloadScreen;
-
 try { AdminDashboardScreen = require('../screens/admin/AdminDashboardScreen').default; }
-catch (e) { console.log('❌ AdminDashboardScreen:', e.message); AdminDashboardScreen = makePlaceholder('Admin Dashboard'); }
+catch (e) { AdminDashboardScreen = makePlaceholder('Admin Dashboard'); }
 try { ImageDownloadScreen  = require('../screens/admin/ImageDownloadScreen').default;  }
-catch (e) { console.log('❌ ImageDownloadScreen:', e.message);  ImageDownloadScreen  = makePlaceholder('Image Manager');   }
+catch (e) { ImageDownloadScreen  = makePlaceholder('Image Manager');   }
 
 const Stack = createNativeStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -181,17 +175,13 @@ function LoadingScreen({ onTimeout }) {
 }
 
 // ─────────────────────────────────────────────
-// WELCOME SCREEN
+// WELCOME SCREEN — uses navigation prop
 // ─────────────────────────────────────────────
-function WelcomeScreen({ onGuest, onLogin, onRegister }) {
+function WelcomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{ flex: 1, backgroundColor: PRIMARY }}>
-      <StatusBar
-        translucent
-        backgroundColor="transparent"
-        barStyle="light-content"
-      />
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
       <ScrollView
         contentContainerStyle={{
           flexGrow:          1,
@@ -202,69 +192,45 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           paddingBottom:     insets.bottom + 32,
           gap:               12,
         }}
-        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Text style={{ fontSize: 80 }}>🍳</Text>
-        <Text style={{
-          fontSize:   32,
-          fontWeight: 'bold',
-          color:      '#FFFFFF',
-          textAlign:  'center',
-        }}>
+        <Text style={{ fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', textAlign: 'center' }}>
           What's Cooking
         </Text>
         <Text style={{
-          fontSize:     16,
-          color:        'rgba(255,255,255,0.85)',
-          textAlign:    'center',
-          lineHeight:   24,
-          marginBottom: 16,
+          fontSize: 16, color: 'rgba(255,255,255,0.85)',
+          textAlign: 'center', lineHeight: 24, marginBottom: 16,
         }}>
           Discover daily menus from restaurants near you
         </Text>
 
-        {/* Features */}
         <View style={{
           backgroundColor: 'rgba(255,255,255,0.15)',
-          borderRadius:    16,
-          padding:         20,
-          width:           '100%',
-          gap:             10,
-          marginBottom:    8,
+          borderRadius: 16, padding: 20, width: '100%',
+          gap: 10, marginBottom: 8,
         }}>
           {[
             { icon: '🍽️', text: 'Browse daily menus from local restaurants' },
-            { icon: '📍', text: 'Find restaurants near you'                  },
-            { icon: '⭐', text: 'Save favorites and write reviews'            },
-            { icon: '🔔', text: 'Get notified about daily specials'           },
+            { icon: '📍', text: 'Find restaurants near you' },
+            { icon: '⭐', text: 'Save favorites and write reviews' },
+            { icon: '🔔', text: 'Get notified about daily specials' },
           ].map((item, i) => (
-            <View
-              key={i}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}
-            >
+            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 20 }}>{item.icon}</Text>
-              <Text style={{
-                color:    'rgba(255,255,255,0.9)',
-                fontSize: 14,
-                flex:     1,
-              }}>
+              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, flex: 1 }}>
                 {item.text}
               </Text>
             </View>
           ))}
         </View>
 
-        {/* Sign In */}
         <TouchableOpacity
           style={{
-            backgroundColor: '#FFFFFF',
-            paddingVertical: 15,
-            borderRadius:    12,
-            width:           '100%',
-            alignItems:      'center',
+            backgroundColor: '#FFFFFF', paddingVertical: 15,
+            borderRadius: 12, width: '100%', alignItems: 'center',
           }}
-          onPress={onLogin}
+          onPress={() => navigation.navigate('Login')}
           activeOpacity={0.8}
         >
           <Text style={{ color: PRIMARY, fontSize: 18, fontWeight: 'bold' }}>
@@ -272,18 +238,14 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           </Text>
         </TouchableOpacity>
 
-        {/* Create Account */}
         <TouchableOpacity
           style={{
             backgroundColor: 'rgba(255,255,255,0.2)',
-            paddingVertical: 15,
-            borderRadius:    12,
-            width:           '100%',
-            alignItems:      'center',
-            borderWidth:     2,
-            borderColor:     'rgba(255,255,255,0.5)',
+            paddingVertical: 15, borderRadius: 12, width: '100%',
+            alignItems: 'center', borderWidth: 2,
+            borderColor: 'rgba(255,255,255,0.5)',
           }}
-          onPress={onRegister}
+          onPress={() => navigation.navigate('Register')}
           activeOpacity={0.8}
         >
           <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
@@ -291,17 +253,14 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
           </Text>
         </TouchableOpacity>
 
-        {/* Browse as Guest */}
         <TouchableOpacity
           style={{ paddingVertical: 12 }}
-          onPress={onGuest}
+          onPress={() => navigation.replace('GuestTabs')}
           activeOpacity={0.7}
         >
           <Text style={{
-            color:              'rgba(255,255,255,0.8)',
-            fontSize:           15,
-            fontWeight:         '600',
-            textDecorationLine: 'underline',
+            color: 'rgba(255,255,255,0.8)', fontSize: 15,
+            fontWeight: '600', textDecorationLine: 'underline',
           }}>
             Browse as Guest
           </Text>
@@ -312,44 +271,30 @@ function WelcomeScreen({ onGuest, onLogin, onRegister }) {
 }
 
 // ─────────────────────────────────────────────
-// GUEST FAVORITES SCREEN
+// GUEST FAVORITES / PROFILE SCREENS
 // ─────────────────────────────────────────────
-function GuestFavoritesScreen({ onLogin }) {
+function GuestFavoritesScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={{
-      flex:            1,
-      backgroundColor: BG,
-      justifyContent:  'center',
-      alignItems:      'center',
-      padding:         32,
-      paddingBottom:   insets.bottom + 32,
-      gap:             12,
+      flex: 1, backgroundColor: BG, justifyContent: 'center',
+      alignItems: 'center', padding: 32,
+      paddingBottom: insets.bottom + 32, gap: 12,
     }}>
       <Text style={{ fontSize: 70 }}>❤️</Text>
       <Text style={{ fontSize: 22, fontWeight: 'bold', color: DARK }}>
         Save Your Favorites
       </Text>
-      <Text style={{
-        fontSize:   14,
-        color:      MUTED,
-        textAlign:  'center',
-        lineHeight: 22,
-      }}>
+      <Text style={{ fontSize: 14, color: MUTED, textAlign: 'center', lineHeight: 22 }}>
         Sign in to save restaurants and track your favorite meals
       </Text>
       <TouchableOpacity
         style={{
-          flexDirection:     'row',
-          alignItems:        'center',
-          backgroundColor:   PRIMARY,
-          paddingHorizontal: 32,
-          paddingVertical:   12,
-          borderRadius:      12,
-          gap:               8,
-          marginTop:         8,
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: PRIMARY, paddingHorizontal: 32,
+          paddingVertical: 12, borderRadius: 12, gap: 8, marginTop: 8,
         }}
-        onPress={onLogin}
+        onPress={() => navigation.navigate('Login')}
         activeOpacity={0.8}
       >
         <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
@@ -361,21 +306,14 @@ function GuestFavoritesScreen({ onLogin }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// GUEST PROFILE SCREEN
-// ─────────────────────────────────────────────
-function GuestProfileScreen({ onLogin, onRegister }) {
+function GuestProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: BG }}
       contentContainerStyle={{
-        flexGrow:       1,
-        justifyContent: 'center',
-        alignItems:     'center',
-        padding:        32,
-        paddingBottom:  insets.bottom + 32,
-        gap:            12,
+        flexGrow: 1, justifyContent: 'center', alignItems: 'center',
+        padding: 32, paddingBottom: insets.bottom + 32, gap: 12,
       }}
       showsVerticalScrollIndicator={false}
     >
@@ -384,11 +322,8 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         Guest Mode
       </Text>
       <Text style={{
-        fontSize:     14,
-        color:        MUTED,
-        textAlign:    'center',
-        lineHeight:   22,
-        marginBottom: 8,
+        fontSize: 14, color: MUTED, textAlign: 'center',
+        lineHeight: 22, marginBottom: 8,
       }}>
         Sign in to access all features
       </Text>
@@ -399,18 +334,11 @@ function GuestProfileScreen({ onLogin, onRegister }) {
         '✍️ Write reviews',
         '🔔 Get push notifications',
       ].map((benefit, i) => (
-        <View
-          key={i}
-          style={{
-            flexDirection:   'row',
-            alignItems:      'center',
-            backgroundColor: '#FFFFFF',
-            padding:         12,
-            borderRadius:    10,
-            width:           '100%',
-            gap:             12,
-          }}
-        >
+        <View key={i} style={{
+          flexDirection: 'row', alignItems: 'center',
+          backgroundColor: '#FFFFFF', padding: 12,
+          borderRadius: 10, width: '100%', gap: 12,
+        }}>
           <Text style={{ fontSize: 20 }}>{benefit.split(' ')[0]}</Text>
           <Text style={{ color: DARK, fontSize: 14, flex: 1 }}>
             {benefit.split(' ').slice(1).join(' ')}
@@ -420,14 +348,10 @@ function GuestProfileScreen({ onLogin, onRegister }) {
 
       <TouchableOpacity
         style={{
-          backgroundColor: PRIMARY,
-          paddingVertical: 14,
-          borderRadius:    12,
-          width:           '100%',
-          alignItems:      'center',
-          marginTop:       8,
+          backgroundColor: PRIMARY, paddingVertical: 14,
+          borderRadius: 12, width: '100%', alignItems: 'center', marginTop: 8,
         }}
-        onPress={onLogin}
+        onPress={() => navigation.navigate('Login')}
         activeOpacity={0.8}
       >
         <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' }}>
@@ -437,19 +361,29 @@ function GuestProfileScreen({ onLogin, onRegister }) {
 
       <TouchableOpacity
         style={{
-          backgroundColor: '#FFFFFF',
-          paddingVertical: 14,
-          borderRadius:    12,
-          width:           '100%',
-          alignItems:      'center',
-          borderWidth:     2,
-          borderColor:     PRIMARY,
+          backgroundColor: '#FFFFFF', paddingVertical: 14,
+          borderRadius: 12, width: '100%', alignItems: 'center',
+          borderWidth: 2, borderColor: PRIMARY,
         }}
-        onPress={onRegister}
+        onPress={() => navigation.navigate('Register')}
         activeOpacity={0.8}
       >
         <Text style={{ color: PRIMARY, fontSize: 18, fontWeight: 'bold' }}>
           Create Account
+        </Text>
+      </TouchableOpacity>
+
+      {/* ✅ Back to Welcome */}
+      <TouchableOpacity
+        style={{ marginTop: 16, paddingVertical: 8 }}
+        onPress={() => navigation.replace('Welcome')}
+        activeOpacity={0.7}
+      >
+        <Text style={{
+          color: MUTED, fontSize: 14,
+          textDecorationLine: 'underline',
+        }}>
+          Back to Welcome
         </Text>
       </TouchableOpacity>
     </ScrollView>
@@ -457,7 +391,7 @@ function GuestProfileScreen({ onLogin, onRegister }) {
 }
 
 // ─────────────────────────────────────────────
-// TAB ICON HELPER
+// TAB HELPERS
 // ─────────────────────────────────────────────
 function getTabIcon(routeName, focused) {
   const icons = {
@@ -472,9 +406,6 @@ function getTabIcon(routeName, focused) {
   return icons[routeName] || 'ellipse-outline';
 }
 
-// ─────────────────────────────────────────────
-// TAB SCREEN OPTIONS
-// ─────────────────────────────────────────────
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
   tabBarActiveTintColor:   PRIMARY,
@@ -487,17 +418,10 @@ const tabBarScreenOptions = ({ route }) => ({
     paddingTop:      6,
   },
   tabBarIcon: ({ color, size, focused }) => (
-    <Ionicons
-      name={getTabIcon(route.name, focused)}
-      size={size}
-      color={color}
-    />
+    <Ionicons name={getTabIcon(route.name, focused)} size={size} color={color} />
   ),
 });
 
-// ─────────────────────────────────────────────
-// NOTIFICATION BADGE ICON
-// ─────────────────────────────────────────────
 function ProfileTabIcon({ color, size, focused }) {
   let unreadCount = 0;
   try {
@@ -514,16 +438,10 @@ function ProfileTabIcon({ color, size, focused }) {
       />
       {unreadCount > 0 && (
         <View style={{
-          position:          'absolute',
-          top:               -2,
-          right:             -6,
-          backgroundColor:   '#FF3B30',
-          borderRadius:      8,
-          minWidth:          16,
-          height:            16,
-          justifyContent:    'center',
-          alignItems:        'center',
-          paddingHorizontal: 3,
+          position: 'absolute', top: -2, right: -6,
+          backgroundColor: '#FF3B30', borderRadius: 8,
+          minWidth: 16, height: 16, justifyContent: 'center',
+          alignItems: 'center', paddingHorizontal: 3,
         }}>
           <Text style={{ color: '#FFFFFF', fontSize: 9, fontWeight: 'bold' }}>
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -534,9 +452,6 @@ function ProfileTabIcon({ color, size, focused }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// HEADER STYLES
-// ─────────────────────────────────────────────
 const headerStyle = {
   headerStyle:      { backgroundColor: PRIMARY },
   headerTintColor:  '#FFFFFF',
@@ -551,66 +466,15 @@ const adminHeaderStyle = {
 };
 
 // ─────────────────────────────────────────────
-// AUTH STACK — Used from Welcome screen
+// GUEST TABS — uses standard navigation
 // ─────────────────────────────────────────────
-function AuthStack({
-  initialRoute = 'Login',
-  onBack,
-  onGuest,
-  onSwitchToLogin,
-  onSwitchToRegister,
-}) {
-  return (
-    <Stack.Navigator
-      initialRouteName={initialRoute}
-      screenOptions={{ headerShown: false }}
-    >
-      <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-
-      <Stack.Screen name="Login">
-        {(props) => (
-          <LoginScreen
-            {...props}
-            onBack={onBack}
-            onGuest={onGuest}
-            onSwitchToRegister={onSwitchToRegister}
-          />
-        )}
-      </Stack.Screen>
-
-      <Stack.Screen name="Register">
-        {(props) => (
-          <RegisterScreen
-            {...props}
-            onBack={onBack}
-            onGuest={onGuest}
-            onSwitchToLogin={onSwitchToLogin}
-          />
-        )}
-      </Stack.Screen>
-    </Stack.Navigator>
-  );
-}
-
-// ─────────────────────────────────────────────
-// GUEST TABS
-// ─────────────────────────────────────────────
-function GuestTabs({ onLogin, onRegister }) {
+function GuestTabs() {
   return (
     <Tab.Navigator screenOptions={tabBarScreenOptions}>
-      <Tab.Screen name="Home"    component={HomeScreen}    />
-      <Tab.Screen name="Explore" component={ExploreScreen} />
-      <Tab.Screen name="Favorites">
-        {() => <GuestFavoritesScreen onLogin={onLogin} />}
-      </Tab.Screen>
-      <Tab.Screen name="Profile">
-        {() => (
-          <GuestProfileScreen
-            onLogin={onLogin}
-            onRegister={onRegister}
-          />
-        )}
-      </Tab.Screen>
+      <Tab.Screen name="Home"      component={HomeScreen} />
+      <Tab.Screen name="Explore"   component={ExploreScreen} />
+      <Tab.Screen name="Favorites" component={GuestFavoritesScreen} />
+      <Tab.Screen name="Profile"   component={GuestProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -621,8 +485,8 @@ function GuestTabs({ onLogin, onRegister }) {
 function UserTabs() {
   return (
     <Tab.Navigator screenOptions={tabBarScreenOptions}>
-      <Tab.Screen name="Home"      component={HomeScreen}      />
-      <Tab.Screen name="Explore"   component={ExploreScreen}   />
+      <Tab.Screen name="Home"      component={HomeScreen} />
+      <Tab.Screen name="Explore"   component={ExploreScreen} />
       <Tab.Screen name="Favorites" component={FavoritesScreen} />
       <Tab.Screen
         name="Profile"
@@ -639,32 +503,16 @@ function UserTabs() {
 function OwnerTabs() {
   return (
     <Tab.Navigator screenOptions={tabBarScreenOptions}>
-      <Tab.Screen
-        name="Dashboard"
-        component={OwnerDashboardScreen}
-        options={{ tabBarLabel: 'Dashboard' }}
-      />
-      <Tab.Screen
-        name="Menu"
-        component={ManageMenuScreen}
-        options={{ tabBarLabel: 'My Menu' }}
-      />
-      <Tab.Screen
-        name="Daily"
-        component={DailyMenuScreen}
-        options={{ tabBarLabel: "Today's" }}
-      />
-      <Tab.Screen
-        name="Explore"
-        component={ExploreScreen}
-        options={{ tabBarLabel: 'Explore' }}
-      />
+      <Tab.Screen name="Dashboard" component={OwnerDashboardScreen} options={{ tabBarLabel: 'Dashboard' }} />
+      <Tab.Screen name="Menu"      component={ManageMenuScreen}     options={{ tabBarLabel: 'My Menu' }} />
+      <Tab.Screen name="Daily"     component={DailyMenuScreen}      options={{ tabBarLabel: "Today's" }} />
+      <Tab.Screen name="Explore"   component={ExploreScreen}        options={{ tabBarLabel: 'Explore' }} />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon:  (props) => <ProfileTabIcon {...props} />,
+          tabBarIcon: (props) => <ProfileTabIcon {...props} />,
         }}
       />
     </Tab.Navigator>
@@ -677,46 +525,14 @@ function OwnerTabs() {
 function UserNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
-      <Stack.Screen
-        name="UserTabs"
-        component={UserTabs}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="RestaurantDetail"
-        component={RestaurantDetailScreen}
-        options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
-      />
-      <Stack.Screen
-        name="EditProfile"
-        component={EditProfileScreen}
-        options={{ title: 'Edit Profile' }}
-      />
-      <Stack.Screen
-        name="FavoriteDishes"
-        component={FavoriteDishesScreen}
-        options={{ title: 'Favourite Dishes' }}
-      />
-      <Stack.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{ title: 'Notifications' }}
-      />
-      <Stack.Screen
-        name="Favorites"
-        component={FavoritesScreen}
-        options={{ title: 'Saved Restaurants' }}
-      />
-      <Stack.Screen
-        name="Subscription"
-        component={SubscriptionScreen}
-        options={{ title: 'Subscription Plans' }}
-      />
-      <Stack.Screen
-        name="PrivacyPolicy"
-        component={PrivacyPolicyScreen}
-        options={{ title: 'Privacy Policy' }}
-      />
+      <Stack.Screen name="UserTabs"         component={UserTabs}               options={{ headerShown: false }} />
+      <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={({ route }) => ({ title: route.params?.name || 'Restaurant' })} />
+      <Stack.Screen name="EditProfile"      component={EditProfileScreen}      options={{ title: 'Edit Profile' }} />
+      <Stack.Screen name="FavoriteDishes"   component={FavoriteDishesScreen}   options={{ title: 'Favourite Dishes' }} />
+      <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
+      <Stack.Screen name="Favorites"        component={FavoritesScreen}        options={{ title: 'Saved Restaurants' }} />
+      <Stack.Screen name="Subscription"     component={SubscriptionScreen}     options={{ title: 'Subscription Plans' }} />
+      <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}    options={{ title: 'Privacy Policy' }} />
     </Stack.Navigator>
   );
 }
@@ -727,82 +543,20 @@ function UserNavigator() {
 function OwnerNavigator() {
   return (
     <Stack.Navigator screenOptions={headerStyle}>
-      <Stack.Screen
-        name="OwnerTabs"
-        component={OwnerTabs}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="RestaurantSetup"
-        component={RestaurantSetupScreen}
-        options={({ route }) => ({
-          title: route.params?.restaurant
-            ? 'Edit Restaurant'
-            : 'Setup Restaurant',
-        })}
-      />
-      <Stack.Screen
-        name="AddMenuItem"
-        component={AddMenuItemScreen}
-        options={({ route }) => ({
-          title: route.params?.item ? 'Edit Item' : 'Add Menu Item',
-        })}
-      />
-      <Stack.Screen
-        name="MenuScanner"
-        component={MenuScannerScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="RestaurantDetail"
-        component={RestaurantDetailScreen}
-        options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
-      />
-      <Stack.Screen
-        name="Subscription"
-        component={SubscriptionScreen}
-        options={{ title: 'Subscription Plans' }}
-      />
-      <Stack.Screen
-        name="Analytics"
-        component={AnalyticsScreen}
-        options={{ title: 'Analytics' }}
-      />
-      <Stack.Screen
-        name="EditProfile"
-        component={EditProfileScreen}
-        options={{ title: 'Edit Profile' }}
-      />
-      <Stack.Screen
-        name="Notifications"
-        component={NotificationsScreen}
-        options={{ title: 'Notifications' }}
-      />
-      <Stack.Screen
-        name="OwnerDashboard"
-        component={OwnerDashboardScreen}
-        options={{ title: 'My Dashboard' }}
-      />
-      <Stack.Screen
-        name="Favorites"
-        component={FavoritesScreen}
-        options={{ title: 'Saved Restaurants' }}
-      />
-      <Stack.Screen
-        name="FavoriteDishes"
-        component={FavoriteDishesScreen}
-        options={{ title: 'Favourite Dishes' }}
-      />
-      <Stack.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{ title: "What's Cooking" }}
-      />
-      <Stack.Screen
-        name="PrivacyPolicy"
-        component={PrivacyPolicyScreen}
-        options={{ title: 'Privacy Policy' }}
-      />
+      <Stack.Screen name="OwnerTabs"        component={OwnerTabs}              options={{ headerShown: false }} />
+      <Stack.Screen name="RestaurantSetup"  component={RestaurantSetupScreen}  options={({ route }) => ({ title: route.params?.restaurant ? 'Edit Restaurant' : 'Setup Restaurant' })} />
+      <Stack.Screen name="AddMenuItem"      component={AddMenuItemScreen}      options={({ route }) => ({ title: route.params?.item ? 'Edit Item' : 'Add Menu Item' })} />
+      <Stack.Screen name="MenuScanner"      component={MenuScannerScreen}      options={{ headerShown: false }} />
+      <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={({ route }) => ({ title: route.params?.name || 'Restaurant' })} />
+      <Stack.Screen name="Subscription"     component={SubscriptionScreen}     options={{ title: 'Subscription Plans' }} />
+      <Stack.Screen name="Analytics"        component={AnalyticsScreen}        options={{ title: 'Analytics' }} />
+      <Stack.Screen name="EditProfile"      component={EditProfileScreen}      options={{ title: 'Edit Profile' }} />
+      <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
+      <Stack.Screen name="OwnerDashboard"   component={OwnerDashboardScreen}   options={{ title: 'My Dashboard' }} />
+      <Stack.Screen name="Favorites"        component={FavoritesScreen}        options={{ title: 'Saved Restaurants' }} />
+      <Stack.Screen name="FavoriteDishes"   component={FavoriteDishesScreen}   options={{ title: 'Favourite Dishes' }} />
+      <Stack.Screen name="Home"             component={HomeScreen}             options={{ title: "What's Cooking" }} />
+      <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}    options={{ title: 'Privacy Policy' }} />
     </Stack.Navigator>
   );
 }
@@ -813,92 +567,107 @@ function OwnerNavigator() {
 function AdminNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen
-        name="AdminDashboard"
-        component={AdminDashboardScreen}
-      />
-      <Stack.Screen
-        name="ImageDownload"
-        component={ImageDownloadScreen}
-        options={{ ...adminHeaderStyle, title: '🖼️ Image Manager' }}
-      />
-      <Stack.Screen
-        name="RestaurantDetail"
-        component={RestaurantDetailScreen}
-        options={({ route }) => ({
-          ...adminHeaderStyle,
-          title: route.params?.name || 'Restaurant',
-        })}
-      />
-      <Stack.Screen
-        name="PrivacyPolicy"
-        component={PrivacyPolicyScreen}
-        options={{ ...adminHeaderStyle, title: 'Privacy Policy' }}
-      />
+      <Stack.Screen name="AdminDashboard"   component={AdminDashboardScreen} />
+      <Stack.Screen name="ImageDownload"    component={ImageDownloadScreen}    options={{ ...adminHeaderStyle, title: '🖼️ Image Manager' }} />
+      <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={({ route }) => ({ ...adminHeaderStyle, title: route.params?.name || 'Restaurant' })} />
+      <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}    options={{ ...adminHeaderStyle, title: 'Privacy Policy' }} />
     </Stack.Navigator>
   );
 }
 
 // ─────────────────────────────────────────────
-// GUEST NAVIGATOR
-// ✅ Login/Register inside guest mode also get callbacks
+// PUBLIC NAVIGATOR — ONE stack for all pre-login screens
+// ✅ Standard React Navigation — back button "just works"
 // ─────────────────────────────────────────────
-function GuestNavigator({
-  onLogin, onRegister,
-  onBackFromAuth, onGuestFromAuth,
-  onSwitchToLogin, onSwitchToRegister,
-}) {
+function PublicNavigator({ initialRoute, markOnboardingDone }) {
   return (
     <Stack.Navigator
-      screenOptions={headerStyle}
-      initialRouteName="GuestTabs"
+      initialRouteName={initialRoute}
+      screenOptions={{ headerShown: false }}
     >
-      <Stack.Screen
-        name="GuestTabs"
-        options={{ headerShown: false }}
-      >
-        {() => (
-          <GuestTabs
-            onLogin={onLogin}
-            onRegister={onRegister}
+      {/* Onboarding */}
+      <Stack.Screen name="Onboarding">
+        {(props) => (
+          <OnboardingScreen
+            {...props}
+            navigation={{
+              ...props.navigation,
+              replace: (screen) => {
+                markOnboardingDone();
+                props.navigation.replace(screen);
+              },
+            }}
+            onGuestPress={() => {
+              markOnboardingDone();
+              props.navigation.replace('GuestTabs');
+            }}
           />
         )}
       </Stack.Screen>
-      <Stack.Screen
-        name="RestaurantDetail"
-        component={RestaurantDetailScreen}
-        options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
-      />
 
-      {/* ✅ Login inside guest — pass callbacks */}
-      <Stack.Screen
-        name="Login"
-        options={{ headerShown: false }}
-      >
+      {/* Welcome — main hub */}
+      <Stack.Screen name="Welcome" component={WelcomeScreen} />
+
+      {/* ✅ Login — uses standard navigation.goBack() */}
+      <Stack.Screen name="Login">
         {(props) => (
           <LoginScreen
             {...props}
-            onBack={onBackFromAuth}
-            onGuest={onGuestFromAuth}
-            onSwitchToRegister={onSwitchToRegister}
+            onBack={() => {
+              // ✅ Simple pop back
+              if (props.navigation.canGoBack()) {
+                props.navigation.goBack();
+              } else {
+                props.navigation.replace('Welcome');
+              }
+            }}
+            onGuest={() => {
+              // ✅ Reset stack to guest tabs
+              props.navigation.reset({
+                index:  0,
+                routes: [{ name: 'GuestTabs' }],
+              });
+            }}
+            onSwitchToRegister={() => {
+              // ✅ Replace so back doesn't stack up
+              props.navigation.replace('Register');
+            }}
           />
         )}
       </Stack.Screen>
 
-      {/* ✅ Register inside guest — pass callbacks */}
-      <Stack.Screen
-        name="Register"
-        options={{ headerShown: false }}
-      >
+      {/* ✅ Register — uses standard navigation */}
+      <Stack.Screen name="Register">
         {(props) => (
           <RegisterScreen
             {...props}
-            onBack={onBackFromAuth}
-            onGuest={onGuestFromAuth}
-            onSwitchToLogin={onSwitchToLogin}
+            onBack={() => {
+              if (props.navigation.canGoBack()) {
+                props.navigation.goBack();
+              } else {
+                props.navigation.replace('Welcome');
+              }
+            }}
+            onGuest={() => {
+              props.navigation.reset({
+                index:  0,
+                routes: [{ name: 'GuestTabs' }],
+              });
+            }}
+            onSwitchToLogin={() => {
+              props.navigation.replace('Login');
+            }}
           />
         )}
       </Stack.Screen>
+
+      {/* Guest browsing */}
+      <Stack.Screen name="GuestTabs" component={GuestTabs} />
+      <Stack.Screen
+        name="RestaurantDetail"
+        component={RestaurantDetailScreen}
+        options={{ ...headerStyle, headerShown: true }}
+      />
     </Stack.Navigator>
   );
 }
@@ -908,205 +677,41 @@ function GuestNavigator({
 // ─────────────────────────────────────────────
 export default function AppNavigator() {
   const { user, userProfile, loading } = useAuth();
-
-  const [isGuest, setIsGuest]               = useState(false);
-  const [authScreen, setAuthScreen]         = useState(null);
   const [onboardingDone, setOnboardingDone] = useState(null);
 
-  // ── Check onboarding ──────────────────────
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY)
       .then(value => setOnboardingDone(value === 'true'))
       .catch(()    => setOnboardingDone(false));
   }, []);
 
-  // ── Reset on login ────────────────────────
-  useEffect(() => {
-    if (user) {
-      setIsGuest(false);
-      setAuthScreen(null);
-    }
-  }, [user]);
-
-  const handleLoadingTimeout = useCallback(() => {
-    setIsGuest(true);
-  }, []);
-
-  const handleOnboardingGuest = useCallback(() => {
+  const markOnboardingDone = useCallback(() => {
     AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
     setOnboardingDone(true);
-    setIsGuest(true);
   }, []);
 
-  // ✅ Back from Login/Register to Welcome
-  const handleBackToWelcome = useCallback(() => {
-    setAuthScreen(null);
-    setIsGuest(false);
-  }, []);
-
-  // ✅ Switch Login ↔ Register
-  const handleSwitchToLogin = useCallback(() => {
-    setAuthScreen('login');
-  }, []);
-
-  const handleSwitchToRegister = useCallback(() => {
-    setAuthScreen('register');
-  }, []);
-
-  // ✅ Browse as guest from Login/Register
-  const handleAuthToGuest = useCallback(() => {
-    setAuthScreen(null);
-    setIsGuest(true);
-  }, []);
-
-  // ─────────────────────────────────────────
-  // LOADING
-  // ─────────────────────────────────────────
   if (onboardingDone === null || loading) {
-    return <LoadingScreen onTimeout={handleLoadingTimeout} />;
+    return <LoadingScreen onTimeout={markOnboardingDone} />;
   }
 
-  // ─────────────────────────────────────────
-  // ROUTING
-  // ─────────────────────────────────────────
   return (
     <NavigationContainer>
       {(() => {
-
-        // ── 1. Logged in ───────────────────
+        // ── Logged in ──────────────────────
         if (user) {
-          if (!userProfile) {
-            return <LoadingScreen onTimeout={handleLoadingTimeout} />;
-          }
+          if (!userProfile) return <LoadingScreen onTimeout={markOnboardingDone} />;
           if (userProfile.role === 'admin')            return <AdminNavigator />;
           if (userProfile.role === 'restaurant_owner') return <OwnerNavigator />;
           return <UserNavigator />;
         }
 
-        // ── 2. Auth screens (from Welcome) ─
-        if (authScreen) {
-          return (
-            <AuthStack
-              initialRoute={authScreen === 'login' ? 'Login' : 'Register'}
-              onBack={handleBackToWelcome}
-              onGuest={handleAuthToGuest}
-              onSwitchToLogin={handleSwitchToLogin}
-              onSwitchToRegister={handleSwitchToRegister}
-            />
-          );
-        }
-
-        // ── 3. Guest mode ──────────────────
-        // ✅ Now passes callbacks so Login/Register inside guest mode work
-        if (isGuest) {
-          return (
-            <GuestNavigator
-              onLogin={() => {
-                setIsGuest(false);
-                setAuthScreen('login');
-              }}
-              onRegister={() => {
-                setIsGuest(false);
-                setAuthScreen('register');
-              }}
-              onBackFromAuth={handleBackToWelcome}
-              onGuestFromAuth={handleAuthToGuest}
-              onSwitchToLogin={handleSwitchToLogin}
-              onSwitchToRegister={handleSwitchToRegister}
-            />
-          );
-        }
-
-        // ── 4. First launch → Onboarding ───
-        // ✅ Login/Register now get callbacks too
-        if (!onboardingDone) {
-          return (
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Onboarding">
-                {() => (
-                  <OnboardingScreen
-                    navigation={{
-                      replace: (screen) => {
-                        AsyncStorage.setItem(
-                          ONBOARDING_KEY, 'true'
-                        ).catch(() => {});
-                        setOnboardingDone(true);
-                        if (screen === 'Login')    setAuthScreen('login');
-                        if (screen === 'Register') setAuthScreen('register');
-                      },
-                    }}
-                    onGuestPress={handleOnboardingGuest}
-                  />
-                )}
-              </Stack.Screen>
-
-              {/* ✅ Login gets callbacks */}
-              <Stack.Screen name="Login">
-                {(props) => (
-                  <LoginScreen
-                    {...props}
-                    onBack={handleBackToWelcome}
-                    onGuest={handleAuthToGuest}
-                    onSwitchToRegister={handleSwitchToRegister}
-                  />
-                )}
-              </Stack.Screen>
-
-              {/* ✅ Register gets callbacks */}
-              <Stack.Screen name="Register">
-                {(props) => (
-                  <RegisterScreen
-                    {...props}
-                    onBack={handleBackToWelcome}
-                    onGuest={handleAuthToGuest}
-                    onSwitchToLogin={handleSwitchToLogin}
-                  />
-                )}
-              </Stack.Screen>
-            </Stack.Navigator>
-          );
-        }
-
-        // ── 5. Return visit → Welcome ──────
-        // ✅ Login/Register now get callbacks too
+        // ── Not logged in — ONE unified public stack ──
         return (
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Welcome">
-              {() => (
-                <WelcomeScreen
-                  onGuest={()    => setIsGuest(true)}
-                  onLogin={()    => setAuthScreen('login')}
-                  onRegister={() => setAuthScreen('register')}
-                />
-              )}
-            </Stack.Screen>
-
-            {/* ✅ Login gets callbacks */}
-            <Stack.Screen name="Login">
-              {(props) => (
-                <LoginScreen
-                  {...props}
-                  onBack={handleBackToWelcome}
-                  onGuest={handleAuthToGuest}
-                  onSwitchToRegister={handleSwitchToRegister}
-                />
-              )}
-            </Stack.Screen>
-
-            {/* ✅ Register gets callbacks */}
-            <Stack.Screen name="Register">
-              {(props) => (
-                <RegisterScreen
-                  {...props}
-                  onBack={handleBackToWelcome}
-                  onGuest={handleAuthToGuest}
-                  onSwitchToLogin={handleSwitchToLogin}
-                />
-              )}
-            </Stack.Screen>
-          </Stack.Navigator>
+          <PublicNavigator
+            initialRoute={onboardingDone ? 'Welcome' : 'Onboarding'}
+            markOnboardingDone={markOnboardingDone}
+          />
         );
-
       })()}
     </NavigationContainer>
   );
