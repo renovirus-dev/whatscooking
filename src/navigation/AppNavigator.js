@@ -93,7 +93,6 @@ try { FavoriteDishesScreen   = require('../screens/user/FavoriteDishesScreen').d
 catch (e) { console.log('❌ FavoriteDishesScreen:', e.message);   FavoriteDishesScreen   = makePlaceholder('Favourite Dishes'); }
 try { NotificationsScreen    = require('../screens/user/NotificationsScreen').default;    }
 catch (e) { console.log('❌ NotificationsScreen:', e.message);    NotificationsScreen    = makePlaceholder('Notifications');    }
-// ✅ Privacy Policy Screen
 try { PrivacyPolicyScreen    = require('../screens/user/PrivacyPolicyScreen').default;    }
 catch (e) { console.log('❌ PrivacyPolicyScreen:', e.message);    PrivacyPolicyScreen    = makePlaceholder('Privacy Policy');   }
 
@@ -553,16 +552,45 @@ const adminHeaderStyle = {
 
 // ─────────────────────────────────────────────
 // AUTH STACK
+// ✅ Now passes callbacks to Login/Register
 // ─────────────────────────────────────────────
-function AuthStack({ initialRoute = 'Login' }) {
+function AuthStack({
+  initialRoute = 'Login',
+  onBack,
+  onGuest,
+  onSwitchToLogin,
+  onSwitchToRegister,
+}) {
   return (
     <Stack.Navigator
       initialRouteName={initialRoute}
       screenOptions={{ headerShown: false }}
     >
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-      <Stack.Screen name="Login"      component={LoginScreen}      />
-      <Stack.Screen name="Register"   component={RegisterScreen}   />
+
+      {/* ✅ Login gets navigation callbacks */}
+      <Stack.Screen name="Login">
+        {(props) => (
+          <LoginScreen
+            {...props}
+            onBack={onBack}
+            onGuest={onGuest}
+            onSwitchToRegister={onSwitchToRegister}
+          />
+        )}
+      </Stack.Screen>
+
+      {/* ✅ Register gets navigation callbacks */}
+      <Stack.Screen name="Register">
+        {(props) => (
+          <RegisterScreen
+            {...props}
+            onBack={onBack}
+            onGuest={onGuest}
+            onSwitchToLogin={onSwitchToLogin}
+          />
+        )}
+      </Stack.Screen>
     </Stack.Navigator>
   );
 }
@@ -631,7 +659,6 @@ function OwnerTabs() {
         component={DailyMenuScreen}
         options={{ tabBarLabel: "Today's" }}
       />
-      {/* ✅ Owners can browse other restaurants */}
       <Tab.Screen
         name="Explore"
         component={ExploreScreen}
@@ -690,7 +717,6 @@ function UserNavigator() {
         component={SubscriptionScreen}
         options={{ title: 'Subscription Plans' }}
       />
-      {/* ✅ Privacy Policy */}
       <Stack.Screen
         name="PrivacyPolicy"
         component={PrivacyPolicyScreen}
@@ -702,7 +728,6 @@ function UserNavigator() {
 
 // ─────────────────────────────────────────────
 // OWNER NAVIGATOR
-// ✅ Full browse + privacy policy for owners
 // ─────────────────────────────────────────────
 function OwnerNavigator() {
   return (
@@ -778,7 +803,6 @@ function OwnerNavigator() {
         component={HomeScreen}
         options={{ title: "What's Cooking" }}
       />
-      {/* ✅ Privacy Policy */}
       <Stack.Screen
         name="PrivacyPolicy"
         component={PrivacyPolicyScreen}
@@ -811,7 +835,6 @@ function AdminNavigator() {
           title: route.params?.name || 'Restaurant',
         })}
       />
-      {/* ✅ Privacy Policy for admin too */}
       <Stack.Screen
         name="PrivacyPolicy"
         component={PrivacyPolicyScreen}
@@ -895,6 +918,27 @@ export default function AppNavigator() {
     setIsGuest(true);
   }, []);
 
+  // ✅ Back from Login/Register to Welcome
+  const handleBackToWelcome = useCallback(() => {
+    setAuthScreen(null);
+    setIsGuest(false);
+  }, []);
+
+  // ✅ Switch Login ↔ Register
+  const handleSwitchToLogin = useCallback(() => {
+    setAuthScreen('login');
+  }, []);
+
+  const handleSwitchToRegister = useCallback(() => {
+    setAuthScreen('register');
+  }, []);
+
+  // ✅ Browse as guest from Login/Register
+  const handleAuthToGuest = useCallback(() => {
+    setAuthScreen(null);
+    setIsGuest(true);
+  }, []);
+
   // ─────────────────────────────────────────
   // LOADING
   // ─────────────────────────────────────────
@@ -920,12 +964,15 @@ export default function AppNavigator() {
         }
 
         // ── 2. Auth screens ────────────────
+        // ✅ Passes callbacks so back + guest + switch work
         if (authScreen) {
           return (
             <AuthStack
-              initialRoute={
-                authScreen === 'login' ? 'Login' : 'Register'
-              }
+              initialRoute={authScreen === 'login' ? 'Login' : 'Register'}
+              onBack={handleBackToWelcome}
+              onGuest={handleAuthToGuest}
+              onSwitchToLogin={handleSwitchToLogin}
+              onSwitchToRegister={handleSwitchToRegister}
             />
           );
         }

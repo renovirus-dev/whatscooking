@@ -33,8 +33,18 @@ const isValidEmail = (email) => {
 
 // ─────────────────────────────────────────────
 // MAIN SCREEN
+// ✅ Accepts custom callbacks from AppNavigator:
+//    - onBack           — back to welcome
+//    - onGuest          — browse as guest
+//    - onSwitchToLogin  — go to login screen
+// ✅ Falls back to navigation.goBack if not provided
 // ─────────────────────────────────────────────
-export default function RegisterScreen({ navigation }) {
+export default function RegisterScreen({
+  navigation,
+  onBack,
+  onGuest,
+  onSwitchToLogin,
+}) {
   const insets       = useSafeAreaInsets();
   const { register } = useAuth();
 
@@ -53,13 +63,40 @@ export default function RegisterScreen({ navigation }) {
     phone:           '',
     password:        '',
     confirmPassword: '',
-    // ✅ 'customer' matches rest of app (userProfile.role)
     role:            'customer',
   });
 
   const [showPassword, setShowPassword]               = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading]                         = useState(false);
+
+  // ─────────────────────────────────────────
+  // NAVIGATION HANDLERS
+  // ✅ Use callbacks if provided, else fallback
+  // ─────────────────────────────────────────
+  const handleBack = useCallback(() => {
+    if (onBack) {
+      onBack();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  }, [onBack, navigation]);
+
+  const handleGuest = useCallback(() => {
+    if (onGuest) {
+      onGuest();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  }, [onGuest, navigation]);
+
+  const handleGoToLogin = useCallback(() => {
+    if (onSwitchToLogin) {
+      onSwitchToLogin();
+    } else if (navigation?.navigate) {
+      navigation.navigate('Login');
+    }
+  }, [onSwitchToLogin, navigation]);
 
   // ─────────────────────────────────────────
   // FORM HELPERS
@@ -70,18 +107,17 @@ export default function RegisterScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // PASSWORD STRENGTH
-  // ✅ Checks length AND complexity
   // ─────────────────────────────────────────
   const passwordStrength = useMemo(() => {
     const p = form.password;
     if (!p) return null;
 
     let score = 0;
-    if (p.length >= 6)               score++;
-    if (p.length >= 10)              score++;
-    if (/[A-Z]/.test(p))            score++;
-    if (/[0-9]/.test(p))            score++;
-    if (/[^A-Za-z0-9]/.test(p))    score++;
+    if (p.length >= 6)             score++;
+    if (p.length >= 10)            score++;
+    if (/[A-Z]/.test(p))          score++;
+    if (/[0-9]/.test(p))          score++;
+    if (/[^A-Za-z0-9]/.test(p))  score++;
 
     if (p.length < 6) return { label: 'Too short', color: COLORS.error,   width: '10%' };
     if (score <= 2)   return { label: 'Weak',      color: '#E74C3C',      width: '30%' };
@@ -185,11 +221,12 @@ export default function RegisterScreen({ navigation }) {
 
         {/* ── Header ────────────────────────── */}
         <View style={styles.headerSection}>
-          {/* ✅ Back button */}
+          {/* ✅ Back button — now uses onBack callback */}
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => navigation.goBack()}
+            onPress={handleBack}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
           >
             <Ionicons name="arrow-back" size={24} color={COLORS.text} />
           </TouchableOpacity>
@@ -255,7 +292,7 @@ export default function RegisterScreen({ navigation }) {
             returnKeyType="next"
             onSubmitEditing={() => phoneRef.current?.focus()}
           />
-          {/* ✅ Email validation indicator */}
+          {/* Email validation indicator */}
           {form.email.length > 0 && (
             <Ionicons
               name={isValidEmail(form.email) ? 'checkmark-circle' : 'close-circle'}
@@ -265,7 +302,6 @@ export default function RegisterScreen({ navigation }) {
           )}
         </View>
 
-        {/* ✅ Email error hint */}
         {form.email.length > 0 && !isValidEmail(form.email) && (
           <Text style={styles.inputError}>
             Please enter a valid email address
@@ -293,7 +329,7 @@ export default function RegisterScreen({ navigation }) {
           <Text style={styles.roleTitle}>I am a:</Text>
           <View style={styles.roleButtons}>
 
-            {/* Food Lover / Customer */}
+            {/* Food Lover */}
             <TouchableOpacity
               style={[
                 styles.roleBtn,
@@ -352,7 +388,6 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* ✅ Owner benefits shown when selected */}
           {form.role === 'restaurant_owner' && (
             <View style={styles.ownerBenefits}>
               <Text style={styles.ownerBenefitsTitle}>
@@ -405,7 +440,7 @@ export default function RegisterScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ✅ Password Strength Bar */}
+        {/* Password Strength Bar */}
         {passwordStrength && (
           <View style={styles.strengthRow}>
             <View style={styles.strengthBarBg}>
@@ -426,7 +461,6 @@ export default function RegisterScreen({ navigation }) {
           </View>
         )}
 
-        {/* ✅ Password tips */}
         {form.password.length > 0 && form.password.length < 10 && (
           <Text style={styles.passwordTip}>
             💡 Add uppercase, numbers or symbols for a stronger password
@@ -453,7 +487,6 @@ export default function RegisterScreen({ navigation }) {
             returnKeyType="done"
             onSubmitEditing={handleRegister}
           />
-          {/* ✅ Separate show/hide for confirm */}
           <TouchableOpacity
             onPress={() => setShowConfirmPassword(v => !v)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -464,7 +497,6 @@ export default function RegisterScreen({ navigation }) {
               color={COLORS.textMuted}
             />
           </TouchableOpacity>
-          {/* Match indicator */}
           {passwordMatch !== null && (
             <Ionicons
               name={passwordMatch ? 'checkmark-circle' : 'close-circle'}
@@ -474,7 +506,6 @@ export default function RegisterScreen({ navigation }) {
           )}
         </View>
 
-        {/* Password match hint */}
         {passwordMatch === false && (
           <Text style={styles.inputError}>Passwords do not match</Text>
         )}
@@ -500,6 +531,27 @@ export default function RegisterScreen({ navigation }) {
               <Text style={styles.registerBtnText}>Create Account</Text>
             </>
           )}
+        </TouchableOpacity>
+
+        {/* ── Divider ───────────────────────── */}
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {/* ✅ Browse as Guest — now uses onGuest callback */}
+        <TouchableOpacity
+          style={styles.guestBtn}
+          onPress={handleGuest}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="compass-outline"
+            size={20}
+            color={COLORS.primary}
+          />
+          <Text style={styles.guestBtnText}>Browse as Guest</Text>
         </TouchableOpacity>
 
         {/* ── Terms Notice ──────────────────── */}
@@ -530,12 +582,13 @@ export default function RegisterScreen({ navigation }) {
           </Text>
         </Text>
 
-        {/* ── Sign In Link ──────────────────── */}
+        {/* ✅ Sign In Link — now uses onSwitchToLogin */}
         <View style={styles.loginRow}>
           <Text style={styles.loginLabel}>Already have an account?</Text>
           <TouchableOpacity
-            onPress={() => navigation.navigate('Login')}
+            onPress={handleGoToLogin}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.loginLink}> Sign In</Text>
           </TouchableOpacity>
@@ -559,17 +612,25 @@ const styles = StyleSheet.create({
 
   // ── Header ────────────────────────────────
   headerSection: {
-    alignItems:     'center',
+    alignItems:      'center',
     paddingVertical: SIZES.md,
     position:        'relative',
   },
   backBtn: {
-    position: 'absolute',
-    left:     0,
-    top:      SIZES.md,
-    padding:  SIZES.xs,
+    position:        'absolute',
+    left:            0,
+    top:             SIZES.md,
+    padding:         SIZES.xs,
+    backgroundColor: COLORS.surface,
+    borderRadius:    RADIUS.round,
+    width:           40,
+    height:          40,
+    alignItems:      'center',
+    justifyContent:  'center',
+    zIndex:          10,
+    ...SHADOW,
   },
-  logo:     { fontSize: 50 },
+  logo: { fontSize: 50 },
   title: {
     fontSize:   FONTS.title || FONTS.xxl,
     fontWeight: 'bold',
@@ -747,6 +808,41 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  // ── Divider ───────────────────────────────
+  divider: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           SIZES.md,
+    marginTop:     SIZES.xs,
+  },
+  dividerLine: {
+    flex:            1,
+    height:          1,
+    backgroundColor: COLORS.border,
+  },
+  dividerText: {
+    fontSize: FONTS.sm,
+    color:    COLORS.textMuted,
+  },
+
+  // ── Guest Button ──────────────────────────
+  guestBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: COLORS.primary + '10',
+    paddingVertical: SIZES.md,
+    borderRadius:    RADIUS.lg,
+    gap:             SIZES.sm,
+    borderWidth:     1.5,
+    borderColor:     COLORS.primary + '30',
+  },
+  guestBtnText: {
+    color:      COLORS.primary,
+    fontSize:   FONTS.lg,
+    fontWeight: '600',
+  },
+
   // ── Terms ─────────────────────────────────
   termsText: {
     fontSize:   FONTS.sm,
@@ -762,6 +858,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems:     'center',
     paddingBottom:  SIZES.md,
+    paddingTop:     SIZES.sm,
   },
   loginLabel: { color: COLORS.textLight, fontSize: FONTS.md },
   loginLink: {
