@@ -551,8 +551,7 @@ const adminHeaderStyle = {
 };
 
 // ─────────────────────────────────────────────
-// AUTH STACK
-// ✅ Now passes callbacks to Login/Register
+// AUTH STACK — Used from Welcome screen
 // ─────────────────────────────────────────────
 function AuthStack({
   initialRoute = 'Login',
@@ -568,7 +567,6 @@ function AuthStack({
     >
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
 
-      {/* ✅ Login gets navigation callbacks */}
       <Stack.Screen name="Login">
         {(props) => (
           <LoginScreen
@@ -580,7 +578,6 @@ function AuthStack({
         )}
       </Stack.Screen>
 
-      {/* ✅ Register gets navigation callbacks */}
       <Stack.Screen name="Register">
         {(props) => (
           <RegisterScreen
@@ -638,8 +635,6 @@ function UserTabs() {
 
 // ─────────────────────────────────────────────
 // OWNER TABS
-// ✅ Explore tab so owners can browse other
-//    restaurants like a regular customer
 // ─────────────────────────────────────────────
 function OwnerTabs() {
   return (
@@ -846,8 +841,13 @@ function AdminNavigator() {
 
 // ─────────────────────────────────────────────
 // GUEST NAVIGATOR
+// ✅ Login/Register inside guest mode also get callbacks
 // ─────────────────────────────────────────────
-function GuestNavigator({ onLogin, onRegister }) {
+function GuestNavigator({
+  onLogin, onRegister,
+  onBackFromAuth, onGuestFromAuth,
+  onSwitchToLogin, onSwitchToRegister,
+}) {
   return (
     <Stack.Navigator
       screenOptions={headerStyle}
@@ -869,16 +869,36 @@ function GuestNavigator({ onLogin, onRegister }) {
         component={RestaurantDetailScreen}
         options={({ route }) => ({ title: route.params?.name || 'Restaurant' })}
       />
+
+      {/* ✅ Login inside guest — pass callbacks */}
       <Stack.Screen
         name="Login"
-        component={LoginScreen}
-        options={{ title: 'Sign In' }}
-      />
+        options={{ headerShown: false }}
+      >
+        {(props) => (
+          <LoginScreen
+            {...props}
+            onBack={onBackFromAuth}
+            onGuest={onGuestFromAuth}
+            onSwitchToRegister={onSwitchToRegister}
+          />
+        )}
+      </Stack.Screen>
+
+      {/* ✅ Register inside guest — pass callbacks */}
       <Stack.Screen
         name="Register"
-        component={RegisterScreen}
-        options={{ title: 'Create Account' }}
-      />
+        options={{ headerShown: false }}
+      >
+        {(props) => (
+          <RegisterScreen
+            {...props}
+            onBack={onBackFromAuth}
+            onGuest={onGuestFromAuth}
+            onSwitchToLogin={onSwitchToLogin}
+          />
+        )}
+      </Stack.Screen>
     </Stack.Navigator>
   );
 }
@@ -963,8 +983,7 @@ export default function AppNavigator() {
           return <UserNavigator />;
         }
 
-        // ── 2. Auth screens ────────────────
-        // ✅ Passes callbacks so back + guest + switch work
+        // ── 2. Auth screens (from Welcome) ─
         if (authScreen) {
           return (
             <AuthStack
@@ -978,6 +997,7 @@ export default function AppNavigator() {
         }
 
         // ── 3. Guest mode ──────────────────
+        // ✅ Now passes callbacks so Login/Register inside guest mode work
         if (isGuest) {
           return (
             <GuestNavigator
@@ -989,11 +1009,16 @@ export default function AppNavigator() {
                 setIsGuest(false);
                 setAuthScreen('register');
               }}
+              onBackFromAuth={handleBackToWelcome}
+              onGuestFromAuth={handleAuthToGuest}
+              onSwitchToLogin={handleSwitchToLogin}
+              onSwitchToRegister={handleSwitchToRegister}
             />
           );
         }
 
         // ── 4. First launch → Onboarding ───
+        // ✅ Login/Register now get callbacks too
         if (!onboardingDone) {
           return (
             <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -1014,13 +1039,36 @@ export default function AppNavigator() {
                   />
                 )}
               </Stack.Screen>
-              <Stack.Screen name="Login"    component={LoginScreen}    />
-              <Stack.Screen name="Register" component={RegisterScreen} />
+
+              {/* ✅ Login gets callbacks */}
+              <Stack.Screen name="Login">
+                {(props) => (
+                  <LoginScreen
+                    {...props}
+                    onBack={handleBackToWelcome}
+                    onGuest={handleAuthToGuest}
+                    onSwitchToRegister={handleSwitchToRegister}
+                  />
+                )}
+              </Stack.Screen>
+
+              {/* ✅ Register gets callbacks */}
+              <Stack.Screen name="Register">
+                {(props) => (
+                  <RegisterScreen
+                    {...props}
+                    onBack={handleBackToWelcome}
+                    onGuest={handleAuthToGuest}
+                    onSwitchToLogin={handleSwitchToLogin}
+                  />
+                )}
+              </Stack.Screen>
             </Stack.Navigator>
           );
         }
 
         // ── 5. Return visit → Welcome ──────
+        // ✅ Login/Register now get callbacks too
         return (
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="Welcome">
@@ -1032,8 +1080,30 @@ export default function AppNavigator() {
                 />
               )}
             </Stack.Screen>
-            <Stack.Screen name="Login"    component={LoginScreen}    />
-            <Stack.Screen name="Register" component={RegisterScreen} />
+
+            {/* ✅ Login gets callbacks */}
+            <Stack.Screen name="Login">
+              {(props) => (
+                <LoginScreen
+                  {...props}
+                  onBack={handleBackToWelcome}
+                  onGuest={handleAuthToGuest}
+                  onSwitchToRegister={handleSwitchToRegister}
+                />
+              )}
+            </Stack.Screen>
+
+            {/* ✅ Register gets callbacks */}
+            <Stack.Screen name="Register">
+              {(props) => (
+                <RegisterScreen
+                  {...props}
+                  onBack={handleBackToWelcome}
+                  onGuest={handleAuthToGuest}
+                  onSwitchToLogin={handleSwitchToLogin}
+                />
+              )}
+            </Stack.Screen>
           </Stack.Navigator>
         );
 
