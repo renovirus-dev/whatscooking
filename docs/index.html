@@ -178,16 +178,16 @@
     .btn-owner:hover { background: rgba(255,255,255,0.3); }
     .hero-note { margin-top: 20px; font-size: 14px; opacity: 0.7; }
     .hero-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		background: rgba(255,255,255,0.2);
-		padding: 8px 20px;
-		border-radius: 30px;
-		font-size: 14px;
-		margin-bottom: 24px;
-		color: white;
-	}
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.2);
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-size: 14px;
+      margin-bottom: 24px;
+      color: white;
+    }
     .phone-mockup { margin-top: 40px; font-size: 120px; }
 
     /* ── Features ─────────────── */
@@ -488,22 +488,6 @@
     }
     .download h2 { font-size: 36px; margin-bottom: 16px; }
     .download p { font-size: 18px; opacity: 0.9; margin-bottom: 30px; max-width: 500px; margin-left: auto; margin-right: auto; }
-    .download-btn {
-      background: white;
-      color: #FF6B35;
-      padding: 18px 48px;
-      border-radius: 12px;
-      font-size: 20px;
-      font-weight: 700;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
-      transition: transform 0.2s;
-    }
-    .download-btn:hover { transform: translateY(-2px); }
-    .download-note { margin-top: 16px; font-size: 14px; opacity: 0.7; }
     .download-stats {
       display: flex;
       justify-content: center;
@@ -514,6 +498,59 @@
     .download-stat { text-align: center; }
     .download-stat-value { font-size: 40px; margin-bottom: 4px; }
     .download-stat-label { font-size: 14px; opacity: 0.85; }
+    .qr-card {
+      background: white;
+      border-radius: 24px;
+      padding: 40px;
+      max-width: 800px;
+      margin: 0 auto 40px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 40px;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      color: #2C3E50;
+    }
+    .qr-image-wrapper img {
+      width: 240px;
+      height: 240px;
+      border-radius: 16px;
+      border: 3px solid #FF6B35;
+      box-shadow: 0 4px 15px rgba(255,107,53,0.2);
+    }
+    .qr-instructions {
+      text-align: left;
+      max-width: 320px;
+    }
+    .qr-instructions h3 {
+      color: #FF6B35;
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+    .qr-instructions p {
+      margin: 10px 0;
+      font-size: 15px;
+      color: #444;
+    }
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 24px;
+      padding: 16px 30px;
+      background: #FF6B35;
+      color: white;
+      text-decoration: none;
+      border-radius: 50px;
+      font-weight: 800;
+      font-size: 1.1rem;
+      box-shadow: 0 4px 20px rgba(255,107,53,0.35);
+      transition: transform 0.2s;
+    }
+    .download-btn:hover {
+      transform: translateY(-2px);
+    }
 
     /* ── Footer ───────────────── */
     .footer {
@@ -568,6 +605,9 @@
       .step { flex-direction: column; text-align: center; }
       .hero-buttons { flex-direction: column; align-items: center; }
       .btn-download, .btn-owner { width: 100%; justify-content: center; }
+      .qr-card { padding: 30px 20px; }
+      .qr-instructions { text-align: center; }
+      .qr-instructions p { text-align: left; }
     }
   </style>
 </head>
@@ -585,7 +625,8 @@
       <a href="#how-it-works">How It Works</a>
       <a href="#owners">For Owners</a>
       <a href="#pricing">Pricing</a>
-      <a href="https://drive.google.com/file/d/1hcgsvqtFI5w-SeaO--GXT-XmIiT-4EOE/view?usp=drive_link" class="nav-download-btn">📥 Download</a>
+      <!-- ✅ Updated Nav Link -->
+      <a href="https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk" class="nav-download-btn">📥 Download</a>
     </div>
   </nav>
 
@@ -599,7 +640,8 @@
     <h1>What's Cooking</h1>
     <p>Discover daily menus from restaurants near you. Browse what's fresh today, save your favorites, and never wonder what to eat again.</p>
     <div class="hero-buttons">
-      <a href="https://drive.google.com/file/d/1hcgsvqtFI5w-SeaO--GXT-XmIiT-4EOE/view?usp=drive_link" class="btn-download">📱 Download Free App</a>
+      <!-- ✅ Updated Hero Link -->
+      <a href="https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk" class="btn-download">📱 Download Free App</a>
       <a href="#owners" class="btn-owner">🍽️ I'm a Restaurant Owner</a>
     </div>
     <p class="hero-note">Free for food lovers · Available on Android</p>
@@ -856,11 +898,30 @@
   <!-- ── Download ─────────────── -->
   <section class="download" id="download">
     <h2>📱 Ready to Discover What's Cooking?</h2>
-    <p>Download free for Android. Start finding your next meal today.</p>
-    <a href="https://drive.google.com/file/d/1hcgsvqtFI5w-SeaO--GXT-XmIiT-4EOE/view?usp=drive_link" class="download-btn">
-      📥 Download for Android
-    </a>
-    <p class="download-note">Free APK · No Play Store needed · Install directly</p>
+    <p>Scan with your Android camera or download directly.</p>
+
+    <!-- ✅ Redesigned QR & Download Card -->
+    <div class="qr-card">
+      <div class="qr-image-wrapper">
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk&color=FF6B35&bgcolor=FFFFFF&margin=10"
+             alt="QR Code to Download What's Cooking App" />
+      </div>
+
+      <div class="qr-instructions">
+        <h3>How to install:</h3>
+        <p>1️⃣ Point your phone camera at the QR code</p>
+        <p>2️⃣ Tap the download link</p>
+        <p>3️⃣ Open the APK file</p>
+        <p>4️⃣ Tap "Install" (Allow unknown apps if asked)</p>
+
+        <!-- ✅ Updated Direct Download Button -->
+        <a href="https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk" class="download-btn">
+          ⬇️ Download APK Directly
+        </a>
+      </div>
+    </div>
+
+    <!-- Stats remain untouched -->
     <div class="download-stats">
       <div class="download-stat">
         <div class="download-stat-value">🍽️</div>
@@ -894,7 +955,8 @@
         <a href="#how-it-works">How It Works</a>
         <a href="#owners">For Owners</a>
         <a href="#pricing">Pricing</a>
-        <a href="https://drive.google.com/file/d/1hcgsvqtFI5w-SeaO--GXT-XmIiT-4EOE/view?usp=drive_link">Download App</a>
+        <!-- ✅ Updated Footer Link -->
+        <a href="https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk">Download App</a>
       </div>
       <div class="footer-col">
         <h4>Contact Us</h4>
@@ -942,7 +1004,7 @@
     }
   });
 
-  // ✅ Fixed: Scroll to top function
+  // Fixed: Scroll to top function
   function scrollToTop(e) {
     e.preventDefault();
     window.scrollTo({ top: 0, behavior: 'smooth' });

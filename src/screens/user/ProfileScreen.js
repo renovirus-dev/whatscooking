@@ -22,6 +22,7 @@ import { useNotifications }          from '../../context/NotificationContext';
 import { useSubscription, PLANS }    from '../../hooks/useSubscription';
 import { CLOUDINARY_CONFIG }         from '../../config/cloudinary';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { checkAppUpdate }            from '../../utils/checkAppUpdate'; // ✅ Import update checker
 
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
@@ -31,7 +32,6 @@ const INFO_COLOR    = COLORS.info    || '#3498DB';
 
 // ─────────────────────────────────────────────
 // UPLOAD AVATAR TO CLOUDINARY
-// ✅ Uses XMLHttpRequest — fixes FormDataPart error
 // ─────────────────────────────────────────────
 const uploadAvatarToCloudinary = (imageUri, userId) => {
   return new Promise(async (resolve) => {
@@ -77,7 +77,6 @@ const uploadAvatarToCloudinary = (imageUri, userId) => {
       xhr.ontimeout = () => resolve({ success: false, error: 'Upload timed out' });
       xhr.timeout   = 60000;
 
-      // ✅ DO NOT set Content-Type — XHR sets it automatically
       xhr.send(formData);
 
     } catch (err) {
@@ -128,7 +127,6 @@ const ProfileButton = ({
 
 // ─────────────────────────────────────────────
 // OWNER SUBSCRIPTION CARD
-// ✅ Uses onSnapshot for real-time updates
 // ─────────────────────────────────────────────
 const OwnerSubscriptionCard = ({ navigation, userId }) => {
   const [restaurant, setRestaurant] = useState(null);
@@ -284,7 +282,6 @@ export default function ProfileScreen({ navigation }) {
   const isOwner = userProfile?.role === 'restaurant_owner';
   const isAdmin = userProfile?.role === 'admin';
 
-  // ✅ Real-time counts via onSnapshot in useAuth
   const savedRestaurantsCount = userProfile?.favoriteRestaurants?.length || 0;
   const favDishesCount        = userProfile?.favoriteDishes?.length       || 0;
   const dietaryPrefsCount     = userProfile?.dietaryPreferences?.length   || 0;
@@ -386,7 +383,6 @@ export default function ProfileScreen({ navigation }) {
         return;
       }
 
-      // ✅ onSnapshot in useAuth updates avatar automatically
       await updateDoc(doc(db, 'users', user.uid), {
         avatar:    uploadResult.url,
         updatedAt: serverTimestamp(),
@@ -673,7 +669,6 @@ export default function ProfileScreen({ navigation }) {
           }
         />
 
-        {/* ✅ Privacy Policy — full screen instead of Alert */}
         <ProfileButton
           icon="shield-checkmark-outline"
           label="Privacy Policy"
@@ -684,7 +679,6 @@ export default function ProfileScreen({ navigation }) {
           icon="information-circle-outline"
           label="About"
           subtitle={`Version ${appVersion}`}
-          last
           onPress={() =>
             Alert.alert(
               "About What's Cooking",
@@ -692,6 +686,15 @@ export default function ProfileScreen({ navigation }) {
               [{ text: 'OK' }]
             )
           }
+        />
+
+        {/* ✅ NEW: Check for Updates Button */}
+        <ProfileButton
+          icon="refresh-circle-outline"
+          label="Check for Updates"
+          subtitle="Get the latest features"
+          last
+          onPress={() => checkAppUpdate(false)} // false = show alerts even if up to date
         />
       </View>
 

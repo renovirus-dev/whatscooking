@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "versionCode": 1,
+  "downloadUrl": "https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk",
+  "forceUpdate": false,
+  "notes": "Initial release with MealDB images, daily menu notifications, and navigation fixes!"
+}

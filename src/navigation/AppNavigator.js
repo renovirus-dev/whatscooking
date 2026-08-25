@@ -16,6 +16,7 @@ import { useSafeAreaInsets }          from 'react-native-safe-area-context';
 import AsyncStorage                   from '@react-native-async-storage/async-storage';
 import { useAuth }                    from '../hooks/useAuth';
 import { useNotifications }           from '../context/NotificationContext';
+import { checkAppUpdate }             from '../utils/checkAppUpdate';
 
 const PRIMARY = '#FF6B35';
 const DARK    = '#2C3E50';
@@ -175,7 +176,7 @@ function LoadingScreen({ onTimeout }) {
 }
 
 // ─────────────────────────────────────────────
-// WELCOME SCREEN — uses navigation prop
+// WELCOME SCREEN
 // ─────────────────────────────────────────────
 function WelcomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -373,7 +374,6 @@ function GuestProfileScreen({ navigation }) {
         </Text>
       </TouchableOpacity>
 
-      {/* ✅ Back to Welcome */}
       <TouchableOpacity
         style={{ marginTop: 16, paddingVertical: 8 }}
         onPress={() => navigation.replace('Welcome')}
@@ -466,7 +466,7 @@ const adminHeaderStyle = {
 };
 
 // ─────────────────────────────────────────────
-// GUEST TABS — uses standard navigation
+// GUEST TABS
 // ─────────────────────────────────────────────
 function GuestTabs() {
   return (
@@ -577,7 +577,6 @@ function AdminNavigator() {
 
 // ─────────────────────────────────────────────
 // PUBLIC NAVIGATOR — ONE stack for all pre-login screens
-// ✅ Standard React Navigation — back button "just works"
 // ─────────────────────────────────────────────
 function PublicNavigator({ initialRoute, markOnboardingDone }) {
   return (
@@ -585,7 +584,6 @@ function PublicNavigator({ initialRoute, markOnboardingDone }) {
       initialRouteName={initialRoute}
       screenOptions={{ headerShown: false }}
     >
-      {/* Onboarding */}
       <Stack.Screen name="Onboarding">
         {(props) => (
           <OnboardingScreen
@@ -605,16 +603,13 @@ function PublicNavigator({ initialRoute, markOnboardingDone }) {
         )}
       </Stack.Screen>
 
-      {/* Welcome — main hub */}
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
 
-      {/* ✅ Login — uses standard navigation.goBack() */}
       <Stack.Screen name="Login">
         {(props) => (
           <LoginScreen
             {...props}
             onBack={() => {
-              // ✅ Simple pop back
               if (props.navigation.canGoBack()) {
                 props.navigation.goBack();
               } else {
@@ -622,21 +617,18 @@ function PublicNavigator({ initialRoute, markOnboardingDone }) {
               }
             }}
             onGuest={() => {
-              // ✅ Reset stack to guest tabs
               props.navigation.reset({
                 index:  0,
                 routes: [{ name: 'GuestTabs' }],
               });
             }}
             onSwitchToRegister={() => {
-              // ✅ Replace so back doesn't stack up
               props.navigation.replace('Register');
             }}
           />
         )}
       </Stack.Screen>
 
-      {/* ✅ Register — uses standard navigation */}
       <Stack.Screen name="Register">
         {(props) => (
           <RegisterScreen
@@ -661,7 +653,6 @@ function PublicNavigator({ initialRoute, markOnboardingDone }) {
         )}
       </Stack.Screen>
 
-      {/* Guest browsing */}
       <Stack.Screen name="GuestTabs" component={GuestTabs} />
       <Stack.Screen
         name="RestaurantDetail"
@@ -679,10 +670,20 @@ export default function AppNavigator() {
   const { user, userProfile, loading } = useAuth();
   const [onboardingDone, setOnboardingDone] = useState(null);
 
+  // ── Check onboarding status ────────────────
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY)
       .then(value => setOnboardingDone(value === 'true'))
       .catch(()    => setOnboardingDone(false));
+  }, []);
+
+  // ✅ Check for APK updates silently on launch
+  useEffect(() => {
+    // Wait 2 seconds after launch so the app doesn't feel slow
+    const timer = setTimeout(() => {
+      checkAppUpdate(true); // silent = true
+    }, 2000);
+    return () => clearTimeout(timer);
   }, []);
 
   const markOnboardingDone = useCallback(() => {
