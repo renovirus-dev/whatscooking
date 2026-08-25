@@ -1,6 +1,10 @@
 // ============================================
 // FILE: src/utils/sendPushNotification.js
 // ============================================
+import {
+  collection, query, where, getDocs, addDoc, serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 // ✅ Expo Push API endpoint
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
@@ -84,7 +88,6 @@ export const sendPushNotification = async ({
 
 // ─── Send to multiple tokens at once ──────────
 // ✅ Expo supports batching up to 100 notifications
-// per request — much more efficient than one by one
 export const sendPushNotificationBatch = async ({
   tokens,       // array of expoPushTokens
   title,
@@ -189,8 +192,6 @@ export const sendPushNotificationBatch = async ({
 };
 
 // ─── Send notification to a specific role ─────
-// ✅ Helper to send to all users or filtered by role
-// users = array of user objects from Firestore
 export const sendNotificationToRole = async ({
   users = [],
   role,          // 'all' | 'customer' | 'restaurant_owner'
@@ -226,41 +227,102 @@ export const sendNotificationToRole = async ({
 };
 
 // ─── Format notification for common types ─────
-// ✅ Helper to build consistent notification messages
 export const buildNotification = {
-
-  // New menu posted by restaurant
   newMenu: (restaurantName) => ({
     title: `🍽️ New Menu Posted!`,
     body:  `${restaurantName} has posted today's menu. Check it out!`,
     data:  { type: 'menu_update' },
   }),
-
-  // Promotion / special offer
   promotion: (restaurantName, offerText) => ({
     title: `🎉 Special Offer!`,
     body:  `${restaurantName}: ${offerText}`,
     data:  { type: 'promotion' },
   }),
-
-  // New review on restaurant
   newReview: (restaurantName, rating) => ({
     title: `⭐ New Review`,
     body:  `${restaurantName} received a ${rating}-star review`,
     data:  { type: 'review' },
   }),
-
-  // Admin broadcast
   broadcast: (message) => ({
     title: `📢 What's Cooking`,
     body:  message,
     data:  { type: 'broadcast' },
   }),
-
-  // Welcome new user
   welcome: (firstName) => ({
     title: `👋 Welcome, ${firstName}!`,
     body:  `Discover amazing restaurants near you on What's Cooking`,
     data:  { type: 'welcome' },
   }),
+};
+
+
+// ─────────────────────────────────────────────
+// ✅ NEW: Notify Customers when Restaurant Publishes Menu
+// ─────────────────────────────────────────────
+export const notifyCustomersOnMenuPublish = async ({
+  restaurantId,
+  restaurantName,
+  itemCount,
+  specialCount,
+  chefMessage,
+}) => {
+  if (!restaurantId) return;
+
+  try {
+    // 1. Find all customers who favorited this restaurant
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('favoriteRestaurants', 'array-contains', restaurantId)
+    );
+    const userSnaps = await getDocs(usersQuery);
+
+    if (userSnaps.empty) {
+      console.log('📢 No customers have favorited this restaurant yet.');
+      return;
+    }
+
+    const title = `🍽️ ${restaurantName || 'Restaurant'} updated today's menu!`;
+    const body  = chefMessage
+      ? `👨‍🍳 "${chefMessage}"`
+      : `${itemCount} item${itemCount !== 1 ? 's' : ''} available today${specialCount > 0 ? ` (${specialCount} ⭐ specials)` : ''}!`;
+
+    const tokens = [];
+
+    // 2. Create In-App Notification in Firestore for each customer
+    for (const userDoc of userSnaps.docs) {
+      const userData = userDoc.data();
+
+      // Collect Expo Push Token if available
+      if (userData?.expoPushToken) {
+        tokens.push(userData.expoPushToken);
+      }
+
+      // Add document to Firestore so it shows on their Notifications Screen
+      await addDoc(collection(db, 'notifications'), {
+        userId:         userDoc.id,
+        restaurantId:   restaurantId,
+        restaurantName: restaurantName || 'Restaurant',
+        title:          title,
+        body:           body,
+        type:           'daily_menu',
+        read:           false,
+        createdAt:      serverTimestamp(),
+      });
+    }
+
+    console.log(`✅ Saved in-app notification for ${userSnaps.length} customer(s).`);
+
+    // 3. Send Lockscreen Push Notifications using your existing batch function!
+    if (tokens.length > 0) {
+      await sendPushNotificationBatch({
+        tokens,
+        title,
+        body,
+        data: { type: 'daily_menu', restaurantId },
+      });
+    }
+
+  } catch (err) {
+    console.error('❌ notifyCustomersOnMenuPublish error:', err);
+  }
 };
