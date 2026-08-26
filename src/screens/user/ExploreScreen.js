@@ -104,7 +104,6 @@ export default function ExploreScreen({ navigation, route }) {
   const [error, setError]               = useState(null);
 
   // ── Filter State ──────────────────────────
-  // ✅ Handle filter param from HomeScreen
   const initialFilter = route.params?.filter;
   const [search, setSearch]                       = useState('');
   const [selectedCuisine, setSelectedCuisine]     = useState(
@@ -165,7 +164,6 @@ export default function ExploreScreen({ navigation, route }) {
 
   // ─────────────────────────────────────────
   // GEOCODE MISSING COORDS (CACHED)
-  // ✅ Same approach as HomeScreen
   // ─────────────────────────────────────────
   useEffect(() => {
     if (restaurants.length === 0 || geocodingRef.current) return;
@@ -276,7 +274,6 @@ export default function ExploreScreen({ navigation, route }) {
 
   // ─────────────────────────────────────────
   // FILTERED + SORTED RESTAURANTS
-  // ✅ All in one useMemo
   // ─────────────────────────────────────────
   const filteredRestaurants = useMemo(() => {
     let result = restaurants.map(r => ({
@@ -357,7 +354,6 @@ export default function ExploreScreen({ navigation, route }) {
 
   // ─────────────────────────────────────────
   // ACTIVE FILTER COUNT
-  // ✅ Shows how many filters are active
   // ─────────────────────────────────────────
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -533,10 +529,13 @@ export default function ExploreScreen({ navigation, route }) {
             activeOpacity={0.7}
           >
             <Text style={styles.cuisineEmoji}>{c.emoji}</Text>
-            <Text style={[
-              styles.cuisineLabel,
-              selectedCuisine === c.value && styles.cuisineLabelActive,
-            ]}>
+            <Text 
+              style={[
+                styles.cuisineLabel,
+                selectedCuisine === c.value && styles.cuisineLabelActive,
+              ]}
+              numberOfLines={1}
+            >
               {c.label}
             </Text>
           </TouchableOpacity>
@@ -562,10 +561,13 @@ export default function ExploreScreen({ navigation, route }) {
             onPress={() => setSelectedPrice(p)}
             activeOpacity={0.7}
           >
-            <Text style={[
-              styles.filterChipText,
-              selectedPrice === p && styles.filterChipTextActive,
-            ]}>
+            <Text 
+              style={[
+                styles.filterChipText,
+                selectedPrice === p && styles.filterChipTextActive,
+              ]}
+              numberOfLines={1}
+            >
               {p}
             </Text>
           </TouchableOpacity>
@@ -580,15 +582,18 @@ export default function ExploreScreen({ navigation, route }) {
           onPress={() => setShowOpenOnly(v => !v)}
           activeOpacity={0.7}
         >
-          <Text style={[
-            styles.filterChipText,
-            showOpenOnly && styles.filterChipTextActive,
-          ]}>
+          <Text 
+            style={[
+              styles.filterChipText,
+              showOpenOnly && styles.filterChipTextActive,
+            ]}
+            numberOfLines={1}
+          >
             🟢 Open Now
           </Text>
         </TouchableOpacity>
 
-        {/* ✅ Delivery filter */}
+        {/* Delivery filter */}
         <TouchableOpacity
           style={[
             styles.filterChip,
@@ -597,15 +602,18 @@ export default function ExploreScreen({ navigation, route }) {
           onPress={() => setShowDeliveryOnly(v => !v)}
           activeOpacity={0.7}
         >
-          <Text style={[
-            styles.filterChipText,
-            showDeliveryOnly && styles.filterChipTextActive,
-          ]}>
+          <Text 
+            style={[
+              styles.filterChipText,
+              showDeliveryOnly && styles.filterChipTextActive,
+            ]}
+            numberOfLines={1}
+          >
             🛵 Delivery
           </Text>
         </TouchableOpacity>
 
-        {/* ✅ Dine In filter */}
+        {/* Dine In filter */}
         <TouchableOpacity
           style={[
             styles.filterChip,
@@ -614,10 +622,13 @@ export default function ExploreScreen({ navigation, route }) {
           onPress={() => setShowDineInOnly(v => !v)}
           activeOpacity={0.7}
         >
-          <Text style={[
-            styles.filterChipText,
-            showDineInOnly && styles.filterChipTextActive,
-          ]}>
+          <Text 
+            style={[
+              styles.filterChipText,
+              showDineInOnly && styles.filterChipTextActive,
+            ]}
+            numberOfLines={1}
+          >
             🪑 Dine In
           </Text>
         </TouchableOpacity>
@@ -627,7 +638,6 @@ export default function ExploreScreen({ navigation, route }) {
       <View style={styles.sortRow}>
         <Text style={styles.sortLabel}>Sort:</Text>
         {SORT_OPTIONS.map(s => {
-          // ✅ Disable "Nearest" if Near Me not active
           const isDisabled = s.value === 'distance' && !nearbyActive;
           return (
             <TouchableOpacity
@@ -640,18 +650,21 @@ export default function ExploreScreen({ navigation, route }) {
               onPress={() => !isDisabled && setSelectedSort(s.value)}
               activeOpacity={isDisabled ? 1 : 0.7}
             >
-              <Text style={[
-                styles.sortChipText,
-                selectedSort === s.value && styles.sortChipTextActive,
-                isDisabled && styles.sortChipTextDisabled,
-              ]}>
+              <Text 
+                style={[
+                  styles.sortChipText,
+                  selectedSort === s.value && styles.sortChipTextActive,
+                  isDisabled && styles.sortChipTextDisabled,
+                ]}
+                numberOfLines={1}
+              >
                 {s.label}
               </Text>
             </TouchableOpacity>
           );
         })}
 
-        {/* ✅ Active filter count + Reset */}
+        {/* Active filter count + Reset */}
         {activeFilterCount > 0 && (
           <TouchableOpacity
             style={styles.resetChip}
@@ -659,7 +672,7 @@ export default function ExploreScreen({ navigation, route }) {
             activeOpacity={0.7}
           >
             <Ionicons name="close-outline" size={12} color={COLORS.error} />
-            <Text style={styles.resetChipText}>
+            <Text style={styles.resetChipText} numberOfLines={1}>
               Reset ({activeFilterCount})
             </Text>
           </TouchableOpacity>
@@ -670,7 +683,7 @@ export default function ExploreScreen({ navigation, route }) {
       {nearbyActive && userCoords && (
         <View style={styles.nearbyBanner}>
           <Ionicons name="navigate-outline" size={14} color={COLORS.primary} />
-          <Text style={styles.nearbyBannerText}>
+          <Text style={styles.nearbyBannerText} numberOfLines={1}>
             Within {selectedRadius}km of your location
           </Text>
         </View>
@@ -678,13 +691,13 @@ export default function ExploreScreen({ navigation, route }) {
 
       {/* ── Results Count ─────────────────────── */}
       <View style={styles.resultsRow}>
-        <Text style={styles.resultsText}>
+        <Text style={styles.resultsText} numberOfLines={1}>
           {filteredRestaurants.length} restaurant
           {filteredRestaurants.length !== 1 ? 's' : ''} found
         </Text>
         {activeFilterCount > 0 && (
           <View style={styles.activeFiltersBadge}>
-            <Text style={styles.activeFiltersBadgeText}>
+            <Text style={styles.activeFiltersBadgeText} numberOfLines={1}>
               {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''} active
             </Text>
           </View>
@@ -830,6 +843,7 @@ const styles = StyleSheet.create({
     backgroundColor:   COLORS.primary + '15',
     borderWidth:       1,
     borderColor:       COLORS.primary,
+    flexShrink:        0,
   },
   nearMeBtnActive:  { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   nearMeText:       { fontSize: FONTS.xs, color: COLORS.primary, fontWeight: '700' },
@@ -852,27 +866,28 @@ const styles = StyleSheet.create({
     backgroundColor:   COLORS.surface,
     borderWidth:       1,
     borderColor:       COLORS.border,
+    flexShrink:        0,
   },
   radiusChipActive:     { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   radiusChipText:       { fontSize: FONTS.xs, color: COLORS.text, fontWeight: '600' },
   radiusChipTextActive: { color: '#FFFFFF' },
 
   // ── Cuisine Chips ─────────────────────────
-  cuisineScroll:  { maxHeight: 56 },
+  cuisineScroll:  { flexGrow: 0, height: 48 },
   cuisineContent: {
     paddingHorizontal: SIZES.md,
     gap:               SIZES.sm,
-    paddingVertical:   SIZES.sm,
     alignItems:        'center',
   },
   cuisineChip: {
     flexDirection:     'row',
     alignItems:        'center',
     paddingHorizontal: SIZES.md,
-    paddingVertical:   SIZES.sm,
+    paddingVertical:   6,
     borderRadius:      RADIUS.round,
     backgroundColor:   COLORS.surface,
     gap:               6,
+    flexShrink:        0, 
     ...SHADOW,
   },
   cuisineChipActive: { backgroundColor: COLORS.primary },
@@ -881,7 +896,7 @@ const styles = StyleSheet.create({
   cuisineLabelActive:{ color: '#FFFFFF' },
 
   // ── Filter Chips ──────────────────────────
-  filterScroll:  { maxHeight: 44 },
+  filterScroll:  { flexGrow: 0, height: 38 },
   filterContent: {
     paddingHorizontal: SIZES.md,
     gap:               SIZES.sm,
@@ -894,6 +909,7 @@ const styles = StyleSheet.create({
     backgroundColor:   COLORS.surface,
     borderWidth:       1,
     borderColor:       COLORS.border,
+    flexShrink:        0,
   },
   filterChipActive:  { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   filterChipSuccess: { backgroundColor: COLORS.success,  borderColor: COLORS.success  },
@@ -917,6 +933,7 @@ const styles = StyleSheet.create({
     backgroundColor:   COLORS.surface,
     borderWidth:       1,
     borderColor:       COLORS.border,
+    flexShrink:        0,
   },
   sortChipActive:   { backgroundColor: COLORS.secondary, borderColor: COLORS.secondary },
   sortChipDisabled: { opacity: 0.4 },
@@ -934,6 +951,7 @@ const styles = StyleSheet.create({
     borderColor:       COLORS.error + '40',
     gap:               4,
     marginLeft:        'auto',
+    flexShrink:        0,
   },
   resetChipText: { fontSize: FONTS.xs, color: COLORS.error, fontWeight: '600' },
 
