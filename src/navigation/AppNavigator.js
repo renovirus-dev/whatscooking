@@ -407,38 +407,39 @@ function getTabIcon(routeName, focused) {
   return icons[routeName] || 'ellipse-outline';
 }
 
-// ✅ FIXED: Pixel-perfect tab bar settings for Web & Native
 const isWeb = Platform.OS === 'web';
 
+// ✅ PERFECT RATIO: 20px Icon + 2px Gap + 10px Label inside 66px Bar
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
   tabBarActiveTintColor:   PRIMARY,
   tabBarInactiveTintColor: '#95A5A6',
   tabBarHideOnKeyboard:    true,
+  tabBarLabelPosition:     'below-icon',
   tabBarStyle: {
     backgroundColor: '#FFFFFF',
     borderTopColor:  '#E0E0E0',
     borderTopWidth:  1,
-    paddingTop:      4,
-    height:          isWeb ? 58 : undefined,
-    paddingBottom:   isWeb ? 4 : undefined,
+    height:          isWeb ? 66 : undefined,
+    paddingTop:      isWeb ? 6 : 6,
+    paddingBottom:   isWeb ? 8 : undefined,
   },
   tabBarItemStyle: {
-    justifyContent:  'center',
-    alignItems:      'center',
-    paddingVertical: 2,
+    justifyContent: 'center',
+    alignItems:     'center',
+    padding:        0,
   },
   tabBarLabelStyle: {
     fontSize:     10,
     fontWeight:   '600',
-    marginTop:    1,
-    marginBottom: 2,
-    lineHeight:   12,
+    marginTop:    2,
+    marginBottom: 0,
+    padding:      0,
   },
   tabBarIcon: ({ color, size, focused }) => (
     <Ionicons
       name={getTabIcon(route.name, focused)}
-      size={isWeb ? 22 : size}
+      size={isWeb ? 20 : size}
       color={color}
     />
   ),
@@ -455,7 +456,7 @@ function ProfileTabIcon({ color, size, focused }) {
     <View style={{ position: 'relative' }}>
       <Ionicons
         name={focused ? 'person' : 'person-outline'}
-        size={isWeb ? 22 : size}
+        size={isWeb ? 20 : size}
         color={color}
       />
       {unreadCount > 0 && (
