@@ -4,8 +4,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider }     from 'react-native-safe-area-context';
-import * as Font                from 'expo-font';
-import { Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
 import { AuthProvider }         from './src/hooks/useAuth';
 import { NotificationProvider } from './src/context/NotificationContext';
 import AppNavigator             from './src/navigation/AppNavigator';
@@ -34,7 +32,6 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('App crashed:', error);
-    console.error('Stack:', errorInfo?.componentStack);
   }
 
   render() {
@@ -45,9 +42,6 @@ class ErrorBoundary extends React.Component {
           <Text style={styles.errorTitle}>App Crashed</Text>
           <Text style={styles.errorText}>
             {this.state.error?.message || 'Unknown error'}
-          </Text>
-          <Text style={styles.errorStack}>
-            {this.state.error?.stack?.split('\n').slice(0, 5).join('\n') || ''}
           </Text>
           <TouchableOpacity
             style={styles.retryBtn}
@@ -71,14 +65,6 @@ export default function App() {
   useEffect(() => {
     const prepare = async () => {
       try {
-        // ✅ Pre-load Icon fonts for Web & Mobile
-        await Font.loadAsync({
-          ...Ionicons.font,
-          ...MaterialCommunityIcons.font,
-          ...FontAwesome.font,
-        });
-
-        // Small delay to ensure smooth transition
         await new Promise(resolve => setTimeout(resolve, 300));
       } catch (err) {
         console.warn('App prepare error:', err);
@@ -127,42 +113,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF6B35',
     gap:             12,
   },
-  errorEmoji: {
-    fontSize: 48,
-  },
-  errorTitle: {
-    fontSize:   22,
-    fontWeight: 'bold',
-    color:      '#FFFFFF',
-    textAlign:  'center',
-  },
-  errorText: {
-    fontSize:   14,
-    color:      'rgba(255,255,255,0.9)',
-    textAlign:  'center',
-    lineHeight: 22,
-  },
-  errorStack: {
-    fontSize:        10,
-    color:           'rgba(255,255,255,0.6)',
-    textAlign:       'left',
-    lineHeight:      16,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    padding:         12,
-    borderRadius:    8,
-    width:           '100%',
-    maxHeight:       150,
-  },
+  errorEmoji: { fontSize: 48 },
+  errorTitle: { fontSize: 22, fontWeight: 'bold', color: '#FFFFFF' },
+  errorText: { fontSize: 14, color: 'rgba(255,255,255,0.9)', textAlign: 'center' },
   retryBtn: {
-    backgroundColor:   '#FFFFFF',
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 32,
-    paddingVertical:   12,
-    borderRadius:      8,
-    marginTop:         8,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  retryBtnText: {
-    color:      '#FF6B35',
-    fontWeight: 'bold',
-    fontSize:   16,
-  },
+  retryBtnText: { color: '#FF6B35', fontWeight: 'bold', fontSize: 16 },
 });
