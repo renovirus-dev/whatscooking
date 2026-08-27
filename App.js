@@ -4,6 +4,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaProvider }     from 'react-native-safe-area-context';
+import * as Font                from 'expo-font';
+import { Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
 import { AuthProvider }         from './src/hooks/useAuth';
 import { NotificationProvider } from './src/context/NotificationContext';
 import AppNavigator             from './src/navigation/AppNavigator';
@@ -19,8 +21,6 @@ try {
 
 // ─────────────────────────────────────────────
 // ERROR BOUNDARY
-// ✅ Catches ANY crash in the component tree
-// Shows error screen instead of white screen
 // ─────────────────────────────────────────────
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -71,7 +71,15 @@ export default function App() {
   useEffect(() => {
     const prepare = async () => {
       try {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // ✅ Pre-load Icon fonts for Web & Mobile
+        await Font.loadAsync({
+          ...Ionicons.font,
+          ...MaterialCommunityIcons.font,
+          ...FontAwesome.font,
+        });
+
+        // Small delay to ensure smooth transition
+        await new Promise(resolve => setTimeout(resolve, 300));
       } catch (err) {
         console.warn('App prepare error:', err);
       } finally {
