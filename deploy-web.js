@@ -45,7 +45,6 @@ const sourceIcon = possibleIconPaths.find(p => fs.existsSync(p));
 
 if (sourceIcon) {
   console.log(`✅ Found app icon at: ${sourceIcon}`);
-  // Copy to all standard filenames iOS & Android expect
   fs.copyFileSync(sourceIcon, path.join(distDir, 'icon.png'));
   fs.copyFileSync(sourceIcon, path.join(distDir, 'apple-touch-icon.png'));
   fs.copyFileSync(sourceIcon, path.join(distDir, 'apple-touch-icon-precomposed.png'));
@@ -56,7 +55,7 @@ if (sourceIcon) {
   console.error('❌ WARNING: Could not find any icon.png in assets folder!');
 }
 
-// ── 3. Create manifest.json for Android / Web ────────
+// ── 3. Create manifest.json ─────────────────────────
 const manifestContent = {
   name: "What's Cooking",
   short_name: "What's Cooking",
@@ -65,31 +64,22 @@ const manifestContent = {
   background_color: "#FF6B35",
   theme_color: "#FF6B35",
   icons: [
-    {
-      src: "/icon-192.png",
-      sizes: "192x192",
-      type: "image/png",
-      purpose: "any maskable"
-    },
-    {
-      src: "/icon-512.png",
-      sizes: "512x512",
-      type: "image/png",
-      purpose: "any maskable"
-    }
+    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
   ]
 };
 fs.writeFileSync(path.join(distDir, 'manifest.json'), JSON.stringify(manifestContent, null, 2), 'utf8');
 
-// ── 4. Inject Meta Tags into dist/index.html ─────────
-console.log('✍️  4/5: Injecting fonts and Apple/PWA icon metadata into dist/index.html...');
+// ── 4. Inject Meta Tags & Safe Area CSS ─────────────
+console.log('✍️  4/5: Injecting fonts, PWA metadata, and safe-area styles into dist/index.html...');
 const indexPath = path.join(distDir, 'index.html');
 
 if (fs.existsSync(indexPath)) {
   let html = fs.readFileSync(indexPath, 'utf8');
 
   const pwaAndFontHead = `
-    <!-- ✅ PWA & Apple Touch Icons -->
+    <!-- ✅ PWA & Safe Area Metadata -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -149,6 +139,25 @@ if (fs.existsSync(indexPath)) {
         font-display: block;
       }
     </style>
+
+    <!-- ✅ Safe Area for iPhone Home Indicator -->
+    <style>
+      html, body, #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      #root {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        min-height: -webkit-fill-available;
+      }
+    </style>
   </head>`;
 
   html = html.replace('</head>', pwaAndFontHead);
@@ -156,7 +165,7 @@ if (fs.existsSync(indexPath)) {
 }
 
 // ── 5. Deploy to Firebase ───────────────────────────
-console.log('🔥 5/5: Deploying with App Icons to Firebase...');
+console.log('🔥 5/5: Deploying with Safe-Area & Tab Bar updates to Firebase...');
 execSync('firebase deploy --only hosting', { stdio: 'inherit' });
 
-console.log('🎉 Done! App is live with home screen icon support.');
+console.log('🎉 Done! All tab bar labels now sit safely above the bottom gesture bar.');

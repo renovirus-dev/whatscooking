@@ -407,36 +407,39 @@ function getTabIcon(routeName, focused) {
   return icons[routeName] || 'ellipse-outline';
 }
 
-// ✅ UPDATED: Web-safe tab bar with portrait label fix
+// ✅ FIXED: Extra tall bottom tab bar on Web to sit above phone gesture bar
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
   tabBarActiveTintColor:   PRIMARY,
   tabBarInactiveTintColor: '#95A5A6',
   tabBarHideOnKeyboard:    true,
+  tabBarLabelPosition:     'below-icon',
   tabBarStyle: {
     backgroundColor: '#FFFFFF',
     borderTopColor:  '#E0E0E0',
     borderTopWidth:  1,
     paddingTop:      6,
-    // ✅ Web gets extra height so labels don't get cut off in portrait
-    height:          Platform.OS === 'web' ? 68 : undefined,
-    paddingBottom:   Platform.OS === 'web' ? 10 : undefined,
+    // ✅ Web needs extra space to clear the phone's home indicator
+    height:          Platform.OS === 'web' ? 78 : undefined,
+    paddingBottom:   Platform.OS === 'web' ? 20 : undefined,
   },
-  // ✅ Keeps icon + label vertically centered on all platforms
   tabBarItemStyle: {
-    paddingVertical: Platform.OS === 'web' ? 4 : 0,
     justifyContent:  'center',
     alignItems:      'center',
+    paddingVertical: 2,
   },
-  // ✅ Prevents label text from wrapping or clipping on narrow screens
   tabBarLabelStyle: {
-    fontSize:       Platform.OS === 'web' ? 10 : 11,
-    fontWeight:     '600',
-    marginTop:      2,
-    marginBottom:   0,
+    fontSize:     11,
+    fontWeight:   '600',
+    marginTop:    2,
+    marginBottom: 0,
   },
   tabBarIcon: ({ color, size, focused }) => (
-    <Ionicons name={getTabIcon(route.name, focused)} size={size} color={color} />
+    <Ionicons
+      name={getTabIcon(route.name, focused)}
+      size={Platform.OS === 'web' ? 22 : size}
+      color={color}
+    />
   ),
 });
 
@@ -451,7 +454,7 @@ function ProfileTabIcon({ color, size, focused }) {
     <View style={{ position: 'relative' }}>
       <Ionicons
         name={focused ? 'person' : 'person-outline'}
-        size={size}
+        size={Platform.OS === 'web' ? 22 : size}
         color={color}
       />
       {unreadCount > 0 && (
@@ -594,7 +597,7 @@ function AdminNavigator() {
 }
 
 // ─────────────────────────────────────────────
-// PUBLIC NAVIGATOR — ONE stack for all pre-login screens
+// PUBLIC NAVIGATOR
 // ─────────────────────────────────────────────
 function PublicNavigator({ initialRoute, markOnboardingDone }) {
   return (
@@ -688,14 +691,12 @@ export default function AppNavigator() {
   const { user, userProfile, loading } = useAuth();
   const [onboardingDone, setOnboardingDone] = useState(null);
 
-  // ── Check onboarding status ────────────────
   useEffect(() => {
     AsyncStorage.getItem(ONBOARDING_KEY)
       .then(value => setOnboardingDone(value === 'true'))
       .catch(()    => setOnboardingDone(false));
   }, []);
 
-  // ✅ Check for APK updates silently on launch
   useEffect(() => {
     const timer = setTimeout(() => {
       checkAppUpdate(true);
@@ -715,7 +716,6 @@ export default function AppNavigator() {
   return (
     <NavigationContainer>
       {(() => {
-        // ── Logged in ──────────────────────
         if (user) {
           if (!userProfile) return <LoadingScreen onTimeout={markOnboardingDone} />;
           if (userProfile.role === 'admin')            return <AdminNavigator />;
@@ -723,7 +723,6 @@ export default function AppNavigator() {
           return <UserNavigator />;
         }
 
-        // ── Not logged in — ONE unified public stack ──
         return (
           <PublicNavigator
             initialRoute={onboardingDone ? 'Welcome' : 'Onboarding'}
