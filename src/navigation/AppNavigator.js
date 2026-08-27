@@ -7,6 +7,7 @@ import React, {
 import {
   View, Text, ActivityIndicator,
   TouchableOpacity, ScrollView, StatusBar,
+  Platform,
 } from 'react-native';
 import { NavigationContainer }        from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -406,6 +407,7 @@ function getTabIcon(routeName, focused) {
   return icons[routeName] || 'ellipse-outline';
 }
 
+// ✅ UPDATED: Web-safe tab bar with portrait label fix
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
   tabBarActiveTintColor:   PRIMARY,
@@ -416,6 +418,22 @@ const tabBarScreenOptions = ({ route }) => ({
     borderTopColor:  '#E0E0E0',
     borderTopWidth:  1,
     paddingTop:      6,
+    // ✅ Web gets extra height so labels don't get cut off in portrait
+    height:          Platform.OS === 'web' ? 68 : undefined,
+    paddingBottom:   Platform.OS === 'web' ? 10 : undefined,
+  },
+  // ✅ Keeps icon + label vertically centered on all platforms
+  tabBarItemStyle: {
+    paddingVertical: Platform.OS === 'web' ? 4 : 0,
+    justifyContent:  'center',
+    alignItems:      'center',
+  },
+  // ✅ Prevents label text from wrapping or clipping on narrow screens
+  tabBarLabelStyle: {
+    fontSize:       Platform.OS === 'web' ? 10 : 11,
+    fontWeight:     '600',
+    marginTop:      2,
+    marginBottom:   0,
   },
   tabBarIcon: ({ color, size, focused }) => (
     <Ionicons name={getTabIcon(route.name, focused)} size={size} color={color} />
@@ -679,9 +697,8 @@ export default function AppNavigator() {
 
   // ✅ Check for APK updates silently on launch
   useEffect(() => {
-    // Wait 2 seconds after launch so the app doesn't feel slow
     const timer = setTimeout(() => {
-      checkAppUpdate(true); // silent = true
+      checkAppUpdate(true);
     }, 2000);
     return () => clearTimeout(timer);
   }, []);
