@@ -7,7 +7,7 @@ import React, {
 import {
   View, Text, ActivityIndicator,
   TouchableOpacity, ScrollView, StatusBar,
-  Platform,
+  Platform, useWindowDimensions,
 } from 'react-native';
 import { NavigationContainer }        from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -407,41 +407,58 @@ function getTabIcon(routeName, focused) {
   return icons[routeName] || 'ellipse-outline';
 }
 
-// ✅ FIXED: Extra tall bottom tab bar on Web to sit above phone gesture bar
-const tabBarScreenOptions = ({ route }) => ({
-  headerShown:             false,
-  tabBarActiveTintColor:   PRIMARY,
-  tabBarInactiveTintColor: '#95A5A6',
-  tabBarHideOnKeyboard:    true,
-  tabBarLabelPosition:     'below-icon',
-  tabBarStyle: {
-    backgroundColor: '#FFFFFF',
-    borderTopColor:  '#E0E0E0',
-    borderTopWidth:  1,
-    paddingTop:      6,
-    // ✅ Web needs extra space to clear the phone's home indicator
-    height:          Platform.OS === 'web' ? 78 : undefined,
-    paddingBottom:   Platform.OS === 'web' ? 20 : undefined,
-  },
-  tabBarItemStyle: {
-    justifyContent:  'center',
-    alignItems:      'center',
-    paddingVertical: 2,
-  },
-  tabBarLabelStyle: {
-    fontSize:     11,
-    fontWeight:   '600',
-    marginTop:    2,
-    marginBottom: 0,
-  },
-  tabBarIcon: ({ color, size, focused }) => (
-    <Ionicons
-      name={getTabIcon(route.name, focused)}
-      size={Platform.OS === 'web' ? 22 : size}
-      color={color}
-    />
-  ),
-});
+// ✅ DYNAMIC: Responsive configuration based on browser orientation
+const getTabBarScreenOptions = (route, isLandscape) => {
+  const isWeb = Platform.OS === 'web';
+  
+  let tabHeight = undefined;
+  let tabPaddingBottom = undefined;
+
+  if (isWeb) {
+    if (isLandscape) {
+      tabHeight = 52;         // Compact row-style layout for landscape
+      tabPaddingBottom = 4;
+    } else {
+      tabHeight = 76;         // Tall layout to sit safely above phone gesture bar in portrait
+      tabPaddingBottom = 20;
+    }
+  }
+
+  return {
+    headerShown:             false,
+    tabBarActiveTintColor:   PRIMARY,
+    tabBarInactiveTintColor: '#95A5A6',
+    tabBarHideOnKeyboard:    true,
+    // Beside-icon on landscape fits horizontally and looks extremely clean
+    tabBarLabelPosition:     isWeb && isLandscape ? 'beside-icon' : 'below-icon',
+    tabBarStyle: {
+      backgroundColor: '#FFFFFF',
+      borderTopColor:  '#E0E0E0',
+      borderTopWidth:  1,
+      paddingTop:      6,
+      height:          tabHeight,
+      paddingBottom:   tabPaddingBottom,
+    },
+    tabBarItemStyle: {
+      justifyContent: 'center',
+      alignItems:     'center',
+      paddingVertical: 2,
+    },
+    tabBarLabelStyle: {
+      fontSize:     11,
+      fontWeight:   '600',
+      marginTop:    isWeb && isLandscape ? 0 : 2,
+      marginBottom: 0,
+    },
+    tabBarIcon: ({ color, size, focused }) => (
+      <Ionicons
+        name={getTabIcon(route.name, focused)}
+        size={isWeb ? 20 : size}
+        color={color}
+      />
+    ),
+  };
+};
 
 function ProfileTabIcon({ color, size, focused }) {
   let unreadCount = 0;
@@ -450,11 +467,13 @@ function ProfileTabIcon({ color, size, focused }) {
     unreadCount = ctx?.unreadCount || 0;
   } catch {}
 
+  const isWeb = Platform.OS === 'web';
+
   return (
     <View style={{ position: 'relative' }}>
       <Ionicons
         name={focused ? 'person' : 'person-outline'}
-        size={Platform.OS === 'web' ? 22 : size}
+        size={isWeb ? 20 : size}
         color={color}
       />
       {unreadCount > 0 && (
@@ -490,8 +509,11 @@ const adminHeaderStyle = {
 // GUEST TABS
 // ─────────────────────────────────────────────
 function GuestTabs() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   return (
-    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+    <Tab.Navigator screenOptions={({ route }) => getTabBarScreenOptions(route, isLandscape)}>
       <Tab.Screen name="Home"      component={HomeScreen} />
       <Tab.Screen name="Explore"   component={ExploreScreen} />
       <Tab.Screen name="Favorites" component={GuestFavoritesScreen} />
@@ -504,8 +526,11 @@ function GuestTabs() {
 // USER TABS
 // ─────────────────────────────────────────────
 function UserTabs() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   return (
-    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+    <Tab.Navigator screenOptions={({ route }) => getTabBarScreenOptions(route, isLandscape)}>
       <Tab.Screen name="Home"      component={HomeScreen} />
       <Tab.Screen name="Explore"   component={ExploreScreen} />
       <Tab.Screen name="Favorites" component={FavoritesScreen} />
@@ -522,8 +547,11 @@ function UserTabs() {
 // OWNER TABS
 // ─────────────────────────────────────────────
 function OwnerTabs() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   return (
-    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+    <Tab.Navigator screenOptions={({ route }) => getTabBarScreenOptions(route, isLandscape)}>
       <Tab.Screen name="Dashboard" component={OwnerDashboardScreen} options={{ tabBarLabel: 'Dashboard' }} />
       <Tab.Screen name="Menu"      component={ManageMenuScreen}     options={{ tabBarLabel: 'My Menu' }} />
       <Tab.Screen name="Daily"     component={DailyMenuScreen}      options={{ tabBarLabel: "Today's" }} />

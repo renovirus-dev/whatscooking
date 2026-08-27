@@ -140,7 +140,7 @@ if (fs.existsSync(indexPath)) {
       }
     </style>
 
-    <!-- ✅ Safe Area for iPhone Home Indicator -->
+    <!-- ✅ Safe Area for iPhone Home Indicator & Orientation Support -->
     <style>
       html, body, #root {
         width: 100%;
@@ -168,4 +168,4 @@ if (fs.existsSync(indexPath)) {
 console.log('🔥 5/5: Deploying with Safe-Area & Tab Bar updates to Firebase...');
 execSync('firebase deploy --only hosting', { stdio: 'inherit' });
 
-console.log('🎉 Done! All tab bar labels now sit safely above the bottom gesture bar.');
+console.log('🎉 Done! Tab bar adjusts dynamically based on screen orientation.');
