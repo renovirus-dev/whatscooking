@@ -70,16 +70,16 @@ const manifestContent = {
 };
 fs.writeFileSync(path.join(distDir, 'manifest.json'), JSON.stringify(manifestContent, null, 2), 'utf8');
 
-// ── 4. Inject Meta Tags & Safe Area CSS ─────────────
-console.log('✍️  4/5: Injecting fonts, PWA metadata, and safe-area styles into dist/index.html...');
+// ── 4. Inject Meta Tags & Fixed Mobile Screen CSS ───
+console.log('✍️  4/5: Injecting fonts, PWA metadata, and mobile viewport fix into dist/index.html...');
 const indexPath = path.join(distDir, 'index.html');
 
 if (fs.existsSync(indexPath)) {
   let html = fs.readFileSync(indexPath, 'utf8');
 
   const pwaAndFontHead = `
-    <!-- ✅ PWA & Safe Area Metadata -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover" />
+    <!-- ✅ Mobile Viewport & PWA Headers -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
@@ -87,7 +87,7 @@ if (fs.existsSync(indexPath)) {
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="What's Cooking" />
     <meta name="theme-color" content="#FF6B35" />
 
@@ -140,22 +140,34 @@ if (fs.existsSync(indexPath)) {
       }
     </style>
 
-    <!-- ✅ Safe Area for iPhone Home Indicator & Orientation Support -->
+    <!-- ✅ Fixed Viewport CSS (Stops Mobile Browsers from Pushing Bottom Bar Off Screen) -->
     <style>
-      html, body, #root {
+      html, body {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        right: 0;
         width: 100%;
         height: 100%;
+        height: 100dvh;
         margin: 0;
         padding: 0;
-      }
-      body {
-        padding-bottom: env(safe-area-inset-bottom);
+        overflow: hidden;
+        -webkit-user-select: none;
+        user-select: none;
       }
       #root {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        height: 100%;
         display: flex;
         flex-direction: column;
-        min-height: 100vh;
-        min-height: -webkit-fill-available;
+        overflow: hidden;
       }
     </style>
   </head>`;
@@ -165,7 +177,7 @@ if (fs.existsSync(indexPath)) {
 }
 
 // ── 5. Deploy to Firebase ───────────────────────────
-console.log('🔥 5/5: Deploying with Safe-Area & Tab Bar updates to Firebase...');
+console.log('🔥 5/5: Deploying with Screen Fit & Font Fix to Firebase...');
 execSync('firebase deploy --only hosting', { stdio: 'inherit' });
 
-console.log('🎉 Done! Tab bar adjusts dynamically based on screen orientation.');
+console.log('🎉 Done! Tab bar labels will now stay fully visible on mobile screens.');
