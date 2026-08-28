@@ -13,18 +13,16 @@ import {
   collection, addDoc, serverTimestamp,
   query, where, onSnapshot, orderBy, limit,
 } from 'firebase/firestore';
-import { db }      from '../firebase/config';
-import { useAuth } from '../hooks/useAuth';
+import { db }          from '../firebase/config';
+import { useAuth }     from '../hooks/useAuth';
+import { navigate }    from '../navigation/navigationRef'; // ✅ Global Navigation
 
-// ✅ Safely load expo-notifications
-// Wrap EVERYTHING in try/catch at module level
 let Notifications = null;
 let notificationsAvailable = false;
 
 try {
   Notifications = require('expo-notifications');
 
-  // ✅ Test if it actually works by calling a safe method
   if (Notifications && typeof Notifications.setNotificationHandler === 'function') {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
@@ -37,7 +35,6 @@ try {
     console.log('✅ expo-notifications loaded');
   }
 } catch (err) {
-  console.log('ℹ️ expo-notifications not available:', err.message);
   Notifications = null;
   notificationsAvailable = false;
 }
@@ -75,6 +72,25 @@ export function NotificationProvider({ children }) {
   const androidChannelsSetup  = useRef(false);
 
   // ─────────────────────────────────────────
+  // TAP HANDLER (Takes user to Restaurant Detail)
+  // ─────────────────────────────────────────
+  const handleNotificationTap = useCallback((response) => {
+    try {
+      const data = response?.notification?.request?.content?.data;
+      console.log('👆 Notification tapped with data:', data);
+
+      if (data?.restaurantId) {
+        navigate('RestaurantDetail', {
+          restaurantId: data.restaurantId,
+          name:         data.restaurantName || 'Restaurant',
+        });
+      }
+    } catch (err) {
+      console.warn('Error navigating on notification tap:', err);
+    }
+  }, []);
+
+  // ─────────────────────────────────────────
   // PUSH LISTENERS
   // ─────────────────────────────────────────
   useEffect(() => {
@@ -83,15 +99,23 @@ export function NotificationProvider({ children }) {
     try {
       Notifications.setBadgeCountAsync(0).catch(() => {});
 
+      // 1. App opened from a cold start (killed state) by tapping a notification
+      Notifications.getLastNotificationResponseAsync().then(response => {
+        if (response) {
+          handleNotificationTap(response);
+        }
+      });
+
+      // 2. Incoming notification received while app is open in foreground
       notificationListener.current =
         Notifications.addNotificationReceivedListener(notification => {
           console.log('🔔 Received:', notification.request.content.title);
         });
 
+      // 3. User tapped notification while app is running in background
       responseListener.current =
-        Notifications.addNotificationResponseReceivedListener(response => {
-          console.log('👆 Tapped:', response.notification.request.content.data);
-        });
+        Notifications.addNotificationResponseReceivedListener(handleNotificationTap);
+
     } catch (err) {
       console.log('Notification listeners error:', err.message);
     }
@@ -104,7 +128,7 @@ export function NotificationProvider({ children }) {
           Notifications.removeNotificationSubscription(responseListener.current);
       } catch {}
     };
-  }, []);
+  }, [handleNotificationTap]);
 
   // ─────────────────────────────────────────
   // REGISTER PUSH
@@ -117,7 +141,7 @@ export function NotificationProvider({ children }) {
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // FIRESTORE LISTENER
+  // FIRESTORE NOTIFICATIONS LISTENER
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) {
@@ -159,7 +183,7 @@ export function NotificationProvider({ children }) {
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // REGISTER FOR PUSH
+  // REGISTER FOR PUSH TOKEN
   // ─────────────────────────────────────────
   const registerForPushNotifications = useCallback(async () => {
     if (!notificationsAvailable || Platform.OS === 'web' || !Device.isDevice) {
@@ -219,10 +243,10 @@ export function NotificationProvider({ children }) {
         ]);
       }
 
-      console.log('✅ Push token:', token);
+      console.log('✅ Push token registered:', token);
       return token;
     } catch (err) {
-      console.error('Push error:', err);
+      console.error('Push registration error:', err);
       return null;
     }
   }, [user?.uid]);

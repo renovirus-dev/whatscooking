@@ -18,6 +18,7 @@ import AsyncStorage                   from '@react-native-async-storage/async-st
 import { useAuth }                    from '../hooks/useAuth';
 import { useNotifications }           from '../context/NotificationContext';
 import { checkAppUpdate }             from '../utils/checkAppUpdate';
+import { navigationRef }              from './navigationRef'; // ✅ Global Navigation Reference
 
 const PRIMARY = '#FF6B35';
 const DARK    = '#2C3E50';
@@ -409,7 +410,6 @@ function getTabIcon(routeName, focused) {
 
 const isWeb = Platform.OS === 'web';
 
-// ✅ PERFECT RATIO: 20px Icon + 2px Gap + 10px Label inside 66px Bar
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
   tabBarActiveTintColor:   PRIMARY,
@@ -716,7 +716,8 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    // ✅ NavigationContainer linked with global navigationRef
+    <NavigationContainer ref={navigationRef}>
       {(() => {
         if (user) {
           if (!userProfile) return <LoadingScreen onTimeout={markOnboardingDone} />;
