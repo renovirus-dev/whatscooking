@@ -7,7 +7,7 @@ import React, {
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, ActivityIndicator, Switch,
-  Alert, RefreshControl,
+  Alert, RefreshControl, Platform,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,12 +24,41 @@ import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 // ─── Safe Color Fallbacks ─────────────────────
 const WARNING_COLOR = COLORS.warning || '#F39C12';
 
+// ─── Safe Platform Alerts ─────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      // Find the primary/positive action button
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
 // ─── Notification Type Config ─────────────────
 const TYPE_CONFIG = {
   general:    {
     icon:  'notifications-outline',
     color: COLORS.primary,
     label: 'General',
+  },
+  'daily-menu': {
+    icon:  'restaurant-outline',
+    color: COLORS.primary,
+    label: 'Daily Menu',
   },
   promotion:  {
     icon:  'pricetag-outline',
@@ -212,8 +241,6 @@ export default function NotificationsScreen({ navigation }) {
   const [refreshing, setRefreshing]     = useState(false);
 
   // ── Preference State ──────────────────────
-  // ✅ Initialized from userProfile with useEffect
-  // so it updates when userProfile loads
   const [prefs, setPrefs] = useState({
     pushEnabled: true,
     menuUpdates: true,
@@ -221,7 +248,6 @@ export default function NotificationsScreen({ navigation }) {
   });
   const [savingKey, setSavingKey] = useState(null);
 
-  // ✅ Update prefs when userProfile loads/changes
   useEffect(() => {
     if (userProfile?.notifications) {
       setPrefs({
@@ -234,7 +260,6 @@ export default function NotificationsScreen({ navigation }) {
 
   // ─────────────────────────────────────────
   // FILTERED NOTIFICATIONS
-  // ✅ Memoized
   // ─────────────────────────────────────────
   const filteredNotifications = useMemo(() => {
     switch (activeFilter) {
@@ -252,7 +277,6 @@ export default function NotificationsScreen({ navigation }) {
   // ─────────────────────────────────────────
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    // NotificationContext updates via Firestore listener
     setTimeout(() => {
       if (isMounted.current) setRefreshing(false);
     }, 1000);
@@ -263,7 +287,7 @@ export default function NotificationsScreen({ navigation }) {
   // ─────────────────────────────────────────
   const handleTogglePref = useCallback(async (key) => {
     if (!user?.uid) {
-      Alert.alert('Sign In Required', 'Please sign in to manage notifications');
+      showSafeAlert('Sign In Required', 'Please sign in to manage notifications');
       return;
     }
 
@@ -281,7 +305,7 @@ export default function NotificationsScreen({ navigation }) {
       console.error('Toggle pref error:', err);
       if (isMounted.current) {
         setPrefs(prev => ({ ...prev, [key]: !newValue }));
-        Alert.alert('Error', 'Could not save preference. Please try again.');
+        showSafeAlert('Error', 'Could not save preference. Please try again.');
       }
     } finally {
       if (isMounted.current) setSavingKey(null);
@@ -289,43 +313,42 @@ export default function NotificationsScreen({ navigation }) {
   }, [user, prefs]);
 
   // ─────────────────────────────────────────
-  // NOTIFICATION TAP
-  // ✅ Navigate based on notification type
+  // NOTIFICATION TAP (RESPONSIVE NAVIGATION)
   // ─────────────────────────────────────────
   const handleNotificationPress = useCallback(async (item) => {
-    // Mark as read
     if (!item.isRead) {
       await markAsRead(item.id);
     }
 
-    // ✅ Navigate based on type and data
     try {
       const data = item.data || {};
+      const restaurantId = data.restaurantId || item.restaurantId;
+      const restaurantName = data.restaurantName || item.restaurantName || item.title?.replace('🍳', '').trim() || 'Restaurant';
 
       switch (item.type) {
+        case 'daily-menu': // ✅ Handled for real-time menu notifications
         case 'restaurant':
-          if (data.restaurantId) {
+          if (restaurantId) {
             navigation.navigate('RestaurantDetail', {
-              restaurantId: data.restaurantId,
-              name:         data.restaurantName || 'Restaurant',
+              restaurantId,
+              name: restaurantName,
             });
           }
           break;
 
         case 'review':
-          if (data.restaurantId) {
+          if (restaurantId) {
             navigation.navigate('RestaurantDetail', {
-              restaurantId: data.restaurantId,
+              restaurantId,
+              name: restaurantName,
             });
           }
           break;
 
         case 'order':
-          // Navigate to order screen if you have one
           break;
 
         case 'system':
-          // Check for subscription_activated type
           if (
             data.type === 'subscription_activated' ||
             data.type === 'subscription_update'
@@ -335,7 +358,13 @@ export default function NotificationsScreen({ navigation }) {
           break;
 
         default:
-          // General notifications - no navigation
+          // Fallback: If restaurantId exists, attempt to open detail screen
+          if (restaurantId) {
+            navigation.navigate('RestaurantDetail', {
+              restaurantId,
+              name: restaurantName,
+            });
+          }
           break;
       }
     } catch (err) {
@@ -347,7 +376,7 @@ export default function NotificationsScreen({ navigation }) {
   // DELETE SINGLE NOTIFICATION
   // ─────────────────────────────────────────
   const handleDeleteNotification = useCallback((item) => {
-    Alert.alert(
+    showSafeAlert(
       'Delete Notification',
       'Remove this notification?',
       [
@@ -359,8 +388,8 @@ export default function NotificationsScreen({ navigation }) {
             try {
               await deleteDoc(doc(db, 'notifications', item.id));
             } catch (err) {
-              console.error('Delete notification error:', err);
-              Alert.alert('Error', 'Could not delete notification');
+              console.error('Delete error:', err);
+              showSafeAlert('Error', 'Could not delete notification');
             }
           },
         },
@@ -374,7 +403,7 @@ export default function NotificationsScreen({ navigation }) {
   const handleClearAll = useCallback(() => {
     if (!user?.uid || notifications.length === 0) return;
 
-    Alert.alert(
+    showSafeAlert(
       'Clear All Notifications',
       `Delete all ${notifications.length} notification${
         notifications.length !== 1 ? 's' : ''
@@ -386,7 +415,6 @@ export default function NotificationsScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              // ✅ Delete all notifications for this user
               const q = query(
                 collection(db, 'notifications'),
                 where('userId', '==', user.uid)
@@ -397,7 +425,7 @@ export default function NotificationsScreen({ navigation }) {
               );
             } catch (err) {
               console.error('Clear all error:', err);
-              Alert.alert('Error', 'Could not clear notifications');
+              showSafeAlert('Error', 'Could not clear notifications');
             }
           },
         },
@@ -405,24 +433,6 @@ export default function NotificationsScreen({ navigation }) {
     );
   }, [user, notifications.length]);
 
-  // ─────────────────────────────────────────
-  // LOADING STATE
-  // ─────────────────────────────────────────
-  if (loading) {
-    return (
-      <View style={[
-        styles.centered,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading notifications...</Text>
-      </View>
-    );
-  }
-
-  // ─────────────────────────────────────────
-  // MAIN RENDER
-  // ─────────────────────────────────────────
   return (
     <View style={styles.container}>
       <FlatList
@@ -617,7 +627,6 @@ export default function NotificationsScreen({ navigation }) {
         }
       />
 
-      {/* ✅ Long press hint - shown briefly */}
       {filteredNotifications.length > 0 && (
         <View style={[
           styles.hintBar,
