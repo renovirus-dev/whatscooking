@@ -5,7 +5,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, ScrollView,
   Alert, StyleSheet, ActivityIndicator,
-  Image, RefreshControl,
+  Image, RefreshControl, Platform,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,23 +31,65 @@ const WARNING_COLOR = COLORS.warning || '#F39C12';
 const INFO_COLOR    = COLORS.info    || '#3498DB';
 
 // ─────────────────────────────────────────────
+// SAFE PLATFORM ALERTS
+// ─────────────────────────────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      // Find the positive action (Sign Out, Delete, Upgrade etc.)
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmText = confirmButton ? confirmButton.text : 'OK';
+      
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed && confirmButton && confirmButton.onPress) {
+        confirmButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
+// ─────────────────────────────────────────────
 // UPLOAD AVATAR TO CLOUDINARY
 // ─────────────────────────────────────────────
 const uploadAvatarToCloudinary = (imageUri, userId) => {
   return new Promise(async (resolve) => {
     try {
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: 400 } }],
-        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      let finalUri = imageUri;
+
+      // Safe image manipulation for devices (manipulator runs cleanly on Web too)
+      try {
+        const compressed = await ImageManipulator.manipulateAsync(
+          imageUri,
+          [{ resize: { width: 400 } }],
+          { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        finalUri = compressed.uri;
+      } catch (err) {
+        console.warn('ImageManipulator skipped:', err.message);
+      }
 
       const formData = new FormData();
-      formData.append('file', {
-        uri:  compressed.uri,
-        type: 'image/jpeg',
-        name: `avatar_${userId}_${Date.now()}.jpg`,
-      });
+      
+      // ✅ Web Blob conversion - secures Cloudinary payloads
+      if (Platform.OS === 'web') {
+        const response = await fetch(finalUri);
+        const blob = await response.blob();
+        formData.append('file', blob, `avatar_${userId}_${Date.now()}.jpg`);
+      } else {
+        formData.append('file', {
+          uri:  finalUri,
+          type: 'image/jpeg',
+          name: `avatar_${userId}_${Date.now()}.jpg`,
+        });
+      }
+
       formData.append('upload_preset', uploadPreset);
       formData.append('folder',        folders.profiles);
       formData.append('public_id',     `avatar_${userId}`);
@@ -286,13 +328,14 @@ export default function ProfileScreen({ navigation }) {
   const favDishesCount        = userProfile?.favoriteDishes?.length       || 0;
   const dietaryPrefsCount     = userProfile?.dietaryPreferences?.length   || 0;
 
-  const appVersion = Application.nativeApplicationVersion || '1.0.0';
+  // Safe build version reader for browsers
+  const appVersion = Platform.OS === 'web' ? '1.0.0' : (Application.nativeApplicationVersion || '1.0.0');
 
   // ─────────────────────────────────────────
   // SIGN OUT
   // ─────────────────────────────────────────
   const handleSignOut = useCallback(() => {
-    Alert.alert(
+    showSafeAlert(
       'Sign Out',
       'Are you sure you want to sign out?',
       [
@@ -305,10 +348,10 @@ export default function ProfileScreen({ navigation }) {
               setSigningOut(true);
               const result = await logout();
               if (!result.success) {
-                Alert.alert('Error', result.error || 'Failed to sign out');
+                showSafeAlert('Error', result.error || 'Failed to sign out');
               }
             } catch {
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
+              showSafeAlert('Error', 'Failed to sign out. Please try again.');
             } finally {
               setSigningOut(false);
             }
@@ -330,6 +373,15 @@ export default function ProfileScreen({ navigation }) {
   // AVATAR UPLOAD
   // ─────────────────────────────────────────
   const handleAvatarPress = useCallback(() => {
+    if (Platform.OS === 'web') {
+      // Browsers handle both library and live capture natively in the OS picker dialog
+      const confirmed = window.confirm('Update profile photo?\n\nPress OK to choose or take a photo.');
+      if (confirmed) {
+        pickAvatar('library');
+      }
+      return;
+    }
+
     Alert.alert(
       '📷 Profile Photo',
       'Choose how to update your photo',
@@ -345,30 +397,38 @@ export default function ProfileScreen({ navigation }) {
     try {
       let result;
 
-      if (source === 'camera') {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please allow camera access');
-          return;
-        }
-        result = await ImagePicker.launchCameraAsync({
-          allowsEditing: true,
-          aspect:        [1, 1],
-          quality:       1,
+      if (Platform.OS === 'web') {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: false, // Web fails silently if set to true
+          quality: 0.8,
         });
       } else {
-        const { status } =
-          await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please allow photo library access');
-          return;
+        if (source === 'camera') {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            showSafeAlert('Permission needed', 'Please allow camera access');
+            return;
+          }
+          result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect:        [1, 1],
+            quality:       1,
+          });
+        } else {
+          const { status } =
+            await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            showSafeAlert('Permission needed', 'Please allow photo library access');
+            return;
+          }
+          result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes:    ['images'],
+            allowsEditing: true,
+            aspect:        [1, 1],
+            quality:       1,
+          });
         }
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes:    ['images'],
-          allowsEditing: true,
-          aspect:        [1, 1],
-          quality:       1,
-        });
       }
 
       if (result.canceled) return;
@@ -379,7 +439,7 @@ export default function ProfileScreen({ navigation }) {
       const uploadResult = await uploadAvatarToCloudinary(imageUri, user.uid);
 
       if (!uploadResult.success) {
-        Alert.alert('Upload Failed', uploadResult.error || 'Please try again');
+        showSafeAlert('Upload Failed', uploadResult.error || 'Please try again');
         return;
       }
 
@@ -388,10 +448,10 @@ export default function ProfileScreen({ navigation }) {
         updatedAt: serverTimestamp(),
       });
 
-      Alert.alert('✅ Photo Updated!', 'Your profile photo has been updated.');
+      showSafeAlert('✅ Photo Updated!', 'Your profile photo has been updated.');
     } catch (err) {
       console.error('Avatar pick error:', err);
-      Alert.alert('Error', 'Could not update photo. Please try again.');
+      showSafeAlert('Error', 'Could not update photo. Please try again.');
     } finally {
       setAvatarUploading(false);
     }
@@ -650,7 +710,7 @@ export default function ProfileScreen({ navigation }) {
           label="Contact Us"
           subtitle="Get help from our team"
           onPress={() =>
-            Alert.alert(
+            showSafeAlert(
               '📧 Contact Us',
               'General support:\nsupport@whatscooking.app\n\nPayment issues:\nrenogooden@outlook.com',
               [{ text: 'OK' }]
@@ -661,7 +721,7 @@ export default function ProfileScreen({ navigation }) {
           icon="help-circle-outline"
           label="Help & FAQ"
           onPress={() =>
-            Alert.alert(
+            showSafeAlert(
               '❓ Help & Support',
               'For subscription or payment help:\nrenogooden@outlook.com\n\nFor general questions:\nsupport@whatscooking.app',
               [{ text: 'OK' }]
@@ -680,7 +740,7 @@ export default function ProfileScreen({ navigation }) {
           label="About"
           subtitle={`Version ${appVersion}`}
           onPress={() =>
-            Alert.alert(
+            showSafeAlert(
               "About What's Cooking",
               `Version ${appVersion}\nMade with ❤️ in Jamaica\n\n© ${new Date().getFullYear()} What's Cooking`,
               [{ text: 'OK' }]
@@ -688,7 +748,7 @@ export default function ProfileScreen({ navigation }) {
           }
         />
 
-        {/* ✅ NEW: Check for Updates Button */}
+        {/* Check for Updates Button */}
         <ProfileButton
           icon="refresh-circle-outline"
           label="Check for Updates"

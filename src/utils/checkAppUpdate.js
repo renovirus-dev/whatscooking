@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/utils/checkAppUpdate.js
 // ============================================
-import { Alert, Linking } from 'react-native';
+import { Platform, Alert, Linking } from 'react-native';
 import Constants from 'expo-constants';
 
 // ✅ URL of version.json hosted on GitHub Pages
@@ -16,6 +16,16 @@ const CURRENT_VERSION_NAME = Constants.expoConfig?.version || '1.0.0';
  * @param {boolean} silent - If true, stays quiet if user is on latest version.
  */
 export async function checkAppUpdate(silent = true) {
+  // ── Web Safe Bypass ─────────────────────────
+  // ✅ Web users always run the newest build from Firebase Hosting. No APK update needed.
+  if (Platform.OS === 'web') {
+    if (!silent) {
+      alert(`Up to Date ✓\nYou are using the latest live version of What's Cooking (Web v${CURRENT_VERSION_NAME}).`);
+    }
+    return;
+  }
+
+  // ── Android Native App Update Checker ──────
   try {
     // Cache-buster timestamp ensures we fetch fresh JSON every time
     const response = await fetch(`${VERSION_JSON_URL}?t=${Date.now()}`, {

@@ -50,34 +50,75 @@ const DIETARY = [
 ];
 
 // ─────────────────────────────────────────────
+// SAFE PLATFORM ALERTS
+// ─────────────────────────────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      // Find the primary/positive action button
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
+// ─────────────────────────────────────────────
 // UPLOAD IMAGE TO CLOUDINARY
-// ✅ Uses XMLHttpRequest — fixes FormDataPart error
+// ✅ Web safe Blob parser & Multipart uploader
 // ─────────────────────────────────────────────
 const uploadImageToCloudinary = (imageUri, onProgress) => {
   return new Promise(async (resolve) => {
     try {
-      // ── Step 1: Compress ──────────────────
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: 1200 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      let finalUri = imageUri;
+
+      // Safe compression for native and web
+      try {
+        const compressed = await ImageManipulator.manipulateAsync(
+          imageUri,
+          [{ resize: { width: 1200 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        finalUri = compressed.uri;
+      } catch (manipError) {
+        console.warn('ImageManipulator bypassed:', manipError.message);
+      }
 
       onProgress?.(25);
 
-      // ── Step 2: Build FormData ────────────
       const formData = new FormData();
-      formData.append('file', {
-        uri:  compressed.uri,
-        type: 'image/jpeg',
-        name: `menu_item_${Date.now()}.jpg`,
-      });
+      
+      // ✅ Conversion to standard Blobs on Web
+      if (Platform.OS === 'web') {
+        const response = await fetch(finalUri);
+        const blob = await response.blob();
+        formData.append('file', blob, `menu_item_${Date.now()}.jpg`);
+      } else {
+        formData.append('file', {
+          uri:  finalUri,
+          type: 'image/jpeg',
+          name: `menu_item_${Date.now()}.jpg`,
+        });
+      }
+
       formData.append('upload_preset', uploadPreset);
       formData.append('folder', folders.menuItems);
 
       onProgress?.(50);
 
-      // ── Step 3: Upload via XHR ────────────
+      // Upload via XHR
       const xhr = new XMLHttpRequest();
 
       xhr.open(
@@ -204,18 +245,21 @@ export default function AddMenuItemScreen({ route, navigation }) {
   // IMAGE HANDLERS
   // ─────────────────────────────────────────
   const pickImage = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access');
-      return;
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showSafeAlert('Permission needed', 'Please allow photo library access');
+        return;
+      }
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:    ['images'],
-      allowsEditing: true,
-      aspect:        [4, 3],
-      quality:       1,
+      mediaTypes:    ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: Platform.OS !== 'web', // Web crop engines are unsupported
+      aspect:        Platform.OS !== 'web' ? [4, 3] : undefined,
+      quality:       0.8,
     });
+
     if (!result.canceled) {
       setNewImageUri(result.assets[0].uri);
       setUseCustomImage(true);
@@ -223,16 +267,20 @@ export default function AddMenuItemScreen({ route, navigation }) {
   };
 
   const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow camera access');
-      return;
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        showSafeAlert('Permission needed', 'Please allow camera access');
+        return;
+      }
     }
+
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect:        [4, 3],
-      quality:       1,
+      allowsEditing: Platform.OS !== 'web',
+      aspect:        Platform.OS !== 'web' ? [4, 3] : undefined,
+      quality:       0.8,
     });
+
     if (!result.canceled) {
       setNewImageUri(result.assets[0].uri);
       setUseCustomImage(true);
@@ -240,6 +288,14 @@ export default function AddMenuItemScreen({ route, navigation }) {
   };
 
   const handlePickImage = () => {
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Add Menu Photo?\n\nPress OK to open your browser or device library.');
+      if (confirmed) {
+        pickImage();
+      }
+      return;
+    }
+
     Alert.alert(
       '📷 Add Photo',
       'Choose image source',
@@ -282,17 +338,16 @@ export default function AddMenuItemScreen({ route, navigation }) {
   // SAVE HANDLER
   // ─────────────────────────────────────────
   const handleSave = async () => {
-    // ── Validation ────────────────────────
     if (!form.name.trim()) {
-      Alert.alert('Error', 'Item name is required');
+      showSafeAlert('Error', 'Item name is required');
       return;
     }
     if (!form.price || isNaN(parseFloat(form.price))) {
-      Alert.alert('Error', 'A valid price is required');
+      showSafeAlert('Error', 'A valid price is required');
       return;
     }
     if (!form.category) {
-      Alert.alert('Error', 'Please select a category');
+      showSafeAlert('Error', 'Please select a category');
       return;
     }
 
@@ -302,7 +357,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
       let cloudinaryUrl      = null;
       let cloudinaryPublicId = null;
 
-      // ── Upload new image ──────────────────
       if (isShowingNewPhoto && newImageUri) {
         setUploading(true);
         setUploadProgress(0);
@@ -317,7 +371,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
         if (!uploadResult.success) {
           const continueWithout = await new Promise(resolve => {
-            Alert.alert(
+            showSafeAlert(
               '⚠️ Image Upload Failed',
               `${uploadResult.error}\n\nSave without image?`,
               [
@@ -344,7 +398,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
         }
       }
 
-      // ── Keep existing Cloudinary URL ──────
       if (isShowingExistingPhoto && existingImageUrl) {
         cloudinaryUrl      = existingImageUrl;
         cloudinaryPublicId = existingItem?.cloudinaryPublicId || null;
@@ -354,7 +407,7 @@ export default function AddMenuItemScreen({ route, navigation }) {
 
     } catch (err) {
       console.error('handleSave error:', err);
-      Alert.alert('Error', err.message);
+      showSafeAlert('Error', err.message);
       setLoading(false);
       setUploading(false);
     }
@@ -374,12 +427,10 @@ export default function AddMenuItemScreen({ route, navigation }) {
                          .map(t => t.trim())
                          .filter(Boolean),
 
-      // ✅ Cloudinary fields
       imageUrl:           cloudinaryUrl      || null,
       cloudinaryUrl:      cloudinaryUrl      || null,
       cloudinaryPublicId: cloudinaryPublicId || null,
 
-      // ✅ Auto image fallback fields
       autoImageUrl:  null,
       imageName:     form.name.trim(),
       imageCategory: form.category,
@@ -395,19 +446,16 @@ export default function AddMenuItemScreen({ route, navigation }) {
     setLoading(false);
 
     if (result?.success) {
-      Alert.alert(
+      showSafeAlert(
         '✅ Success',
         existingItem ? 'Menu item updated!' : 'Menu item added!',
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } else {
-      Alert.alert('Error', result?.error || 'Something went wrong');
+      showSafeAlert('Error', result?.error || 'Something went wrong');
     }
   };
 
-  // ─────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────
   const isUploading = uploading || loading;
 
   return (
@@ -451,16 +499,13 @@ export default function AddMenuItemScreen({ route, navigation }) {
             activeOpacity={0.85}
             disabled={isUploading}
           >
-            {/* ── Image Display ─────────────── */}
             {isShowingNewPhoto ? (
-              // ✅ Newly picked photo from camera/gallery
               <Image
                 source={{ uri: newImageUri }}
                 style={styles.previewImage}
                 resizeMode="cover"
               />
             ) : isShowingExistingPhoto ? (
-              // ✅ Existing Cloudinary photo
               <Image
                 source={{ uri: getThumbUrl(existingImageUrl, 400, 300) }}
                 style={styles.previewImage}
@@ -470,8 +515,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
                 }
               />
             ) : (
-              // ✅ Auto: shows local image INSTANTLY
-              //    then upgrades to MealDB image async
               <FoodImage
                 key={`${form.name}-${form.category}-${regenerateCount}`}
                 name={form.name}
@@ -482,7 +525,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               />
             )}
 
-            {/* ── Upload Progress Overlay ──── */}
             {uploading && (
               <View style={styles.uploadOverlay}>
                 <ActivityIndicator size="large" color="#FFFFFF" />
@@ -498,7 +540,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* ── Camera Hint Overlay ──────── */}
             {!uploading && (
               <View style={styles.imageOverlay}>
                 <Ionicons name="camera" size={24} color="#FFFFFF" />
@@ -508,7 +549,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
               </View>
             )}
 
-            {/* ── Status Badge ─────────────── */}
             {!uploading && (
               <>
                 {isShowingNewPhoto && (
@@ -539,7 +579,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* ── Image Action Buttons ─────────── */}
           <View style={styles.imageActions}>
             <TouchableOpacity
               style={styles.imageActionBtn}
@@ -576,7 +615,6 @@ export default function AddMenuItemScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* ── Image Hint Text ──────────────── */}
           <Text style={styles.imageHint}>
             {uploading
               ? `⬆️ Uploading to Cloudinary... ${uploadProgress}%`
