@@ -1,80 +1,102 @@
 // ============================================
 // FILE: src/utils/uploadToCloudinary.js
 // ============================================
+import { Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { CLOUDINARY_CONFIG } from '../config/cloudinary';
 
-const { cloudName, uploadPreset, baseUrl } = CLOUDINARY_CONFIG;
+const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 // ─────────────────────────────────────────────
 // CORE UPLOAD FUNCTION
 // ─────────────────────────────────────────────
 
 /**
- * Upload a single image to Cloudinary
- * @param {string} imageUri    - local image URI
- * @param {object} options
- * @param {string} options.folder      - subfolder e.g. 'whats_cooking/restaurants'
- * @param {string} options.publicId    - optional custom filename
- * @param {number} options.quality     - compression 0-1 (default 0.8)
- * @param {number} options.maxWidth    - resize width (default 1200)
- * @param {function} options.onProgress - progress callback (0-100)
- * @returns {Promise<{url, publicId, width, height}>}
+ * Upload a single image to Cloudinary (Cross-platform: Android, iOS & Web)
+ * @param {string} imageUri - local image URI or web blob URI
+ * @param {object|string} options - options object or folder name
+ * @returns {Promise<{success: boolean, url?: string, publicId?: string, width?: number, height?: number, error?: string}>}
  */
 export const uploadToCloudinary = async (imageUri, options = {}) => {
+  if (!imageUri) {
+    return { success: false, error: 'No image URI provided' };
+  }
+
+  // Normalize options if a folder string was passed directly
+  const opts = typeof options === 'string' ? { folder: options } : options;
   const {
-    folder      = 'whats_cooking',
-    publicId    = null,
-    quality     = 0.8,
-    maxWidth    = 1200,
-    onProgress  = null,
-  } = options;
+    folder     = folders?.menuItems || 'whats_cooking',
+    publicId   = null,
+    quality    = 0.8,
+    maxWidth   = 1200,
+    onProgress = null,
+  } = opts;
 
   try {
     // ── Step 1: Compress & resize image ─────
-    const manipulated = await ImageManipulator.manipulateAsync(
-      imageUri,
-      [{ resize: { width: maxWidth } }],
-      {
-        compress: quality,
-        format:   ImageManipulator.SaveFormat.JPEG,
-      }
-    );
+    let manipulatedUri = imageUri;
+    try {
+      const manipulated = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [{ resize: { width: maxWidth } }],
+        {
+          compress: quality,
+          format:   ImageManipulator.SaveFormat.JPEG,
+        }
+      );
+      manipulatedUri = manipulated.uri;
+    } catch (manipErr) {
+      console.warn('Image manipulation bypassed:', manipErr.message);
+    }
 
-    // ── Step 2: Build form data ──────────────
+    onProgress?.(25);
+
+    // ── Step 2: Build FormData with Web Blob support ─
     const formData = new FormData();
-    formData.append('file', {
-      uri:  manipulated.uri,
-      type: 'image/jpeg',
-      name: publicId
-        ? `${publicId}.jpg`
-        : `upload_${Date.now()}.jpg`,
-    });
+    const fileName = publicId ? `${publicId}.jpg` : `upload_${Date.now()}.jpg`;
+
+    // ✅ FIX: Convert local URI to a real binary Blob on Web
+    if (Platform.OS === 'web') {
+      const response = await fetch(manipulatedUri);
+      const blob = await response.blob();
+      formData.append('file', blob, fileName);
+    } else {
+      formData.append('file', {
+        uri:  manipulatedUri,
+        type: 'image/jpeg',
+        name: fileName,
+      });
+    }
+
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', folder);
     if (publicId) formData.append('public_id', publicId);
 
+    onProgress?.(50);
+
     // ── Step 3: Upload to Cloudinary ─────────
     const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`;
 
+    // ✅ FIX: Do not manually set 'Content-Type' so fetch adds the multipart boundary automatically
     const response = await fetch(uploadUrl, {
       method: 'POST',
       body:   formData,
-      headers: { 'Content-Type': 'multipart/form-data' },
     });
 
+    onProgress?.(100);
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'Upload failed');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `Upload failed with status ${response.status}`);
     }
 
     const data = await response.json();
 
     return {
       success:  true,
-      url:      data.secure_url,    // ← use this as your image URL
-      publicId: data.public_id,     // ← save this to delete later
+      url:      data.secure_url,
+      publicId: data.public_id,
       width:    data.width,
       height:   data.height,
       format:   data.format,
@@ -101,8 +123,8 @@ export const uploadToCloudinary = async (imageUri, options = {}) => {
  */
 export const uploadMultipleToCloudinary = async (
   imageUris,
-  options     = {},
-  onProgress  = null,
+  options    = {},
+  onProgress = null,
 ) => {
   const results = [];
 
@@ -118,16 +140,7 @@ export const uploadMultipleToCloudinary = async (
 // ─────────────────────────────────────────────
 // DELETE IMAGE FROM CLOUDINARY
 // ─────────────────────────────────────────────
-
-/**
- * Delete an image from Cloudinary
- * NOTE: Deletion requires a signed request or a backend function.
- * For now we just remove the URL from Firestore.
- * TODO: Add a Firebase Cloud Function to handle signed deletions.
- */
 export const deleteFromCloudinary = async (publicId) => {
-  // ⚠️ Direct delete needs API secret (not safe on client)
-  // Solution: Save publicId to Firestore and delete via Cloud Function
   console.warn(
     'deleteFromCloudinary: Use a Cloud Function to delete.',
     'publicId to delete:', publicId,
@@ -136,7 +149,7 @@ export const deleteFromCloudinary = async (publicId) => {
 };
 
 // ─────────────────────────────────────────────
-// IMAGE PICKER HELPERS
+// IMAGE PICKER HELPERS (WEB-SAFE)
 // ─────────────────────────────────────────────
 
 /**
@@ -144,19 +157,21 @@ export const deleteFromCloudinary = async (publicId) => {
  * @returns {Promise<string|null>} image URI or null
  */
 export const pickImage = async () => {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) {
-    throw new Error('Camera roll permission is required');
+  if (Platform.OS !== 'web') {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      throw new Error('Camera roll permission is required');
+    }
   }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes:          ImagePicker.MediaTypeOptions.Images,
-    allowsEditing:       true,
-    aspect:              [4, 3],
-    quality:             1,      // we compress later
+    mediaTypes:    ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: Platform.OS !== 'web', // Web cropping fails silently
+    aspect:        Platform.OS !== 'web' ? [4, 3] : undefined,
+    quality:       1,
   });
 
-  if (result.canceled) return null;
+  if (result.canceled || !result.assets || result.assets.length === 0) return null;
   return result.assets[0].uri;
 };
 
@@ -165,26 +180,37 @@ export const pickImage = async () => {
  * @returns {Promise<string|null>} image URI or null
  */
 export const takePhoto = async () => {
-  const permission = await ImagePicker.requestCameraPermissionsAsync();
-  if (!permission.granted) {
-    throw new Error('Camera permission is required');
+  if (Platform.OS !== 'web') {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      throw new Error('Camera permission is required');
+    }
   }
 
   const result = await ImagePicker.launchCameraAsync({
-    allowsEditing: true,
-    aspect:        [4, 3],
+    allowsEditing: Platform.OS !== 'web',
+    aspect:        Platform.OS !== 'web' ? [4, 3] : undefined,
     quality:       1,
   });
 
-  if (result.canceled) return null;
+  if (result.canceled || !result.assets || result.assets.length === 0) return null;
   return result.assets[0].uri;
 };
 
 /**
- * Show action sheet to pick image source
- * then upload directly
+ * Show action dialog to pick image source then upload directly
  */
 export const pickAndUpload = async (options = {}) => {
+  if (Platform.OS === 'web') {
+    try {
+      const uri = await pickImage();
+      if (!uri) return null;
+      return await uploadToCloudinary(uri, options);
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   const { Alert } = require('react-native');
 
   return new Promise((resolve) => {
@@ -226,15 +252,8 @@ export const pickAndUpload = async (options = {}) => {
 
 // ─────────────────────────────────────────────
 // IMAGE TRANSFORMATION HELPERS
-// These build Cloudinary URLs with transforms
 // ─────────────────────────────────────────────
 
-/**
- * Get optimized thumbnail URL
- * @param {string} url       - original Cloudinary URL
- * @param {number} width     - desired width
- * @param {number} height    - desired height
- */
 export const getThumbUrl = (url, width = 200, height = 200) => {
   if (!url || !url.includes('cloudinary')) return url;
   return url.replace(
@@ -243,10 +262,6 @@ export const getThumbUrl = (url, width = 200, height = 200) => {
   );
 };
 
-/**
- * Get optimized banner URL (wide, shorter)
- * @param {string} url - original Cloudinary URL
- */
 export const getBannerUrl = (url) => {
   if (!url || !url.includes('cloudinary')) return url;
   return url.replace(
@@ -255,11 +270,6 @@ export const getBannerUrl = (url) => {
   );
 };
 
-/**
- * Get optimized avatar URL (square)
- * @param {string} url  - original Cloudinary URL
- * @param {number} size - size in px (default 150)
- */
 export const getAvatarUrl = (url, size = 150) => {
   if (!url || !url.includes('cloudinary')) return url;
   return url.replace(
@@ -268,11 +278,6 @@ export const getAvatarUrl = (url, size = 150) => {
   );
 };
 
-/**
- * Get auto-optimized URL (Cloudinary picks best format/quality)
- * @param {string} url   - original Cloudinary URL
- * @param {number} width - max width
- */
 export const getOptimizedUrl = (url, width = 800) => {
   if (!url || !url.includes('cloudinary')) return url;
   return url.replace(
