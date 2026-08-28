@@ -2,6 +2,7 @@
 // FILE: src/hooks/useMenu.js
 // ============================================
 import { useState, useEffect } from 'react';
+import { Platform }            from 'react-native'; // ✅ Added for web platform checks
 import {
   collection,
   query,
@@ -25,36 +26,46 @@ const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 // ─────────────────────────────────────────────
 // INTERNAL CLOUDINARY UPLOAD
-// ✅ Uses XMLHttpRequest — fixes FormDataPart error
-//    fetch + Content-Type: multipart/form-data
-//    breaks in React Native
+// ✅ Uses XMLHttpRequest with Web Blob Support
 // ─────────────────────────────────────────────
 const uploadMenuItemImage = (imageUri, itemId) => {
   return new Promise(async (resolve) => {
     try {
       // ── Step 1: Compress ──────────────────
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: 1200 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      let finalUri = imageUri;
+      try {
+        const compressed = await ImageManipulator.manipulateAsync(
+          imageUri,
+          [{ resize: { width: 1200 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        finalUri = compressed.uri;
+      } catch (manipError) {
+        console.warn('ImageManipulator bypassed in menu hook:', manipError.message);
+      }
 
       // ── Step 2: Build FormData ────────────
       const formData = new FormData();
-      formData.append('file', {
-        uri:  compressed.uri,
-        type: 'image/jpeg',
-        name: `menu_item_${itemId}_${Date.now()}.jpg`,
-      });
+      const fileName = `menu_item_${itemId}_${Date.now()}.jpg`;
+
+      // ✅ FIX: Convert local URI to a real binary Blob on Web
+      if (Platform.OS === 'web') {
+        const response = await fetch(finalUri);
+        const blob = await response.blob();
+        formData.append('file', blob, fileName);
+      } else {
+        formData.append('file', {
+          uri:  finalUri,
+          type: 'image/jpeg',
+          name: fileName,
+        });
+      }
+
       formData.append('upload_preset', uploadPreset);
-      // ✅ Goes to whats_cooking/menu_items/
-      formData.append('folder',     folders.menuItems);
-      // ✅ Use itemId as public_id for easy management
-      formData.append('public_id',  `menu_item_${itemId}`);
+      formData.append('folder',        folders.menuItems);
+      formData.append('public_id',     `menu_item_${itemId}`);
 
       // ── Step 3: Upload via XHR ────────────
-      // ✅ XMLHttpRequest handles multipart correctly
-      //    DO NOT set Content-Type header manually
       const xhr = new XMLHttpRequest();
       xhr.open(
         'POST',
@@ -93,10 +104,10 @@ const uploadMenuItemImage = (imageUri, itemId) => {
         resolve({ success: false, error: 'Upload timed out' });
       };
 
-      // ✅ 60 second timeout for large images
+      // 60 second timeout for uploads
       xhr.timeout = 60000;
 
-      // ✅ DO NOT set Content-Type — XHR sets it automatically
+      // DO NOT set Content-Type manually
       xhr.send(formData);
 
     } catch (error) {
@@ -133,7 +144,7 @@ export const useMenu = (restaurantId) => {
           ...d.data(),
         }));
 
-        // ✅ Sort by category then name client-side
+        // Sort by category then name client-side
         items.sort((a, b) => {
           const catCompare =
             (a.category || '').localeCompare(b.category || '');
@@ -158,7 +169,7 @@ export const useMenu = (restaurantId) => {
   // ─────────────────────────────────────────
   const addMenuItem = async (data, imageUri) => {
     try {
-      // ✅ Generate doc ref FIRST so itemId is available
+      // Generate doc ref FIRST so itemId is available
       // before upload so we can use it as public_id
       const newRef = doc(collection(db, 'menuItems'));
       const itemId = newRef.id;
@@ -169,7 +180,6 @@ export const useMenu = (restaurantId) => {
       let isAutoImage        = false;
 
       if (imageUri) {
-        // ✅ User picked a photo → upload via XHR
         console.log('⬆️ Uploading menu item image to Cloudinary...');
         const result = await uploadMenuItemImage(imageUri, itemId);
 
@@ -179,20 +189,18 @@ export const useMenu = (restaurantId) => {
           cloudinaryPublicId = result.publicId;
           isAutoImage        = false;
         } else {
-          // ✅ Upload failed → fall back to local auto image
           console.warn('⚠️ Cloudinary upload failed:', result.error);
           console.log('ℹ️ Falling back to local auto image');
           imageUrl    = '';
           isAutoImage = true;
         }
       } else {
-        // ✅ No photo → use local bundled image
         imageUrl    = '';
         isAutoImage = true;
         console.log('ℹ️ Using local auto image for:', data.name);
       }
 
-      // ── Clean data ────────────────────────
+      // Clean data
       const {
         autoImageUrl,
         imageName,
@@ -200,23 +208,23 @@ export const useMenu = (restaurantId) => {
         ...cleanData
       } = data;
 
-      // ── Save to Firestore ─────────────────
+      // Save to Firestore
       await setDoc(newRef, {
         ...cleanData,
         id:           itemId,
         restaurantId,
 
-        // ✅ Cloudinary fields
+        // Cloudinary fields
         imageUrl,
         cloudinaryUrl,
         cloudinaryPublicId,
 
-        // ✅ Auto image fallback metadata
+        // Auto image fallback metadata
         isAutoImage,
         imageName:     data.name     || '',
         imageCategory: data.category || '',
 
-        // ✅ Default fields
+        // Default fields
         isAvailable:       true,
         isSpecialOfTheDay: false,
         totalFavorites:    0,
@@ -255,7 +263,6 @@ export const useMenu = (restaurantId) => {
       };
 
       if (newImageUri) {
-        // ✅ User picked a NEW photo → upload via XHR
         console.log('⬆️ Updating menu item image on Cloudinary...');
         const result = await uploadMenuItemImage(newImageUri, itemId);
 
@@ -266,19 +273,16 @@ export const useMenu = (restaurantId) => {
           updates.isAutoImage        = false;
           console.log('✅ Image updated on Cloudinary:', result.url);
         } else {
-          // ✅ Upload failed → keep existing image
           console.warn('⚠️ Image update failed — keeping existing image');
           console.warn('Error:', result.error);
         }
       } else if (data.imageUrl === null) {
-        // ✅ User explicitly removed photo → switch to auto image
         updates.imageUrl           = '';
         updates.cloudinaryUrl      = '';
         updates.cloudinaryPublicId = '';
         updates.isAutoImage        = true;
         console.log('ℹ️ Switched to local auto image');
       } else if (data.cloudinaryUrl) {
-        // ✅ Keeping existing Cloudinary image — no change
         console.log('ℹ️ Keeping existing Cloudinary image');
       }
 
@@ -481,7 +485,7 @@ export const useMenu = (restaurantId) => {
             servingSize: item.servingSize || '',
             isAutoImage: true,
           },
-          null // ✅ No image for scanned items — use local auto image
+          null // No image for scanned items — use auto image
         );
 
         if (result.success) {
@@ -501,9 +505,6 @@ export const useMenu = (restaurantId) => {
     return results;
   };
 
-  // ─────────────────────────────────────────
-  // RETURN
-  // ─────────────────────────────────────────
   return {
     menuItems,
     loading,

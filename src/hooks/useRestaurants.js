@@ -2,6 +2,7 @@
 // FILE: src/hooks/useRestaurants.js
 // ============================================
 import { useState, useEffect } from 'react';
+import { Platform }            from 'react-native'; // ✅ Added for web platform checks
 import {
   collection,
   query,
@@ -27,37 +28,48 @@ const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 // ─────────────────────────────────────────────
 // INTERNAL UPLOAD HELPER
-// ✅ Uses XMLHttpRequest instead of fetch
-//    fetch + FormData causes "unsupported FormDataPart
-//    implementation" error in React Native
+// ✅ Safe for both Android & Web uploads
 // ─────────────────────────────────────────────
 const uploadRestaurantImage = (imageUri, restaurantId, type) => {
   return new Promise(async (resolve) => {
     try {
       // ── Step 1: Compress ──────────────────
       const isLogo     = type === 'logo';
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: isLogo ? 400 : 1200 } }],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      let finalUri = imageUri;
+
+      try {
+        const compressed = await ImageManipulator.manipulateAsync(
+          imageUri,
+          [{ resize: { width: isLogo ? 400 : 1200 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        finalUri = compressed.uri;
+      } catch (manipError) {
+        console.warn('ImageManipulator bypassed in hook:', manipError.message);
+      }
 
       // ── Step 2: Build FormData ────────────
-      // ✅ React Native accepts plain objects in FormData
-      //    as long as they have uri, type, name
       const formData = new FormData();
-      formData.append('file', {
-        uri:  compressed.uri,
-        type: 'image/jpeg',
-        name: `${type}_${restaurantId}_${Date.now()}.jpg`,
-      });
+      const fileName = `${type}_${restaurantId}_${Date.now()}.jpg`;
+
+      // ✅ FIX: Convert local URI to a real binary Blob on Web
+      if (Platform.OS === 'web') {
+        const response = await fetch(finalUri);
+        const blob = await response.blob();
+        formData.append('file', blob, fileName);
+      } else {
+        formData.append('file', {
+          uri:  finalUri,
+          type: 'image/jpeg',
+          name: fileName,
+        });
+      }
+
       formData.append('upload_preset', uploadPreset);
       formData.append('folder',        folders.restaurants);
       formData.append('public_id',     `${type}_${restaurantId}`);
 
       // ── Step 3: Upload via XHR ────────────
-      // ✅ XMLHttpRequest handles multipart/form-data
-      //    correctly in React Native — fetch does not
       const xhr = new XMLHttpRequest();
 
       xhr.open(
@@ -97,11 +109,10 @@ const uploadRestaurantImage = (imageUri, restaurantId, type) => {
         resolve({ success: false, error: 'Upload timed out' });
       };
 
-      // ✅ 60 second timeout for large images
+      // 60 second timeout
       xhr.timeout = 60000;
 
-      // ✅ DO NOT set Content-Type header manually
-      //    XHR sets it automatically with the correct boundary
+      // DO NOT set Content-Type header manually (XHR sets boundary automatically)
       xhr.send(formData);
 
     } catch (error) {
@@ -133,7 +144,7 @@ export const useRestaurants = () => {
           id: d.id,
           ...d.data(),
         }));
-        // ✅ Sort by rating client-side — no composite index needed
+        // Sort by rating client-side — no composite index needed
         data.sort((a, b) =>
           (b.averageRating || 0) - (a.averageRating || 0)
         );
@@ -154,21 +165,21 @@ export const useRestaurants = () => {
   // ─────────────────────────────────────────
   const createRestaurant = async (data, logoUri, coverUri) => {
     try {
-      // ✅ Check if owner already has a restaurant
+      // Check if owner already has a restaurant
       const existingQuery = query(
         collection(db, 'restaurants'),
         where('ownerId', '==', data.ownerId)
       );
       const existingSnap = await getDocs(existingQuery);
 
-      // ✅ If exists — update instead of creating duplicate
+      // If exists — update instead of creating duplicate
       if (!existingSnap.empty) {
         console.log('Restaurant exists — updating instead');
         const existingId = existingSnap.docs[0].id;
         return updateRestaurant(existingId, data, logoUri, coverUri);
       }
 
-      // ✅ Generate ID first so we can use it in Cloudinary public_id
+      // Generate ID first so we can use it in Cloudinary public_id
       const newRef       = doc(collection(db, 'restaurants'));
       const restaurantId = newRef.id;
 
@@ -187,7 +198,6 @@ export const useRestaurants = () => {
           logoUrl      = result.url;
           logoPublicId = result.publicId;
         } else {
-          // ✅ Non-blocking — continue without logo
           console.warn('Logo upload failed, continuing without it');
         }
       }
@@ -202,7 +212,6 @@ export const useRestaurants = () => {
           coverUrl      = result.url;
           coverPublicId = result.publicId;
         } else {
-          // ✅ Non-blocking — continue without cover
           console.warn('Cover upload failed, continuing without it');
         }
       }
@@ -212,28 +221,23 @@ export const useRestaurants = () => {
         ...data,
         id: restaurantId,
 
-        // ✅ Cloudinary image fields
         logoUrl,
         logoPublicId,
         coverUrl,
         coverPublicId,
 
-        // ✅ Aliases for consistency
         logoCloudinaryUrl:  logoUrl,
         coverCloudinaryUrl: coverUrl,
 
-        // ✅ Default stats
         averageRating:  0,
         totalReviews:   0,
         totalFavorites: 0,
 
-        // ✅ Default status
         isActive:        true,
         isCurrentlyOpen: false,
         isVerified:      false,
         isApproved:      false,
 
-        // ✅ Default subscription — 14 day free trial
         subscription: {
           plan:        'free_trial',
           status:      'active',
@@ -300,7 +304,6 @@ export const useRestaurants = () => {
           updates.logoPublicId      = result.publicId;
           updates.logoCloudinaryUrl = result.url;
         } else {
-          // ✅ Keep existing logo — don't fail the whole update
           console.warn('Logo update failed:', result.error);
           return {
             success: false,
@@ -320,7 +323,6 @@ export const useRestaurants = () => {
           updates.coverPublicId       = result.publicId;
           updates.coverCloudinaryUrl  = result.url;
         } else {
-          // ✅ Keep existing cover — don't fail the whole update
           console.warn('Cover update failed:', result.error);
           return {
             success: false,
@@ -420,9 +422,6 @@ export const useRestaurants = () => {
     }
   };
 
-  // ─────────────────────────────────────────
-  // RETURN
-  // ─────────────────────────────────────────
   return {
     restaurants,
     loading,
