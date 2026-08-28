@@ -44,6 +44,30 @@ const PRICE_LABELS = {
   '$$$$': 'Fine Dining',
 };
 
+// ─── Safe Platform Alerts ─────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      // Find the primary/positive action button
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
 // ─── Geocode Helper ───────────────────────────
 const geocodeAddress = async (address, city, state, country) => {
   try {
@@ -93,7 +117,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     address:      existingRestaurant?.location?.address  || '',
     city:         existingRestaurant?.location?.city     || '',
     state:        existingRestaurant?.location?.state    || '',
-    // ✅ Default to Jamaica
     country:      existingRestaurant?.location?.country  || 'Jamaica',
     cuisineTypes: existingRestaurant?.cuisineTypes       || [],
     priceRange:   existingRestaurant?.priceRange         || '$$',
@@ -106,7 +129,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   const [logoUri, setLogoUri]           = useState(null);
   const [coverUri, setCoverUri]         = useState(null);
   const [logoPreview, setLogoPreview]   = useState(
-    // ✅ Use Cloudinary optimized URL for existing images
     existingRestaurant?.logoUrl
       ? getThumbUrl(existingRestaurant.logoUrl, 160, 160)
       : null
@@ -128,10 +150,8 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   // ─────────────────────────────────────────
   // FORM HANDLERS
   // ─────────────────────────────────────────
-
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
-    // ✅ Reset coords verified if address fields change
     if (['address', 'city', 'state', 'country'].includes(field)) {
       setCoordsFound(false);
     }
@@ -150,23 +170,24 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   };
 
   // ─────────────────────────────────────────
-  // IMAGE PICKER
-  // ✅ Camera + Library options
-  // ✅ quality: 1 (compression happens in useRestaurants)
+  // IMAGE PICKERS
   // ─────────────────────────────────────────
-
   const pickImageFromLibrary = async (type) => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow photo library access');
-      return;
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        showSafeAlert('Permission needed', 'Please allow photo library access');
+        return;
+      }
     }
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:    ['images'],
-      allowsEditing: true,
-      aspect:        type === 'logo' ? [1, 1] : [16, 9],
-      quality:       1, // ✅ No compression here — handled in useRestaurants
+      mediaTypes:    ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: Platform.OS !== 'web',
+      aspect:        Platform.OS !== 'web' ? (type === 'logo' ? [1, 1] : [16, 9]) : undefined,
+      quality:       0.8,
     });
+
     if (!result.canceled) {
       const uri = result.assets[0].uri;
       if (type === 'logo') {
@@ -180,16 +201,20 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   };
 
   const takePhotoWithCamera = async (type) => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow camera access');
-      return;
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        showSafeAlert('Permission needed', 'Please allow camera access');
+        return;
+      }
     }
+
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect:        type === 'logo' ? [1, 1] : [16, 9],
-      quality:       1,
+      allowsEditing: Platform.OS !== 'web',
+      aspect:        Platform.OS !== 'web' ? (type === 'logo' ? [1, 1] : [16, 9]) : undefined,
+      quality:       0.8,
     });
+
     if (!result.canceled) {
       const uri = result.assets[0].uri;
       if (type === 'logo') {
@@ -202,8 +227,13 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     }
   };
 
-  // ✅ Show action sheet for image source
   const handlePickImage = (type) => {
+    if (Platform.OS === 'web') {
+      // Browser handles library + device camera automatically in its native dialog
+      pickImageFromLibrary(type);
+      return;
+    }
+
     const label = type === 'logo' ? 'Logo' : 'Cover Photo';
     Alert.alert(
       `📷 ${label}`,
@@ -216,7 +246,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     );
   };
 
-  // ✅ Remove image
   const handleRemoveImage = (type) => {
     if (type === 'logo') {
       setLogoUri(null);
@@ -230,10 +259,9 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   // ─────────────────────────────────────────
   // VERIFY ADDRESS
   // ─────────────────────────────────────────
-
   const handleVerifyAddress = async () => {
     if (!form.address.trim() || !form.city.trim()) {
-      Alert.alert(
+      showSafeAlert(
         'Address Required',
         'Please enter at least a street address and city.'
       );
@@ -247,7 +275,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
 
     if (coords) {
       setCoordsFound(true);
-      Alert.alert(
+      showSafeAlert(
         '✅ Address Verified',
         `Location found!\n` +
         `Lat: ${coords.latitude.toFixed(4)}\n` +
@@ -256,7 +284,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       );
     } else {
       setCoordsFound(false);
-      Alert.alert(
+      showSafeAlert(
         '⚠️ Address Not Found',
         'Could not find this address on the map.\n\n' +
         'Tips:\n' +
@@ -272,29 +300,26 @@ export default function RestaurantSetupScreen({ navigation, route }) {
   // ─────────────────────────────────────────
   // SAVE HANDLER
   // ─────────────────────────────────────────
-
   const handleSave = async () => {
-    // ── Validation ────────────────────────
     if (!form.name.trim()) {
-      Alert.alert('Error', 'Restaurant name is required');
+      showSafeAlert('Error', 'Restaurant name is required');
       return;
     }
     if (!form.phone.trim()) {
-      Alert.alert('Error', 'Phone number is required');
+      showSafeAlert('Error', 'Phone number is required');
       return;
     }
     if (!form.address.trim() || !form.city.trim()) {
-      Alert.alert('Error', 'Address and city are required');
+      showSafeAlert('Error', 'Address and city are required');
       return;
     }
     if (form.cuisineTypes.length === 0) {
-      Alert.alert('Error', 'Please select at least one cuisine type');
+      showSafeAlert('Error', 'Please select at least one cuisine type');
       return;
     }
 
     setLoading(true);
 
-    // ── Geocode if needed ─────────────────
     setLoadingStep('Finding location...');
     let coords = null;
     if (existingRestaurant?.coords?.latitude && coordsFound) {
@@ -305,7 +330,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       );
     }
 
-    // ── Build data ────────────────────────
     const data = {
       name:        form.name.trim(),
       description: form.description.trim(),
@@ -332,10 +356,8 @@ export default function RestaurantSetupScreen({ navigation, route }) {
       ownerId:      user.uid,
     };
 
-    // ── Upload images & save ──────────────
-    // ✅ Show which step we're on
     if (logoUri || coverUri) {
-      setLoadingStep('Uploading images to Cloudinary...');
+      setLoadingStep('Uploading images...');
     } else {
       setLoadingStep('Saving restaurant...');
     }
@@ -357,7 +379,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
     setLoadingStep('');
 
     if (result?.success) {
-      Alert.alert(
+      showSafeAlert(
         '✅ Success!',
         existingRestaurant
           ? 'Restaurant updated successfully!'
@@ -365,13 +387,9 @@ export default function RestaurantSetupScreen({ navigation, route }) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     } else {
-      Alert.alert('Error', result?.error || 'Something went wrong');
+      showSafeAlert('Error', result?.error || 'Something went wrong');
     }
   };
-
-  // ─────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView
@@ -399,7 +417,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
                 style={styles.coverImage}
                 resizeMode="cover"
               />
-              {/* ✅ Remove cover button */}
               {coverUri && (
                 <TouchableOpacity
                   style={styles.removeImageBtn}
@@ -420,7 +437,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
           <View style={styles.coverEditBadge}>
             <Ionicons name="camera" size={14} color="#FFFFFF" />
           </View>
-          {/* ✅ New photo indicator */}
           {coverUri && (
             <View style={styles.newPhotoBadge}>
               <Text style={styles.newPhotoBadgeText}>New</Text>
@@ -450,7 +466,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             <View style={styles.logoEditBadge}>
               <Ionicons name="pencil" size={10} color="#FFFFFF" />
             </View>
-            {/* ✅ New photo indicator */}
             {logoUri && (
               <View style={[styles.newPhotoBadge, { top: 0, right: 0 }]}>
                 <Text style={styles.newPhotoBadgeText}>New</Text>
@@ -458,7 +473,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             )}
           </TouchableOpacity>
 
-          {/* ✅ Image hints */}
           <View style={styles.logoHints}>
             <Text style={styles.logoHintTitle}>
               {existingRestaurant ? 'Update Photos' : 'Add Photos'}
@@ -469,7 +483,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             </Text>
             {(logoUri || coverUri) && (
               <Text style={styles.logoHintNew}>
-                📤 Will upload to Cloudinary on save
+                📤 Will upload on save
               </Text>
             )}
           </View>
@@ -507,7 +521,7 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             <TextInput
               ref={descriptionRef}
               style={[styles.input, styles.textarea]}
-              placeholder="Tell customers about your restaurant, specialties, atmosphere..."
+              placeholder="Tell customers about your restaurant..."
               placeholderTextColor={COLORS.textMuted}
               value={form.description}
               onChangeText={v => updateForm('description', v)}
@@ -663,7 +677,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             />
           </View>
 
-          {/* Verify Address */}
           <TouchableOpacity
             style={[
               styles.verifyBtn,
@@ -692,7 +705,6 @@ export default function RestaurantSetupScreen({ navigation, route }) {
             )}
           </TouchableOpacity>
 
-          {/* Location Hint */}
           <View style={styles.locationHint}>
             <Ionicons
               name="information-circle-outline"
