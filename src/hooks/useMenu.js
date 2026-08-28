@@ -2,12 +2,13 @@
 // FILE: src/hooks/useMenu.js
 // ============================================
 import { useState, useEffect } from 'react';
-import { Platform }            from 'react-native'; // ✅ Added for web platform checks
+import { Platform }            from 'react-native';
 import {
   collection,
   query,
   where,
   getDocs,
+  getDoc,
   doc,
   setDoc,
   addDoc,
@@ -16,22 +17,20 @@ import {
   onSnapshot,
   serverTimestamp,
   Timestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { db }                from '../firebase/config';
 import { CLOUDINARY_CONFIG } from '../config/cloudinary';
 
-// ─── Cloudinary Config ────────────────────────
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
 
 // ─────────────────────────────────────────────
 // INTERNAL CLOUDINARY UPLOAD
-// ✅ Uses XMLHttpRequest with Web Blob Support
 // ─────────────────────────────────────────────
 const uploadMenuItemImage = (imageUri, itemId) => {
   return new Promise(async (resolve) => {
     try {
-      // ── Step 1: Compress ──────────────────
       let finalUri = imageUri;
       try {
         const compressed = await ImageManipulator.manipulateAsync(
@@ -41,14 +40,12 @@ const uploadMenuItemImage = (imageUri, itemId) => {
         );
         finalUri = compressed.uri;
       } catch (manipError) {
-        console.warn('ImageManipulator bypassed in menu hook:', manipError.message);
+        console.warn('ImageManipulator bypassed:', manipError.message);
       }
 
-      // ── Step 2: Build FormData ────────────
       const formData = new FormData();
       const fileName = `menu_item_${itemId}_${Date.now()}.jpg`;
 
-      // ✅ FIX: Convert local URI to a real binary Blob on Web
       if (Platform.OS === 'web') {
         const response = await fetch(finalUri);
         const blob = await response.blob();
@@ -65,17 +62,12 @@ const uploadMenuItemImage = (imageUri, itemId) => {
       formData.append('folder',        folders.menuItems);
       formData.append('public_id',     `menu_item_${itemId}`);
 
-      // ── Step 3: Upload via XHR ────────────
       const xhr = new XMLHttpRequest();
-      xhr.open(
-        'POST',
-        `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
-      );
+      xhr.open('POST', `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`);
 
       xhr.onload = () => {
         if (xhr.status === 200) {
           const data = JSON.parse(xhr.responseText);
-          console.log('✅ Menu item image uploaded:', data.secure_url);
           resolve({
             success:  true,
             url:      data.secure_url,
@@ -89,32 +81,101 @@ const uploadMenuItemImage = (imageUri, itemId) => {
             const errData = JSON.parse(xhr.responseText);
             errMsg = errData.error?.message || errMsg;
           } catch {}
-          console.error('❌ uploadMenuItemImage failed:', errMsg);
           resolve({ success: false, error: errMsg });
         }
       };
 
-      xhr.onerror = () => {
-        console.error('❌ uploadMenuItemImage network error');
-        resolve({ success: false, error: 'Network error during upload' });
-      };
-
-      xhr.ontimeout = () => {
-        console.error('❌ uploadMenuItemImage timed out');
-        resolve({ success: false, error: 'Upload timed out' });
-      };
-
-      // 60 second timeout for uploads
+      xhr.onerror = () => resolve({ success: false, error: 'Network error during upload' });
+      xhr.ontimeout = () => resolve({ success: false, error: 'Upload timed out' });
       xhr.timeout = 60000;
-
-      // DO NOT set Content-Type manually
       xhr.send(formData);
 
     } catch (error) {
-      console.error('❌ uploadMenuItemImage error:', error);
       resolve({ success: false, error: error.message });
     }
   });
+};
+
+// ─────────────────────────────────────────────
+// 🔔 DIRECT CLIENT-SIDE PUSH DISPATCHER (100% FREE)
+// ─────────────────────────────────────────────
+const notifyFollowersOfDailyMenu = async (restaurantId, specialsCount = 0) => {
+  try {
+    // 1. Get Restaurant details
+    const restDoc = await getDoc(doc(db, 'restaurants', restaurantId));
+    const restaurantName = restDoc.exists() ? restDoc.data()?.name : "What's Cooking";
+
+    const notifTitle = `🍳 ${restaurantName}`;
+    const notifBody = specialsCount > 0
+      ? `Today's menu is live with ${specialsCount} special${specialsCount > 1 ? 's' : ''}! Tap to see what's fresh.`
+      : `Today's menu is live! Tap to see what's cooking today.`;
+
+    // 2. Find all customers who favorited this restaurant
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('favoriteRestaurants', 'array-contains', restaurantId)
+    );
+    const usersSnap = await getDocs(usersQuery);
+
+    if (usersSnap.empty) {
+      console.log(`ℹ️ No followers found for ${restaurantName} yet.`);
+      return;
+    }
+
+    const expoPushTokens = [];
+    const batch = writeBatch(db);
+
+    usersSnap.forEach((userDoc) => {
+      const userData = userDoc.data();
+      const userId = userDoc.id;
+
+      // In-app notification document
+      const notifRef = doc(collection(db, 'notifications'));
+      batch.set(notifRef, {
+        userId,
+        title: notifTitle,
+        body: notifBody,
+        type: 'daily-menu',
+        data: { restaurantId, restaurantName },
+        isRead: false,
+        createdAt: serverTimestamp(),
+      });
+
+      // Collect Push Token for native Android phones
+      if (userData.expoPushToken && userData.pushEnabled !== false) {
+        expoPushTokens.push(userData.expoPushToken);
+      }
+    });
+
+    // Save all in-app notifications at once
+    await batch.commit();
+    console.log(`✅ Saved in-app notifications for ${usersSnap.size} followers.`);
+
+    // Send Expo push alerts to phones
+    if (expoPushTokens.length > 0) {
+      const messages = expoPushTokens.map(token => ({
+        to: token,
+        sound: 'default',
+        title: notifTitle,
+        body: notifBody,
+        channelId: 'menu-updates',
+        data: { type: 'daily-menu', restaurantId },
+      }));
+
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messages),
+      });
+
+      console.log(`🚀 Sent push notifications to ${expoPushTokens.length} devices.`);
+    }
+  } catch (err) {
+    console.warn('⚠️ Error sending daily menu notifications:', err.message);
+  }
 };
 
 // ─────────────────────────────────────────────
@@ -124,7 +185,6 @@ export const useMenu = (restaurantId) => {
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading]     = useState(true);
 
-  // ─── Real-time listener ───────────────────
   useEffect(() => {
     if (!restaurantId) {
       setLoading(false);
@@ -144,10 +204,8 @@ export const useMenu = (restaurantId) => {
           ...d.data(),
         }));
 
-        // Sort by category then name client-side
         items.sort((a, b) => {
-          const catCompare =
-            (a.category || '').localeCompare(b.category || '');
+          const catCompare = (a.category || '').localeCompare(b.category || '');
           if (catCompare !== 0) return catCompare;
           return (a.name || '').localeCompare(b.name || '');
         });
@@ -164,13 +222,8 @@ export const useMenu = (restaurantId) => {
     return unsubscribe;
   }, [restaurantId]);
 
-  // ─────────────────────────────────────────
-  // ADD MENU ITEM
-  // ─────────────────────────────────────────
   const addMenuItem = async (data, imageUri) => {
     try {
-      // Generate doc ref FIRST so itemId is available
-      // before upload so we can use it as public_id
       const newRef = doc(collection(db, 'menuItems'));
       const itemId = newRef.id;
 
@@ -180,51 +233,33 @@ export const useMenu = (restaurantId) => {
       let isAutoImage        = false;
 
       if (imageUri) {
-        console.log('⬆️ Uploading menu item image to Cloudinary...');
         const result = await uploadMenuItemImage(imageUri, itemId);
-
         if (result.success) {
           imageUrl           = result.url;
           cloudinaryUrl      = result.url;
           cloudinaryPublicId = result.publicId;
           isAutoImage        = false;
         } else {
-          console.warn('⚠️ Cloudinary upload failed:', result.error);
-          console.log('ℹ️ Falling back to local auto image');
           imageUrl    = '';
           isAutoImage = true;
         }
       } else {
         imageUrl    = '';
         isAutoImage = true;
-        console.log('ℹ️ Using local auto image for:', data.name);
       }
 
-      // Clean data
-      const {
-        autoImageUrl,
-        imageName,
-        imageCategory,
-        ...cleanData
-      } = data;
+      const { autoImageUrl, imageName, imageCategory, ...cleanData } = data;
 
-      // Save to Firestore
       await setDoc(newRef, {
         ...cleanData,
-        id:           itemId,
+        id: itemId,
         restaurantId,
-
-        // Cloudinary fields
         imageUrl,
         cloudinaryUrl,
         cloudinaryPublicId,
-
-        // Auto image fallback metadata
         isAutoImage,
         imageName:     data.name     || '',
         imageCategory: data.category || '',
-
-        // Default fields
         isAvailable:       true,
         isSpecialOfTheDay: false,
         totalFavorites:    0,
@@ -234,26 +269,15 @@ export const useMenu = (restaurantId) => {
         updatedAt:         serverTimestamp(),
       });
 
-      console.log('✅ Menu item created:', itemId);
       return { success: true, id: itemId };
-
     } catch (error) {
-      console.error('❌ addMenuItem error:', error);
       return { success: false, error: error.message };
     }
   };
 
-  // ─────────────────────────────────────────
-  // UPDATE MENU ITEM
-  // ─────────────────────────────────────────
   const updateMenuItem = async (itemId, data, newImageUri) => {
     try {
-      const {
-        autoImageUrl,
-        imageName,
-        imageCategory,
-        ...cleanData
-      } = data;
+      const { autoImageUrl, imageName, imageCategory, ...cleanData } = data;
 
       const updates = {
         ...cleanData,
@@ -263,42 +287,27 @@ export const useMenu = (restaurantId) => {
       };
 
       if (newImageUri) {
-        console.log('⬆️ Updating menu item image on Cloudinary...');
         const result = await uploadMenuItemImage(newImageUri, itemId);
-
         if (result.success) {
           updates.imageUrl           = result.url;
           updates.cloudinaryUrl      = result.url;
           updates.cloudinaryPublicId = result.publicId;
           updates.isAutoImage        = false;
-          console.log('✅ Image updated on Cloudinary:', result.url);
-        } else {
-          console.warn('⚠️ Image update failed — keeping existing image');
-          console.warn('Error:', result.error);
         }
       } else if (data.imageUrl === null) {
         updates.imageUrl           = '';
         updates.cloudinaryUrl      = '';
         updates.cloudinaryPublicId = '';
         updates.isAutoImage        = true;
-        console.log('ℹ️ Switched to local auto image');
-      } else if (data.cloudinaryUrl) {
-        console.log('ℹ️ Keeping existing Cloudinary image');
       }
 
       await updateDoc(doc(db, 'menuItems', itemId), updates);
-      console.log('✅ Menu item updated:', itemId);
       return { success: true };
-
     } catch (error) {
-      console.error('❌ updateMenuItem error:', error);
       return { success: false, error: error.message };
     }
   };
 
-  // ─────────────────────────────────────────
-  // TOGGLE AVAILABILITY
-  // ─────────────────────────────────────────
   const toggleAvailability = async (itemId, currentState) => {
     try {
       await updateDoc(doc(db, 'menuItems', itemId), {
@@ -307,14 +316,10 @@ export const useMenu = (restaurantId) => {
       });
       return { success: true };
     } catch (error) {
-      console.error('❌ toggleAvailability error:', error);
       return { success: false, error: error.message };
     }
   };
 
-  // ─────────────────────────────────────────
-  // TOGGLE SPECIAL OF THE DAY
-  // ─────────────────────────────────────────
   const toggleSpecial = async (itemId, currentState) => {
     try {
       await updateDoc(doc(db, 'menuItems', itemId), {
@@ -323,29 +328,19 @@ export const useMenu = (restaurantId) => {
       });
       return { success: true };
     } catch (error) {
-      console.error('❌ toggleSpecial error:', error);
       return { success: false, error: error.message };
     }
   };
 
-  // ─────────────────────────────────────────
-  // DELETE MENU ITEM
-  // ─────────────────────────────────────────
   const deleteMenuItem = async (itemId) => {
     try {
       await deleteDoc(doc(db, 'menuItems', itemId));
-      console.log('✅ Menu item deleted:', itemId);
-      console.log('⚠️ Cloudinary image not deleted — needs Cloud Function');
       return { success: true };
     } catch (error) {
-      console.error('❌ deleteMenuItem error:', error);
       return { success: false, error: error.message };
     }
   };
 
-  // ─────────────────────────────────────────
-  // GET GROUPED MENU
-  // ─────────────────────────────────────────
   const getGroupedMenu = () => {
     return menuItems.reduce((groups, item) => {
       const category = item.category || 'other';
@@ -356,7 +351,7 @@ export const useMenu = (restaurantId) => {
   };
 
   // ─────────────────────────────────────────
-  // SET DAILY MENU
+  // SET DAILY MENU + NOTIFY FOLLOWERS
   // ─────────────────────────────────────────
   const setDailyMenu = async (availableItemIds, specials, message) => {
     try {
@@ -387,6 +382,9 @@ export const useMenu = (restaurantId) => {
         await updateDoc(snapshot.docs[0].ref, menuData);
       }
 
+      // ✅ Trigger free push notifications to all followers
+      notifyFollowersOfDailyMenu(restaurantId, specials?.length || 0);
+
       return { success: true };
     } catch (error) {
       console.error('❌ setDailyMenu error:', error);
@@ -394,9 +392,6 @@ export const useMenu = (restaurantId) => {
     }
   };
 
-  // ─────────────────────────────────────────
-  // GET TODAY'S MENU
-  // ─────────────────────────────────────────
   const getTodaysMenu = async () => {
     try {
       const today = new Date();
@@ -417,14 +412,10 @@ export const useMenu = (restaurantId) => {
         ...snapshot.docs[0].data(),
       };
     } catch (error) {
-      console.error('❌ getTodaysMenu error:', error);
       return null;
     }
   };
 
-  // ─────────────────────────────────────────
-  // GET USER REVIEW
-  // ─────────────────────────────────────────
   const getUserReview = async (userId) => {
     try {
       const q = query(
@@ -439,14 +430,10 @@ export const useMenu = (restaurantId) => {
         ...snapshot.docs[0].data(),
       };
     } catch (error) {
-      console.error('❌ getUserReview error:', error);
       return null;
     }
   };
 
-  // ─────────────────────────────────────────
-  // REGENERATE AUTO IMAGE
-  // ─────────────────────────────────────────
   const regenerateAutoImage = async (itemId, name, category) => {
     try {
       await updateDoc(doc(db, 'menuItems', itemId), {
@@ -457,21 +444,14 @@ export const useMenu = (restaurantId) => {
         imageCategory: category || '',
         updatedAt:     serverTimestamp(),
       });
-      console.log('✅ Switched to auto image for item:', itemId);
       return { success: true };
     } catch (error) {
-      console.error('❌ regenerateAutoImage error:', error);
       return { success: false, error: error.message };
     }
   };
 
-  // ─────────────────────────────────────────
-  // ADD SCANNED MENU ITEMS (BULK)
-  // For the MenuScanner feature
-  // ─────────────────────────────────────────
   const addScannedMenuItems = async (scannedItems) => {
     const results = { success: [], failed: [] };
-
     for (const item of scannedItems) {
       try {
         const result = await addMenuItem(
@@ -485,9 +465,8 @@ export const useMenu = (restaurantId) => {
             servingSize: item.servingSize || '',
             isAutoImage: true,
           },
-          null // No image for scanned items — use auto image
+          null
         );
-
         if (result.success) {
           results.success.push({ name: item.name, id: result.id });
         } else {
@@ -497,11 +476,6 @@ export const useMenu = (restaurantId) => {
         results.failed.push({ name: item.name, error: err.message });
       }
     }
-
-    console.log(
-      `✅ Scanned items: ${results.success.length} added,`,
-      `${results.failed.length} failed`
-    );
     return results;
   };
 
