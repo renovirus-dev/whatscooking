@@ -15,7 +15,53 @@ import {
 } from 'firebase/firestore';
 import { db }          from '../firebase/config';
 import { useAuth }     from '../hooks/useAuth';
-import { navigate }    from '../navigation/navigationRef'; // ✅ Global Navigation
+import { navigate }    from '../navigation/navigationRef';
+
+// ─────────────────────────────────────────────
+// 🔔 BUILT-IN WEB AUDIO CHIME (Zero Files Needed)
+// Generates a crisp 2-tone bell chime on Web
+// ─────────────────────────────────────────────
+const playWebChime = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+  try {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    const now = ctx.currentTime;
+
+    // Tone 1: E5 (659.25 Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(659.25, now);
+    gain1.gain.setValueAtTime(0.25, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.3);
+
+    // Tone 2: A5 (880 Hz) - Higher harmonic chime
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880.0, now + 0.1);
+    gain2.gain.setValueAtTime(0.25, now + 0.1);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.1);
+    osc2.stop(now + 0.5);
+  } catch (err) {
+    console.log('Web audio chime error:', err);
+  }
+};
 
 let Notifications = null;
 let notificationsAvailable = false;
@@ -32,7 +78,6 @@ try {
       }),
     });
     notificationsAvailable = true;
-    console.log('✅ expo-notifications loaded');
   }
 } catch (err) {
   Notifications = null;
@@ -55,6 +100,7 @@ const NotificationContext = createContext({
   sendNotificationToUser:       async () => {},
   sendLocalNotification:        async () => {},
   registerForPushNotifications: async () => {},
+  playNotificationSound:        () => {},
 });
 
 export function NotificationProvider({ children }) {
@@ -70,15 +116,14 @@ export function NotificationProvider({ children }) {
   const responseListener      = useRef();
   const registeredForUid      = useRef(null);
   const androidChannelsSetup  = useRef(false);
+  const isInitialSnapshot     = useRef(true);
 
   // ─────────────────────────────────────────
-  // TAP HANDLER (Takes user to Restaurant Detail)
+  // TAP HANDLER (Takes user to Restaurant)
   // ─────────────────────────────────────────
   const handleNotificationTap = useCallback((response) => {
     try {
       const data = response?.notification?.request?.content?.data;
-      console.log('👆 Notification tapped with data:', data);
-
       if (data?.restaurantId) {
         navigate('RestaurantDetail', {
           restaurantId: data.restaurantId,
@@ -91,7 +136,7 @@ export function NotificationProvider({ children }) {
   }, []);
 
   // ─────────────────────────────────────────
-  // PUSH LISTENERS
+  // PUSH LISTENERS (NATIVE MOBILE)
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!notificationsAvailable || Platform.OS === 'web') return;
@@ -99,20 +144,15 @@ export function NotificationProvider({ children }) {
     try {
       Notifications.setBadgeCountAsync(0).catch(() => {});
 
-      // 1. App opened from a cold start (killed state) by tapping a notification
       Notifications.getLastNotificationResponseAsync().then(response => {
-        if (response) {
-          handleNotificationTap(response);
-        }
+        if (response) handleNotificationTap(response);
       });
 
-      // 2. Incoming notification received while app is open in foreground
       notificationListener.current =
         Notifications.addNotificationReceivedListener(notification => {
-          console.log('🔔 Received:', notification.request.content.title);
+          console.log('🔔 Push Received:', notification.request.content.title);
         });
 
-      // 3. User tapped notification while app is running in background
       responseListener.current =
         Notifications.addNotificationResponseReceivedListener(handleNotificationTap);
 
@@ -131,7 +171,7 @@ export function NotificationProvider({ children }) {
   }, [handleNotificationTap]);
 
   // ─────────────────────────────────────────
-  // REGISTER PUSH
+  // REGISTER PUSH TOKEN
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid || !notificationsAvailable) return;
@@ -141,7 +181,7 @@ export function NotificationProvider({ children }) {
   }, [user?.uid]);
 
   // ─────────────────────────────────────────
-  // FIRESTORE NOTIFICATIONS LISTENER
+  // FIRESTORE NOTIFICATIONS + CHIME LISTENER
   // ─────────────────────────────────────────
   useEffect(() => {
     if (!user?.uid) {
@@ -149,6 +189,7 @@ export function NotificationProvider({ children }) {
       setUnreadCount(0);
       setLoading(false);
       registeredForUid.current = null;
+      isInitialSnapshot.current = true;
       return;
     }
 
@@ -168,11 +209,20 @@ export function NotificationProvider({ children }) {
         setNotifications(data);
         setUnreadCount(data.filter(n => !n.isRead).length);
         setLoading(false);
+
+        // 🔔 Play chime on Web if a brand new unread notification arrived
+        if (isInitialSnapshot.current) {
+          isInitialSnapshot.current = false;
+        } else {
+          const hasNewUnread = snap.docChanges().some(
+            change => change.type === 'added' && !change.doc.data().isRead
+          );
+          if (hasNewUnread) {
+            playWebChime();
+          }
+        }
       },
       (err) => {
-        if (err.code === 'failed-precondition') {
-          console.warn('⚠️ Missing Firestore index for notifications');
-        }
         setNotifications([]);
         setUnreadCount(0);
         setLoading(false);
@@ -232,21 +282,12 @@ export function NotificationProvider({ children }) {
             importance: Notifications.AndroidImportance.HIGH,
             lightColor: '#FF6B35',
           }),
-          Notifications.setNotificationChannelAsync('promotions', {
-            name: 'Promotions & Deals',
-            importance: Notifications.AndroidImportance.DEFAULT,
-          }),
-          Notifications.setNotificationChannelAsync('system', {
-            name: 'System Alerts',
-            importance: Notifications.AndroidImportance.HIGH,
-          }),
         ]);
       }
 
-      console.log('✅ Push token registered:', token);
       return token;
     } catch (err) {
-      console.error('Push registration error:', err);
+      console.error('Push error:', err);
       return null;
     }
   }, [user?.uid]);
@@ -258,12 +299,7 @@ export function NotificationProvider({ children }) {
     setUnreadCount(prev => Math.max(0, prev - 1));
     try {
       await updateDoc(doc(db, 'notifications', notificationId), { isRead: true });
-    } catch {
-      setNotifications(prev =>
-        prev.map(n => n.id === notificationId ? { ...n, isRead: false } : n)
-      );
-      setUnreadCount(prev => prev + 1);
-    }
+    } catch {}
   }, []);
 
   const markAllAsRead = useCallback(async () => {
@@ -275,15 +311,7 @@ export function NotificationProvider({ children }) {
       await Promise.all(
         unread.map(n => updateDoc(doc(db, 'notifications', n.id), { isRead: true }))
       );
-    } catch {
-      setNotifications(prev =>
-        prev.map(n => {
-          const wasUnread = unread.find(u => u.id === n.id);
-          return wasUnread ? { ...n, isRead: false } : n;
-        })
-      );
-      setUnreadCount(unread.length);
-    }
+    } catch {}
   }, [notifications]);
 
   const deleteNotification = useCallback(async (id) => {
@@ -292,12 +320,7 @@ export function NotificationProvider({ children }) {
     if (deleted && !deleted.isRead) setUnreadCount(prev => Math.max(0, prev - 1));
     try {
       await deleteDoc(doc(db, 'notifications', id));
-    } catch {
-      if (deleted) {
-        setNotifications(prev => [deleted, ...prev]);
-        if (!deleted.isRead) setUnreadCount(prev => prev + 1);
-      }
-    }
+    } catch {}
   }, [notifications]);
 
   const sendNotificationToUser = useCallback(async ({
@@ -315,6 +338,10 @@ export function NotificationProvider({ children }) {
   }, []);
 
   const sendLocalNotification = useCallback(async (title, body, data = {}) => {
+    if (Platform.OS === 'web') {
+      playWebChime();
+      return;
+    }
     if (!notificationsAvailable) return;
     try {
       await Notifications.scheduleNotificationAsync({
@@ -330,6 +357,7 @@ export function NotificationProvider({ children }) {
     markAsRead, markAllAsRead, deleteNotification,
     sendNotificationToUser, sendLocalNotification,
     registerForPushNotifications,
+    playNotificationSound: playWebChime,
   };
 
   return (
