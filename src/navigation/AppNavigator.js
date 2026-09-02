@@ -18,7 +18,7 @@ import AsyncStorage                   from '@react-native-async-storage/async-st
 import { useAuth }                    from '../hooks/useAuth';
 import { useNotifications }           from '../context/NotificationContext';
 import { checkAppUpdate }             from '../utils/checkAppUpdate';
-import { navigationRef }              from './navigationRef'; // ✅ Global Navigation Reference
+import { navigationRef }              from './navigationRef';
 
 const PRIMARY = '#FF6B35';
 const DARK    = '#2C3E50';
@@ -410,36 +410,37 @@ function getTabIcon(routeName, focused) {
 
 const isWeb = Platform.OS === 'web';
 
+// ✅ FIXED: Bulletproof tab bar for both Android APK and Web
 const tabBarScreenOptions = ({ route }) => ({
   headerShown:             false,
   tabBarActiveTintColor:   PRIMARY,
   tabBarInactiveTintColor: '#95A5A6',
-  tabBarHideOnKeyboard:    true,
+  tabBarHideOnKeyboard:    false, // ✅ Prevents Android keyboard resize listener from hiding the tab bar
   tabBarLabelPosition:     'below-icon',
   tabBarStyle: {
     backgroundColor: '#FFFFFF',
     borderTopColor:  '#E0E0E0',
     borderTopWidth:  1,
-    height:          isWeb ? 66 : undefined,
-    paddingTop:      isWeb ? 6 : 6,
-    paddingBottom:   isWeb ? 8 : undefined,
+    height:          isWeb ? 66 : 62, // ✅ Explicit height so Android edge-to-edge never collapses it
+    paddingTop:      6,
+    paddingBottom:   8,
+    elevation:       8, // ✅ Android shadow ensures it stays on top of views
   },
   tabBarItemStyle: {
-    justifyContent: 'center',
-    alignItems:     'center',
-    padding:        0,
+    justifyContent:  'center',
+    alignItems:      'center',
+    paddingVertical: 2,
   },
   tabBarLabelStyle: {
-    fontSize:     10,
+    fontSize:     11,
     fontWeight:   '600',
     marginTop:    2,
     marginBottom: 0,
-    padding:      0,
   },
   tabBarIcon: ({ color, size, focused }) => (
     <Ionicons
       name={getTabIcon(route.name, focused)}
-      size={isWeb ? 20 : size}
+      size={isWeb ? 20 : 22}
       color={color}
     />
   ),
@@ -456,7 +457,7 @@ function ProfileTabIcon({ color, size, focused }) {
     <View style={{ position: 'relative' }}>
       <Ionicons
         name={focused ? 'person' : 'person-outline'}
-        size={isWeb ? 20 : size}
+        size={isWeb ? 20 : 22}
         color={color}
       />
       {unreadCount > 0 && (
@@ -716,7 +717,6 @@ export default function AppNavigator() {
   }
 
   return (
-    // ✅ NavigationContainer linked with global navigationRef
     <NavigationContainer ref={navigationRef}>
       {(() => {
         if (user) {
