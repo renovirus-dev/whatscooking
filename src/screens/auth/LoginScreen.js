@@ -39,10 +39,20 @@ const isValidEmail = (email) =>
 
 // ─────────────────────────────────────────────
 // MAIN SCREEN
+// ✅ Accepts custom callbacks from AppNavigator:
+//    - onBack             — back to welcome
+//    - onGuest            — browse as guest
+//    - onSwitchToRegister — go to register screen
+// ✅ Falls back to navigation.goBack if not provided
 // ─────────────────────────────────────────────
-export default function LoginScreen({ navigation }) {
-  const insets                        = useSafeAreaInsets();
-  const { login, forgotPassword }     = useAuth();
+export default function LoginScreen({
+  navigation,
+  onBack,
+  onGuest,
+  onSwitchToRegister,
+}) {
+  const insets                     = useSafeAreaInsets();
+  const { login, forgotPassword }  = useAuth();
 
   // ── Refs ──────────────────────────────────
   const passwordRef = useRef(null);
@@ -52,6 +62,34 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading]           = useState(false);
+
+  // ─────────────────────────────────────────
+  // NAVIGATION HANDLERS
+  // ✅ Use callbacks if provided, else fallback
+  // ─────────────────────────────────────────
+  const handleBack = useCallback(() => {
+    if (onBack) {
+      onBack();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  }, [onBack, navigation]);
+
+  const handleGuest = useCallback(() => {
+    if (onGuest) {
+      onGuest();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  }, [onGuest, navigation]);
+
+  const handleGoToRegister = useCallback(() => {
+    if (onSwitchToRegister) {
+      onSwitchToRegister();
+    } else if (navigation?.navigate) {
+      navigation.navigate('Register');
+    }
+  }, [onSwitchToRegister, navigation]);
 
   // ─────────────────────────────────────────
   // LOGIN HANDLER
@@ -138,9 +176,10 @@ export default function LoginScreen({ navigation }) {
       >
 
         {/* ── Back Button ───────────────────── */}
+        {/* ✅ Now uses onBack callback → returns to Welcome */}
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={handleBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.7}
         >
@@ -179,10 +218,9 @@ export default function LoginScreen({ navigation }) {
               autoComplete="email"
               autoCorrect={false}
               returnKeyType="next"
-              // ✅ Focus password on next
               onSubmitEditing={() => passwordRef.current?.focus()}
             />
-            {/* ✅ Email validation indicator */}
+            {/* Email validation indicator */}
             {email.length > 0 && (
               <Ionicons
                 name={isValidEmail(email)
@@ -271,10 +309,10 @@ export default function LoginScreen({ navigation }) {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* ✅ Browse as Guest */}
+          {/* ✅ Browse as Guest — now uses onGuest callback */}
           <TouchableOpacity
             style={styles.guestBtn}
-            onPress={() => navigation.goBack()}
+            onPress={handleGuest}
             activeOpacity={0.8}
           >
             <Ionicons
@@ -285,14 +323,15 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.guestBtnText}>Browse as Guest</Text>
           </TouchableOpacity>
 
-          {/* Register Link */}
+          {/* ✅ Register Link — now uses onSwitchToRegister */}
           <View style={styles.registerRow}>
             <Text style={styles.registerLabel}>
               Don't have an account?
             </Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate('Register')}
+              onPress={handleGoToRegister}
               activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Text style={styles.registerLink}> Sign Up</Text>
             </TouchableOpacity>
@@ -317,11 +356,18 @@ const styles = StyleSheet.create({
 
   // ── Back Button ───────────────────────────
   backBtn: {
-    position: 'absolute',
-    top:      SIZES.lg,
-    left:     SIZES.lg,
-    padding:  SIZES.xs,
-    zIndex:   10,
+    position:        'absolute',
+    top:             SIZES.lg,
+    left:            SIZES.lg,
+    padding:         SIZES.xs,
+    zIndex:          10,
+    backgroundColor: COLORS.surface,
+    borderRadius:    RADIUS.round,
+    width:           40,
+    height:          40,
+    alignItems:      'center',
+    justifyContent:  'center',
+    ...SHADOW,
   },
 
   // ── Header ────────────────────────────────
@@ -444,6 +490,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems:     'center',
     paddingBottom:  SIZES.md,
+    paddingTop:     SIZES.sm,
   },
   registerLabel: { color: COLORS.textLight, fontSize: FONTS.md },
   registerLink: {

@@ -26,6 +26,8 @@ import { useMenu }   from '../../hooks/useMenu';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 import FoodImage     from '../../components/FoodImage';
 import { getThumbUrl } from '../../utils/uploadToCloudinary';
+// ✅ Import the new notification trigger
+import { notifyCustomersOnMenuPublish } from '../../utils/sendPushNotification';
 
 // ─── Category Labels ──────────────────────────
 const CATEGORY_LABELS = {
@@ -44,8 +46,6 @@ const CATEGORY_LABELS = {
 
 // ─────────────────────────────────────────────
 // GET CLOUDINARY URL FOR ITEM
-// Returns optimised thumb URL or null
-// FoodImage uses this directly — skips MealDB
 // ─────────────────────────────────────────────
 const getCloudinaryUrl = (item) => {
   if (item?.cloudinaryUrl) {
@@ -65,6 +65,7 @@ export default function DailyMenuScreen({ navigation }) {
 
   // ── State ─────────────────────────────────
   const [restaurantId, setRestaurantId]     = useState(null);
+  const [restaurantName, setRestaurantName] = useState(''); // ✅ Added for notifications
   const [selectedIds, setSelectedIds]       = useState([]);
   const [specialIds, setSpecialIds]         = useState([]);
   const [chefMessage, setChefMessage]       = useState('');
@@ -75,7 +76,7 @@ export default function DailyMenuScreen({ navigation }) {
 
   const { menuItems, setDailyMenu, getTodaysMenu } = useMenu(restaurantId);
 
-  // ── Get restaurant ID ─────────────────────
+  // ── Get restaurant ID & Name ─────────────────────
   useEffect(() => {
     if (!user) return;
     const q = query(
@@ -84,8 +85,9 @@ export default function DailyMenuScreen({ navigation }) {
     );
     const unsub = onSnapshot(q, snap => {
       if (!snap.empty) {
-        const id = snap.docs[0].id;
-        setRestaurantId(id);
+        const docInfo = snap.docs[0];
+        setRestaurantId(docInfo.id);
+        setRestaurantName(docInfo.data().name || 'Restaurant'); // ✅ Store name
         // Reset state when restaurant changes
         setSelectedIds([]);
         setSpecialIds([]);
@@ -133,7 +135,7 @@ export default function DailyMenuScreen({ navigation }) {
   }, [restaurantId, menuItems.length]);
 
   // ─────────────────────────────────────────
-  // CATEGORIES
+  // CATEGORIES & FILTERING
   // ─────────────────────────────────────────
   const categories = useMemo(() => {
     const cats = [
@@ -143,9 +145,6 @@ export default function DailyMenuScreen({ navigation }) {
     return cats;
   }, [menuItems]);
 
-  // ─────────────────────────────────────────
-  // FILTERED ITEMS BY CATEGORY
-  // ─────────────────────────────────────────
   const filteredItems = useMemo(() => {
     if (activeCategory === 'all') return menuItems;
     return menuItems.filter(
@@ -164,7 +163,6 @@ export default function DailyMenuScreen({ navigation }) {
     );
   }, []);
 
-  // Toggle special — auto-selects item if not selected
   const toggleSpecial = useCallback((id) => {
     if (!selectedIds.includes(id)) {
       setSelectedIds(prev => [...prev, id]);
@@ -190,7 +188,7 @@ export default function DailyMenuScreen({ navigation }) {
   }, [menuItems]);
 
   // ─────────────────────────────────────────
-  // PUBLISH
+  // PUBLISH & NOTIFY
   // ─────────────────────────────────────────
   const handlePublish = useCallback(async () => {
     if (selectedIds.length === 0) {
@@ -211,6 +209,16 @@ export default function DailyMenuScreen({ navigation }) {
 
     if (result.success) {
       setPublished(true);
+
+      // ✅ 🔔 TRIGGER NOTIFICATIONS
+      notifyCustomersOnMenuPublish({
+        restaurantId,
+        restaurantName,
+        itemCount:    selectedIds.length,
+        specialCount: specialIds.length,
+        chefMessage:  chefMessage.trim(),
+      });
+
       Alert.alert(
         '✅ Menu Published!',
         `${selectedIds.length} items published for today.\n` +
@@ -221,7 +229,7 @@ export default function DailyMenuScreen({ navigation }) {
     } else {
       Alert.alert('Error', result.error || 'Failed to publish menu');
     }
-  }, [selectedIds, specialIds, chefMessage, setDailyMenu]);
+  }, [selectedIds, specialIds, chefMessage, setDailyMenu, restaurantId, restaurantName]);
 
   // ─────────────────────────────────────────
   // STATS
@@ -458,7 +466,6 @@ export default function DailyMenuScreen({ navigation }) {
                   </View>
 
                   {/* ── Image ───────────────────── */}
-                  {/* ✅ FoodImage: Cloudinary → MealDB → local */}
                   <View style={styles.itemImageWrapper}>
                     <FoodImage
                       item={item}
@@ -776,7 +783,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Item Image ────────────────────────────
-  // ✅ Wrapper needed so FoodImage fills correctly
   itemImageWrapper: {
     width:        50,
     height:       50,
