@@ -5,8 +5,15 @@ import React, {
   useState, useEffect, useCallback, useMemo,
 } from 'react';
 import {
-  View, Text, ScrollView, StyleSheet,
-  ActivityIndicator, TouchableOpacity, RefreshControl,
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+  RefreshControl,
+  Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons }          from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,14 +21,38 @@ import {
   collection, query, where,
   getDocs, limit, orderBy,
 } from 'firebase/firestore';
-import { db }              from '../../firebase/config';
-import { useSubscription } from '../../hooks/useSubscription';
+import { db }                      from '../../firebase/config';
+import { useSubscription }         from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { checkSubscriptionStatus } from '../../utils/subscriptionHelper'; // ✅ Strict mode helper
 
 const INFO_COLOR    = COLORS.info    || '#3498DB';
 const WARNING_COLOR = COLORS.warning || '#F39C12';
 const ACCENT_COLOR  = COLORS.accent  || '#9B59B6';
 const DIVIDER_COLOR = COLORS.divider || COLORS.border || '#E0E0E0';
+
+// ─── Safe Platform Alerts ─────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
 
 const PERIODS = [
   { key: 'week',  label: 'This Week'  },
@@ -97,9 +128,7 @@ export default function AnalyticsScreen({ route, navigation }) {
   const { restaurant } = route.params || {};
   const { hasAnalytics, isExpiringSoon, getDaysRemaining } = useSubscription();
 
-  // ─────────────────────────────────────────
-  // ✅ ALL HOOKS FIRST — before any return
-  // ─────────────────────────────────────────
+  // ── All Hooks Positioned Cleanly at Top ───
   const [events, setEvents]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -200,10 +229,21 @@ export default function AnalyticsScreen({ route, navigation }) {
   const expiringSoon  = isExpiringSoon ? isExpiringSoon(restaurant) : false;
   const daysRemaining = getDaysRemaining ? getDaysRemaining(restaurant) : 0;
 
+  // Calculate Subscription & Strict Mode Status
+  const subStatus = checkSubscriptionStatus(restaurant);
+
   // ─────────────────────────────────────────
-  // ✅ NOW safe to do early returns
-  // All hooks are above this line
+  // EARLY RENDERS / STRICT MODE GATES
   // ─────────────────────────────────────────
+
+  if (loadingResto || (loading && events.length === 0)) {
+    return (
+      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading analytics...</Text>
+      </View>
+    );
+  }
 
   if (!restaurant) {
     return (
@@ -217,10 +257,74 @@ export default function AnalyticsScreen({ route, navigation }) {
     );
   }
 
+  // ✅ STRICT MODE LOCKOUT: Checks if subscription is active, suspended, or expired
+  if (!subStatus.isValid) {
+    const isSuspended = subStatus.status === 'suspended';
+    const isPending = subStatus.status === 'pending';
+    return (
+      <View style={[
+        styles.lockedContainer,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}>
+        <View style={[styles.lockedIconBg, isSuspended && { backgroundColor: COLORS.error + '15' }]}>
+          <Ionicons 
+            name={isSuspended ? "ban-outline" : isPending ? "time-outline" : "calendar-outline"} 
+            size={50} 
+            color={isSuspended ? COLORS.error : isPending ? WARNING_COLOR : COLORS.primary} 
+          />
+        </View>
+        <Text style={styles.lockedTitle}>
+          {isSuspended ? 'Account Suspended' : isPending ? 'Verification Pending' : 'Subscription Expired'}
+        </Text>
+        <Text style={[styles.lockedDesc, { paddingHorizontal: SIZES.lg }]}>
+          {subStatus.message}
+        </Text>
+        
+        {isSuspended ? (
+          <TouchableOpacity
+            style={[styles.lockedUpgradeBtn, { backgroundColor: DARK }]}
+            onPress={() =>
+              showSafeAlert(
+                '📧 Contact Admin',
+                'For support, please email our team at:\nrenogooden@outlook.com',
+                [{ text: 'OK' }]
+              )
+            }
+            activeOpacity={0.8}
+          >
+            <Ionicons name="mail-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>Contact Support</Text>
+          </TouchableOpacity>
+        ) : isPending ? (
+          <TouchableOpacity
+            style={[styles.lockedUpgradeBtn, { backgroundColor: WARNING_COLOR }]}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.lockedUpgradeBtn}
+            onPress={() => navigation.navigate('Subscription', { restaurant })}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="diamond-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>💳 Renew / Upgrade Plan</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
+  // ✅ CAPABILITY GATING: If active but plan doesn't support Analytics (e.g. Trial or Basic)
   if (!hasAnalytics(restaurant)) {
     return (
       <View style={[styles.lockedContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <Ionicons name="lock-closed" size={60} color={COLORS.textMuted} />
+        <View style={styles.lockedIconBg}>
+          <Ionicons name="lock-closed" size={60} color={COLORS.textMuted} />
+        </View>
         <Text style={styles.lockedTitle}>Analytics — Premium Only</Text>
         <Text style={styles.lockedDesc}>
           Track who views your restaurant, how they contact you,
@@ -235,15 +339,6 @@ export default function AnalyticsScreen({ route, navigation }) {
           <Text style={styles.lockedUpgradeBtnText}>Upgrade to Premium — $24.99/mo</Text>
         </TouchableOpacity>
         <Text style={styles.lockedPaymentText}>PayPal or Scotiabank Bank Transfer</Text>
-      </View>
-    );
-  }
-
-  if (loading) {
-    return (
-      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Loading analytics...</Text>
       </View>
     );
   }

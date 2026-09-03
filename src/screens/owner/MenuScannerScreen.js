@@ -20,6 +20,7 @@ import { useMenu }           from '../../hooks/useMenu';
 import { useSubscription }   from '../../hooks/useSubscription';
 import { CLOUDINARY_CONFIG } from '../../config/cloudinary';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { checkSubscriptionStatus } from '../../utils/subscriptionHelper'; // ✅ Strict mode helper
 
 // ✅ Safe ML Kit import
 let TextRecognition;
@@ -31,6 +32,29 @@ try {
 }
 
 const { cloudName, uploadPreset, folders } = CLOUDINARY_CONFIG;
+
+// ─── Safe Platform Alerts ─────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
 
 // ─── Category Keywords ────────────────────────
 const CATEGORY_KEYWORDS = {
@@ -195,31 +219,41 @@ const parseMenuText = (rawText) => {
 
 // ─────────────────────────────────────────────
 // UPLOAD SCAN TO CLOUDINARY
-// ✅ Uses XMLHttpRequest — fixes FormDataPart error
-//    fetch + Content-Type: multipart/form-data
-//    breaks in React Native
 // ─────────────────────────────────────────────
 const uploadScanToCloudinary = (imageUri, pageNum) => {
   return new Promise(async (resolve) => {
     try {
-      // ✅ Compress image first
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: 1600 } }],
-        { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-      );
+      let finalUri = imageUri;
 
-      // ✅ Build FormData
+      try {
+        const compressed = await ImageManipulator.manipulateAsync(
+          imageUri,
+          [{ resize: { width: 1600 } }],
+          { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        finalUri = compressed.uri;
+      } catch (err) {
+        console.warn('Scan compression bypassed:', err.message);
+      }
+
       const formData = new FormData();
-      formData.append('file', {
-        uri:  compressed.uri,
-        type: 'image/jpeg',
-        name: `menu_scan_p${pageNum}_${Date.now()}.jpg`,
-      });
+      const fileName = `menu_scan_p${pageNum}_${Date.now()}.jpg`;
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(finalUri);
+        const blob = await response.blob();
+        formData.append('file', blob, fileName);
+      } else {
+        formData.append('file', {
+          uri:  finalUri,
+          type: 'image/jpeg',
+          name: fileName,
+        });
+      }
+
       formData.append('upload_preset', uploadPreset);
       formData.append('folder',        folders.menus);
 
-      // ✅ XMLHttpRequest — avoids FormDataPart error
       const xhr = new XMLHttpRequest();
       xhr.open(
         'POST',
@@ -251,10 +285,7 @@ const uploadScanToCloudinary = (imageUri, pageNum) => {
         resolve({ success: false, error: 'Upload timed out' });
       };
 
-      // ✅ 60 second timeout
       xhr.timeout = 60000;
-
-      // ✅ DO NOT set Content-Type — XHR sets it automatically
       xhr.send(formData);
 
     } catch (err) {
@@ -271,10 +302,7 @@ export default function MenuScannerScreen({ route, navigation }) {
   const insets     = useSafeAreaInsets();
   const { restaurantId, restaurant: passedRestaurant } = route.params || {};
 
-  // ─────────────────────────────────────────
-  // ALL HOOKS FIRST — no early returns before
-  // ─────────────────────────────────────────
-
+  // ── All hooks positioned cleanly at top ─────
   const { addScannedMenuItems }      = useMenu(restaurantId);
   const { getCurrentPlan, hasBasic } = useSubscription();
   const [permission, requestPermission] = useCameraPermissions();
@@ -314,6 +342,9 @@ export default function MenuScannerScreen({ route, navigation }) {
       .catch(() => setLoadingResto(false));
   }, [restaurantId, passedRestaurant]);
 
+  // Calculate Subscription & Strict Mode Status
+  const subStatus = checkSubscriptionStatus(restaurant);
+
   // ── Capture ───────────────────────────────
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current) return;
@@ -321,7 +352,7 @@ export default function MenuScannerScreen({ route, navigation }) {
     const maxPages    = MAX_PAGES[currentPlan?.id || 'free_trial'];
 
     if (scannedPages.length >= maxPages) {
-      Alert.alert(
+      showSafeAlert(
         '📄 Page Limit Reached',
         `Your ${currentPlan.name} plan allows up to ${maxPages} page${maxPages !== 1 ? 's' : ''}.\n\nUpgrade to Premium for up to 20 pages.`,
         [
@@ -343,14 +374,14 @@ export default function MenuScannerScreen({ route, navigation }) {
         { uri: photo.uri, pageNum: prev.length + 1, cloudinaryUrl: null },
       ]);
     } catch (err) {
-      Alert.alert('Error', 'Failed to capture. Please try again.');
+      showSafeAlert('Error', 'Failed to capture. Please try again.');
     }
-  }, [cameraRef, scannedPages, restaurant, getCurrentPlan]);
+  }, [cameraRef, scannedPages, restaurant, getCurrentPlan, handleDoneScanning, navigation]);
 
   // ── Done Scanning ─────────────────────────
   const handleDoneScanning = useCallback(async () => {
     if (scannedPages.length === 0) {
-      Alert.alert('No Pages Scanned', 'Please scan at least one menu page first.');
+      showSafeAlert('No Pages Scanned', 'Please scan at least one menu page first.');
       return;
     }
     setStep(STEPS.PROCESSING);
@@ -364,7 +395,6 @@ export default function MenuScannerScreen({ route, navigation }) {
       setProcessingMsg(`Uploading page ${pageNum}/${total}...`);
       setProcessingPct(Math.round(((i * 3) / (total * 3)) * 100));
 
-      // ✅ Upload via XMLHttpRequest — non-blocking
       uploadScanToCloudinary(page.uri, pageNum).then(result => {
         if (result.success) {
           setScannedPages(prev =>
@@ -394,7 +424,6 @@ export default function MenuScannerScreen({ route, navigation }) {
     setProcessingPct(100);
     setProcessingMsg('✅ Done!');
 
-    // ✅ Deduplicate
     const seen   = new Set();
     const unique = allItems.filter(item => {
       const key = item.name.toLowerCase().trim();
@@ -406,7 +435,7 @@ export default function MenuScannerScreen({ route, navigation }) {
     await new Promise(r => setTimeout(r, 600));
 
     if (unique.length === 0) {
-      Alert.alert(
+      showSafeAlert(
         '⚠️ No Items Found',
         'Could not extract menu items.\n\nTips:\n• Ensure good lighting 💡\n• Hold camera steady 📷\n• Make sure text is sharp 🔍',
         [
@@ -429,7 +458,7 @@ export default function MenuScannerScreen({ route, navigation }) {
 
     setExtractedItems(unique);
     setStep(STEPS.REVIEW);
-  }, [scannedPages, restaurantId]);
+  }, [scannedPages, restaurantId, navigation]);
 
   // ── Item Actions ──────────────────────────
   const toggleSelected = useCallback((id) => {
@@ -464,12 +493,12 @@ export default function MenuScannerScreen({ route, navigation }) {
 
   const saveItem = useCallback(() => {
     if (!editingItem?.name?.trim()) {
-      Alert.alert('Required', 'Please enter an item name');
+      showSafeAlert('Required', 'Please enter an item name');
       return;
     }
     const price = parseFloat(editingItem.price);
     if (isNaN(price) || price < 0) {
-      Alert.alert('Required', 'Please enter a valid price');
+      showSafeAlert('Required', 'Please enter a valid price');
       return;
     }
     const updated = { ...editingItem, price: Math.round(price * 100) / 100, isEdited: true };
@@ -488,10 +517,10 @@ export default function MenuScannerScreen({ route, navigation }) {
   const handleAddToMenu = useCallback(async () => {
     const selected = extractedItems.filter(i => i.isSelected);
     if (selected.length === 0) {
-      Alert.alert('Nothing Selected', 'Please select at least one item.');
+      showSafeAlert('Nothing Selected', 'Please select at least one item.');
       return;
     }
-    Alert.alert(
+    showSafeAlert(
       '✅ Add to Menu',
       `Add ${selected.length} item${selected.length !== 1 ? 's' : ''} to your menu?\n\nYou can add photos later.`,
       [
@@ -514,7 +543,7 @@ export default function MenuScannerScreen({ route, navigation }) {
               );
               const ok   = results.success.length;
               const fail = results.failed.length;
-              Alert.alert(
+              showSafeAlert(
                 '🎉 Menu Updated!',
                 `✅ ${ok} item${ok !== 1 ? 's' : ''} added.\n` +
                 (fail > 0 ? `⚠️ ${fail} failed — add manually.\n\n` : '\n') +
@@ -532,7 +561,7 @@ export default function MenuScannerScreen({ route, navigation }) {
                 ]
               );
             } catch (err) {
-              Alert.alert('Error', err.message || 'Failed to save items');
+              showSafeAlert('Error', err.message || 'Failed to save items');
             } finally {
               setSaving(false);
             }
@@ -543,11 +572,8 @@ export default function MenuScannerScreen({ route, navigation }) {
   }, [extractedItems, addScannedMenuItems, navigation]);
 
   // ─────────────────────────────────────────
-  // EARLY RETURNS — all hooks above this line
+  // EARLY RENDERS / STRICT MODE BLOCKS
   // ─────────────────────────────────────────
-
-  const currentPlan = getCurrentPlan(restaurant);
-  const maxPages    = MAX_PAGES[currentPlan?.id || 'free_trial'];
 
   if (loadingResto) {
     return (
@@ -563,6 +589,58 @@ export default function MenuScannerScreen({ route, navigation }) {
     );
   }
 
+  // ✅ STRICT MODE LOCKOUT: Checks if subscription is active, suspended, or expired
+  if (!subStatus.isValid) {
+    const isSuspended = subStatus.status === 'suspended';
+    return (
+      <View style={[
+        styles.lockedContainer,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}>
+        <View style={[styles.lockedIconBg, isSuspended && { backgroundColor: COLORS.error + '15' }]}>
+          <Ionicons 
+            name={isSuspended ? "ban-outline" : "calendar-outline"} 
+            size={50} 
+            color={isSuspended ? COLORS.error : COLORS.primary} 
+          />
+        </View>
+        <Text style={styles.lockedTitle}>
+          {isSuspended ? 'Account Suspended' : 'Subscription Expired'}
+        </Text>
+        <Text style={[styles.lockedDesc, { paddingHorizontal: SIZES.lg }]}>
+          {subStatus.message}
+        </Text>
+        
+        {isSuspended ? (
+          <TouchableOpacity
+            style={[styles.lockedUpgradeBtn, { backgroundColor: DARK }]}
+            onPress={() =>
+              showSafeAlert(
+                '📧 Contact Admin',
+                'For support, please email our team at:\nrenogooden@outlook.com',
+                [{ text: 'OK' }]
+              )
+            }
+            activeOpacity={0.8}
+          >
+            <Ionicons name="mail-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>Contact Support</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.lockedUpgradeBtn}
+            onPress={() => navigation.navigate('Subscription', { restaurant })}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="diamond-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>💳 Renew / Upgrade Plan</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
+  // Fallback check: Block free trial (allows 0 pages) or basic limit checks
   if (!hasBasic(restaurant)) {
     return (
       <View style={[
@@ -637,9 +715,9 @@ export default function MenuScannerScreen({ route, navigation }) {
     );
   }
 
-  // ─────────────────────────────────────────
-  // RENDER FUNCTIONS
-  // ─────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // RENDERS
+  // ─────────────────────────────────────────────
 
   const renderCapture = () => (
     <View style={styles.container}>
@@ -650,7 +728,6 @@ export default function MenuScannerScreen({ route, navigation }) {
         enableTorch={torchOn}
       />
 
-      {/* Top Bar */}
       <View style={[styles.cameraTopBar, { paddingTop: insets.top + SIZES.sm }]}>
         <TouchableOpacity
           style={styles.camIconBtn}
@@ -689,7 +766,6 @@ export default function MenuScannerScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Guide Frame */}
       <View style={styles.guideOverlay} pointerEvents="none">
         <View style={styles.guideFrame}>
           {[
@@ -709,7 +785,6 @@ export default function MenuScannerScreen({ route, navigation }) {
         </Text>
       </View>
 
-      {/* Thumbnails */}
       {scannedPages.length > 0 && (
         <View style={styles.thumbnailStrip}>
           <ScrollView
@@ -741,14 +816,12 @@ export default function MenuScannerScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Tips */}
       <View style={styles.cameraTips}>
         <Text style={styles.cameraTipText}>
           💡 Good lighting · 📐 Keep flat · 🔍 Stay focused
         </Text>
       </View>
 
-      {/* Controls */}
       <View style={[
         styles.cameraControls,
         { paddingBottom: insets.bottom + SIZES.md },
@@ -823,10 +896,9 @@ export default function MenuScannerScreen({ route, navigation }) {
 
     return (
       <View style={[styles.container, { backgroundColor: COLORS.background }]}>
-        {/* Header */}
         <View style={[styles.reviewHeader, { paddingTop: insets.top + SIZES.sm }]}>
           <TouchableOpacity
-            onPress={() => Alert.alert(
+            onPress={() => showSafeAlert(
               'Go Back?',
               'Extracted items will be lost.',
               [
@@ -855,7 +927,6 @@ export default function MenuScannerScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Info Banner */}
         <View style={styles.reviewBanner}>
           <Ionicons
             name="information-circle-outline"
@@ -867,7 +938,6 @@ export default function MenuScannerScreen({ route, navigation }) {
           </Text>
         </View>
 
-        {/* Controls */}
         <View style={styles.reviewControls}>
           <TouchableOpacity
             onPress={() =>
@@ -892,7 +962,6 @@ export default function MenuScannerScreen({ route, navigation }) {
           </Text>
         </View>
 
-        {/* Items List */}
         <FlatList
           data={extractedItems}
           keyExtractor={item => item.id}
@@ -982,7 +1051,6 @@ export default function MenuScannerScreen({ route, navigation }) {
           )}
         />
 
-        {/* Footer */}
         <View style={[
           styles.reviewFooter,
           { paddingBottom: insets.bottom + SIZES.sm },
@@ -1138,9 +1206,6 @@ export default function MenuScannerScreen({ route, navigation }) {
     </Modal>
   );
 
-  // ─────────────────────────────────────────
-  // MAIN RETURN
-  // ─────────────────────────────────────────
   return (
     <>
       {step === STEPS.CAPTURE    && renderCapture()}

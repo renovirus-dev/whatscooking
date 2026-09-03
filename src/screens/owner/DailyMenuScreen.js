@@ -23,10 +23,11 @@ import {
 import { db }        from '../../firebase/config';
 import { useAuth }   from '../../hooks/useAuth';
 import { useMenu }   from '../../hooks/useMenu';
+import { useSubscription } from '../../hooks/useSubscription'; // ✅ Import useSubscription
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 import FoodImage     from '../../components/FoodImage';
 import { getThumbUrl } from '../../utils/uploadToCloudinary';
-// ✅ Import the new notification trigger
+import { checkSubscriptionStatus } from '../../utils/subscriptionHelper'; // ✅ Strict mode helper
 import { notifyCustomersOnMenuPublish } from '../../utils/sendPushNotification';
 
 // ─── Category Labels ──────────────────────────
@@ -44,9 +45,29 @@ const CATEGORY_LABELS = {
   other:       '🍴 Other',
 };
 
-// ─────────────────────────────────────────────
-// GET CLOUDINARY URL FOR ITEM
-// ─────────────────────────────────────────────
+// ─── Safe Platform Alerts ─────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
 const getCloudinaryUrl = (item) => {
   if (item?.cloudinaryUrl) {
     return getThumbUrl(item.cloudinaryUrl, 100, 100);
@@ -62,10 +83,12 @@ const MAX_CHEF_MESSAGE = 200;
 export default function DailyMenuScreen({ navigation }) {
   const insets   = useSafeAreaInsets();
   const { user } = useAuth();
+  const { getCurrentPlan } = useSubscription();
 
   // ── State ─────────────────────────────────
+  const [restaurant, setRestaurant]         = useState(null); // ✅ Store complete restaurant data
   const [restaurantId, setRestaurantId]     = useState(null);
-  const [restaurantName, setRestaurantName] = useState(''); // ✅ Added for notifications
+  const [restaurantName, setRestaurantName] = useState('');
   const [selectedIds, setSelectedIds]       = useState([]);
   const [specialIds, setSpecialIds]         = useState([]);
   const [chefMessage, setChefMessage]       = useState('');
@@ -86,9 +109,11 @@ export default function DailyMenuScreen({ navigation }) {
     const unsub = onSnapshot(q, snap => {
       if (!snap.empty) {
         const docInfo = snap.docs[0];
+        const restData = { id: docInfo.id, ...docInfo.data() };
+        setRestaurant(restData); // ✅ Save complete restaurant state
         setRestaurantId(docInfo.id);
-        setRestaurantName(docInfo.data().name || 'Restaurant'); // ✅ Store name
-        // Reset state when restaurant changes
+        setRestaurantName(restData.name || 'Restaurant');
+        
         setSelectedIds([]);
         setSpecialIds([]);
         setChefMessage('');
@@ -98,9 +123,10 @@ export default function DailyMenuScreen({ navigation }) {
     return unsub;
   }, [user]);
 
-  // ─────────────────────────────────────────
-  // LOAD TODAY'S MENU
-  // ─────────────────────────────────────────
+  // Calculate Subscription & Strict Mode Status
+  const subStatus = checkSubscriptionStatus(restaurant);
+
+  // ── LOAD TODAY'S MENU ─────────────────────
   const loadTodaysMenu = useCallback(async () => {
     if (!restaurantId || menuItems.length === 0) return;
     setMenuLoading(true);
@@ -112,7 +138,6 @@ export default function DailyMenuScreen({ navigation }) {
         setChefMessage(todaysMenu.chefMessage      || '');
         setPublished(true);
       } else {
-        // Default: all available items selected
         setSelectedIds(
           menuItems
             .filter(i => i.isAvailable)
@@ -132,11 +157,9 @@ export default function DailyMenuScreen({ navigation }) {
     if (restaurantId && menuItems.length > 0) {
       loadTodaysMenu();
     }
-  }, [restaurantId, menuItems.length]);
+  }, [restaurantId, menuItems.length, loadTodaysMenu]);
 
-  // ─────────────────────────────────────────
-  // CATEGORIES & FILTERING
-  // ─────────────────────────────────────────
+  // ── CATEGORIES & FILTERING ─────────────────
   const categories = useMemo(() => {
     const cats = [
       'all',
@@ -152,9 +175,7 @@ export default function DailyMenuScreen({ navigation }) {
     );
   }, [menuItems, activeCategory]);
 
-  // ─────────────────────────────────────────
-  // TOGGLE HANDLERS
-  // ─────────────────────────────────────────
+  // ── TOGGLE HANDLERS ───────────────────────
   const toggleItem = useCallback((id) => {
     setSelectedIds(prev =>
       prev.includes(id)
@@ -187,12 +208,10 @@ export default function DailyMenuScreen({ navigation }) {
     setSelectedIds(menuItems.filter(i => i.isAvailable).map(i => i.id));
   }, [menuItems]);
 
-  // ─────────────────────────────────────────
-  // PUBLISH & NOTIFY
-  // ─────────────────────────────────────────
+  // ── PUBLISH & NOTIFY ───────────────────────
   const handlePublish = useCallback(async () => {
     if (selectedIds.length === 0) {
-      Alert.alert(
+      showSafeAlert(
         'No Items Selected',
         'Please select at least one menu item to publish.'
       );
@@ -210,7 +229,6 @@ export default function DailyMenuScreen({ navigation }) {
     if (result.success) {
       setPublished(true);
 
-      // ✅ 🔔 TRIGGER NOTIFICATIONS
       notifyCustomersOnMenuPublish({
         restaurantId,
         restaurantName,
@@ -219,7 +237,7 @@ export default function DailyMenuScreen({ navigation }) {
         chefMessage:  chefMessage.trim(),
       });
 
-      Alert.alert(
+      showSafeAlert(
         '✅ Menu Published!',
         `${selectedIds.length} items published for today.\n` +
         (specialIds.length > 0
@@ -227,13 +245,10 @@ export default function DailyMenuScreen({ navigation }) {
           : '')
       );
     } else {
-      Alert.alert('Error', result.error || 'Failed to publish menu');
+      showSafeAlert('Error', result.error || 'Failed to publish menu');
     }
   }, [selectedIds, specialIds, chefMessage, setDailyMenu, restaurantId, restaurantName]);
 
-  // ─────────────────────────────────────────
-  // STATS
-  // ─────────────────────────────────────────
   const selectedCount = selectedIds.length;
   const specialCount  = specialIds.length;
   const totalCount    = menuItems.length;
@@ -247,8 +262,68 @@ export default function DailyMenuScreen({ navigation }) {
   const PUBLISH_BAR_HEIGHT = 80 + insets.bottom;
 
   // ─────────────────────────────────────────
-  // EMPTY STATES
+  // STRICT MODE LOCKOUT RENDER
   // ─────────────────────────────────────────
+  if (restaurant && !subStatus.isValid) {
+    const isSuspended = subStatus.status === 'suspended';
+    const isPending = subStatus.status === 'pending';
+    return (
+      <View style={[
+        styles.lockedContainer,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}>
+        <View style={[styles.lockedIconBg, isSuspended && { backgroundColor: COLORS.error + '15' }]}>
+          <Ionicons 
+            name={isSuspended ? "ban-outline" : isPending ? "time-outline" : "calendar-outline"} 
+            size={50} 
+            color={isSuspended ? COLORS.error : isPending ? COLORS.warning || '#F39C12' : COLORS.primary} 
+          />
+        </View>
+        <Text style={styles.lockedTitle}>
+          {isSuspended ? 'Account Suspended' : isPending ? 'Verification Pending' : 'Subscription Expired'}
+        </Text>
+        <Text style={[styles.lockedDesc, { paddingHorizontal: SIZES.lg }]}>
+          {subStatus.message}
+        </Text>
+        
+        {isSuspended ? (
+          <TouchableOpacity
+            style={[styles.lockedUpgradeBtn, { backgroundColor: DARK }]}
+            onPress={() =>
+              showSafeAlert(
+                '📧 Contact Admin',
+                'For support, please email our team at:\nrenogooden@outlook.com',
+                [{ text: 'OK' }]
+              )
+            }
+            activeOpacity={0.8}
+          >
+            <Ionicons name="mail-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>Contact Support</Text>
+          </TouchableOpacity>
+        ) : isPending ? (
+          <TouchableOpacity
+            style={[styles.lockedUpgradeBtn, { backgroundColor: COLORS.warning || '#F39C12' }]}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.lockedUpgradeBtn}
+            onPress={() => navigation.navigate('Subscription', { restaurant })}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="diamond-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.lockedUpgradeBtnText}>💳 Renew / Upgrade Plan</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+
   if (!restaurantId) {
     return (
       <View style={[
@@ -287,16 +362,12 @@ export default function DailyMenuScreen({ navigation }) {
     );
   }
 
-  // ─────────────────────────────────────────
-  // MAIN RENDER
-  // ─────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : insets.top + 56}
     >
-      {/* ── Header ──────────────────────────── */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>📅 Today's Menu</Text>
@@ -310,7 +381,6 @@ export default function DailyMenuScreen({ navigation }) {
         )}
       </View>
 
-      {/* ── Loading ─────────────────────────── */}
       {menuLoading ? (
         <View style={styles.menuLoading}>
           <ActivityIndicator size="small" color={COLORS.primary} />
@@ -320,7 +390,6 @@ export default function DailyMenuScreen({ navigation }) {
         </View>
       ) : (
         <>
-          {/* ── Stats Bar ──────────────────────── */}
           <View style={styles.statsBar}>
             <View style={styles.statsLeft}>
               <Text style={styles.statsText}>
@@ -367,7 +436,6 @@ export default function DailyMenuScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── Chef Message ────────────────────── */}
           <View style={styles.messageBox}>
             <View style={styles.messageLabelRow}>
               <Text style={styles.messageLabel}>
@@ -396,7 +464,6 @@ export default function DailyMenuScreen({ navigation }) {
             />
           </View>
 
-          {/* ── Category Filter ──────────────────── */}
           {categories.length > 2 && (
             <ScrollView
               horizontal
@@ -430,7 +497,6 @@ export default function DailyMenuScreen({ navigation }) {
             </ScrollView>
           )}
 
-          {/* ── Menu Items List ─────────────────── */}
           <FlatList
             data={filteredItems}
             keyExtractor={item => item.id}
@@ -455,7 +521,6 @@ export default function DailyMenuScreen({ navigation }) {
                   onPress={() => toggleItem(item.id)}
                   activeOpacity={0.7}
                 >
-                  {/* ── Checkbox ────────────────── */}
                   <View style={[
                     styles.checkbox,
                     isSelected && styles.checkboxActive,
@@ -465,7 +530,6 @@ export default function DailyMenuScreen({ navigation }) {
                     )}
                   </View>
 
-                  {/* ── Image ───────────────────── */}
                   <View style={styles.itemImageWrapper}>
                     <FoodImage
                       item={item}
@@ -475,7 +539,6 @@ export default function DailyMenuScreen({ navigation }) {
                     />
                   </View>
 
-                  {/* ── Info ────────────────────── */}
                   <View style={styles.itemInfo}>
                     <View style={styles.itemNameRow}>
                       <Text style={styles.itemName} numberOfLines={1}>
@@ -496,7 +559,6 @@ export default function DailyMenuScreen({ navigation }) {
                     )}
                   </View>
 
-                  {/* ── Price + Star ─────────────── */}
                   <View style={styles.itemRight}>
                     <Text style={styles.itemPrice}>
                       ${item.price?.toFixed(2)}
@@ -523,7 +585,6 @@ export default function DailyMenuScreen({ navigation }) {
         </>
       )}
 
-      {/* ── Publish Bar ─────────────────────── */}
       <View style={[
         styles.publishBar,
         { paddingBottom: insets.bottom + SIZES.sm },
@@ -574,6 +635,37 @@ export default function DailyMenuScreen({ navigation }) {
 // ─────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
+
+  // ── Locked / Permission ───────────────────
+  lockedContainer: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    padding: SIZES.xl, backgroundColor: COLORS.background, gap: SIZES.md,
+  },
+  lockedIconBg: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  lockedTitle: {
+    fontSize:   FONTS.xxl,
+    fontWeight: 'bold',
+    color:      COLORS.text,
+    textAlign:  'center',
+  },
+  lockedDesc: {
+    fontSize:   FONTS.md,
+    color:      COLORS.textMuted,
+    textAlign:  'center',
+    lineHeight: 22,
+  },
+  lockedUpgradeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: SIZES.sm,
+    backgroundColor: COLORS.primary, paddingHorizontal: SIZES.xl,
+    paddingVertical: SIZES.md, borderRadius: RADIUS.lg,
+  },
+  lockedUpgradeBtnText: {
+    color: '#FFFFFF', fontWeight: 'bold', fontSize: FONTS.md,
+  },
 
   // ── Empty States ──────────────────────────
   centered: {

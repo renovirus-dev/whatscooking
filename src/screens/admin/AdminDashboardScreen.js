@@ -25,6 +25,30 @@ import { sendPushNotificationBatch } from '../../utils/sendPushNotification';
 const INFO_COLOR    = COLORS.info    || '#3498DB';
 const WARNING_COLOR = COLORS.warning || '#F39C12';
 
+// ─── Safe Platform Alerts ─────────────────────
+const showSafeAlert = (title, message, buttons) => {
+  if (Platform.OS === 'web') {
+    if (buttons && buttons.length > 1) {
+      // Find the primary/positive action button
+      const confirmButton = buttons.find(b => b.style !== 'cancel' && b.text !== 'Cancel');
+      const confirmed = window.confirm(`${title}\n\n${message}`);
+      if (confirmed) {
+        if (confirmButton && confirmButton.onPress) confirmButton.onPress();
+      } else {
+        const cancelButton = buttons.find(b => b.style === 'cancel' || b.text === 'Cancel');
+        if (cancelButton && cancelButton.onPress) cancelButton.onPress();
+      }
+    } else {
+      alert(`${title}\n\n${message}`);
+      if (buttons && buttons[0] && buttons[0].onPress) {
+        buttons[0].onPress();
+      }
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
 // ─── Subscription Plans ───────────────────────
 const SUBSCRIPTION_PLANS = {
   free_trial: {
@@ -118,7 +142,7 @@ export default function AdminDashboardScreen({ navigation }) {
       ]);
     } catch (err) {
       console.error('loadDashboardData error:', err);
-      Alert.alert('Error', 'Failed to load dashboard. Please try again.');
+      showSafeAlert('Error', 'Failed to load dashboard. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -154,7 +178,6 @@ export default function AdminDashboardScreen({ navigation }) {
   };
 
   const loadReviews = async () => {
-    // ✅ Accurate total count (not capped by limit)
     const countSnap = await getCountFromServer(collection(db, 'reviews'));
     const snap = await getDocs(
       query(collection(db, 'reviews'), orderBy('createdAt', 'desc'), limit(100))
@@ -243,7 +266,7 @@ export default function AdminDashboardScreen({ navigation }) {
   // SIGN OUT
   // ─────────────────────────────────────────────
   const handleSignOut = useCallback(() => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+    showSafeAlert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out', style: 'destructive',
@@ -251,9 +274,9 @@ export default function AdminDashboardScreen({ navigation }) {
           try {
             setSigningOut(true);
             const result = await logout();
-            if (!result.success) Alert.alert('Error', result.error || 'Failed to sign out');
+            if (!result.success) showSafeAlert('Error', result.error || 'Failed to sign out');
           } catch {
-            Alert.alert('Error', 'Failed to sign out.');
+            showSafeAlert('Error', 'Failed to sign out.');
           } finally {
             setSigningOut(false);
           }
@@ -263,33 +286,44 @@ export default function AdminDashboardScreen({ navigation }) {
   }, [logout]);
 
   // ─────────────────────────────────────────────
-  // RESTAURANT ACTIONS
+  // RESTAURANT ACTIONS (STRICT MODE KILLS/RENEWALS)
   // ─────────────────────────────────────────────
   const toggleRestaurantActive = useCallback(async (restaurant) => {
     try {
+      const newActiveState = !restaurant.isActive;
+      
+      // ✅ Strict Mode Suspension Killswitch
       await updateDoc(doc(db, 'restaurants', restaurant.id), {
-        isActive: !restaurant.isActive, updatedAt: serverTimestamp(),
+        isActive: newActiveState,
+        isSuspended: !newActiveState, // True if active is set to False
+        'subscription.status': newActiveState ? 'active' : 'suspended',
+        updatedAt: serverTimestamp(),
       });
+
       setRestaurants(prev =>
-        prev.map(r => r.id === restaurant.id ? { ...r, isActive: !r.isActive } : r)
+        prev.map(r => r.id === restaurant.id ? { ...r, isActive: newActiveState, isSuspended: !newActiveState } : r)
       );
       setStats(prev => ({
         ...prev,
-        activeRestaurants: !restaurant.isActive
+        activeRestaurants: newActiveState
           ? prev.activeRestaurants + 1
           : prev.activeRestaurants - 1,
       }));
-    } catch (err) { Alert.alert('Error', err.message); }
+    } catch (err) { showSafeAlert('Error', err.message); }
   }, []);
 
   const approveRestaurant = useCallback(async (restaurant) => {
     try {
+      // ✅ Strict Mode Clean Approval state
       await updateDoc(doc(db, 'restaurants', restaurant.id), {
-        isApproved: true, isActive: true, updatedAt: serverTimestamp(),
+        isApproved: true,
+        isActive: true,
+        isSuspended: false,
+        updatedAt: serverTimestamp(),
       });
       setRestaurants(prev =>
         prev.map(r =>
-          r.id === restaurant.id ? { ...r, isApproved: true, isActive: true } : r
+          r.id === restaurant.id ? { ...r, isApproved: true, isActive: true, isSuspended: false } : r
         )
       );
       setStats(prev => ({
@@ -297,6 +331,7 @@ export default function AdminDashboardScreen({ navigation }) {
         activeRestaurants: prev.activeRestaurants + 1,
         pendingApprovals:  Math.max(0, prev.pendingApprovals - 1),
       }));
+
       // Notify owner
       const owner = users.find(u => u.id === restaurant.ownerId);
       if (owner) {
@@ -314,12 +349,12 @@ export default function AdminDashboardScreen({ navigation }) {
           });
         }
       }
-      Alert.alert('✅ Approved', `${restaurant.name} is now live!`);
-    } catch (err) { Alert.alert('Error', err.message); }
+      showSafeAlert('✅ Approved', `${restaurant.name} is now live!`);
+    } catch (err) { showSafeAlert('Error', err.message); }
   }, [users]);
 
   const deleteRestaurant = useCallback(async (restaurant) => {
-    Alert.alert(
+    showSafeAlert(
       '⚠️ Delete Restaurant',
       `Permanently delete "${restaurant.name}"? This cannot be undone.`,
       [
@@ -336,7 +371,7 @@ export default function AdminDashboardScreen({ navigation }) {
                 activeRestaurants: restaurant.isActive
                   ? prev.activeRestaurants - 1 : prev.activeRestaurants,
               }));
-            } catch (err) { Alert.alert('Error', err.message); }
+            } catch (err) { showSafeAlert('Error', err.message); }
           },
         },
       ]
@@ -354,14 +389,13 @@ export default function AdminDashboardScreen({ navigation }) {
       setUsers(prev =>
         prev.map(u => u.id === userData.id ? { ...u, role: newRole } : u)
       );
-      Alert.alert('✅ Done', `${userData.firstName} is now ${newRole}`);
-    } catch (err) { Alert.alert('Error', err.message); }
+      showSafeAlert('✅ Done', `${userData.firstName} is now ${newRole}`);
+    } catch (err) { showSafeAlert('Error', err.message); }
   }, []);
 
-  // ✅ Toggle ban AND unban
   const toggleBanUser = useCallback(async (userData) => {
     const isBanning = !userData.isBanned;
-    Alert.alert(
+    showSafeAlert(
       isBanning ? '⚠️ Ban User' : '✅ Unban User',
       isBanning
         ? `Ban ${userData.firstName} ${userData.lastName}? They won't be able to access the app.`
@@ -381,7 +415,7 @@ export default function AdminDashboardScreen({ navigation }) {
                   u.id === userData.id ? { ...u, isBanned: isBanning } : u
                 )
               );
-            } catch (err) { Alert.alert('Error', err.message); }
+            } catch (err) { showSafeAlert('Error', err.message); }
           },
         },
       ]
@@ -392,7 +426,7 @@ export default function AdminDashboardScreen({ navigation }) {
   // REVIEW ACTIONS
   // ─────────────────────────────────────────────
   const deleteReview = useCallback(async (review) => {
-    Alert.alert('⚠️ Delete Review', 'Delete this review permanently?', [
+    showSafeAlert('⚠️ Delete Review', 'Delete this review permanently?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive',
@@ -400,17 +434,17 @@ export default function AdminDashboardScreen({ navigation }) {
           try {
             await deleteDoc(doc(db, 'reviews', review.id));
             setReviews(prev => prev.filter(r => r.id !== review.id));
-          } catch (err) { Alert.alert('Error', err.message); }
+          } catch (err) { showSafeAlert('Error', err.message); }
         },
       },
     ]);
   }, []);
 
   // ─────────────────────────────────────────────
-  // PAYMENT ACTIONS
+  // PAYMENT ACTIONS (STRICT PLAN ACTIVATION)
   // ─────────────────────────────────────────────
   const handleActivateBankTransfer = useCallback(async (order) => {
-    Alert.alert(
+    showSafeAlert(
       '✅ Activate Plan',
       `Confirm bank transfer received?\n\n` +
       `Plan: ${order.planName}\n` +
@@ -431,7 +465,11 @@ export default function AdminDashboardScreen({ navigation }) {
                 status: 'completed', confirmedAt: serverTimestamp(),
                 confirmedBy: 'admin', updatedAt: serverTimestamp(),
               });
+              
+              // ✅ Strict Mode: Restore active states and remove suspensions
               await updateDoc(doc(db, 'restaurants', order.restaurantId), {
+                isActive: true,
+                isSuspended: false,
                 'subscription.plan':           order.planId,
                 'subscription.status':         'active',
                 'subscription.expiresAt':      expiresAt.toISOString(),
@@ -462,7 +500,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 });
               }
 
-              // ✅ Optimistic update
               setPaymentOrders(prev =>
                 prev.map(o => o.id === order.id ? { ...o, status: 'completed' } : o)
               );
@@ -470,9 +507,9 @@ export default function AdminDashboardScreen({ navigation }) {
                 ...prev,
                 pendingPayments: Math.max(0, prev.pendingPayments - 1),
               }));
-              Alert.alert('🎉 Plan Activated!', `${order.planName} activated.\nOwner notified.`);
+              showSafeAlert('🎉 Plan Activated!', `${order.planName} activated.\nOwner notified.`);
             } catch (err) {
-              Alert.alert('Error', err.message);
+              showSafeAlert('Error', err.message);
             } finally {
               setActivatingOrder(null);
             }
@@ -483,7 +520,7 @@ export default function AdminDashboardScreen({ navigation }) {
   }, [users]);
 
   const handleRejectPayment = useCallback(async (order) => {
-    Alert.alert(
+    showSafeAlert(
       '❌ Reject Payment',
       'Reject this bank transfer? The restaurant owner will be notified.',
       [
@@ -512,8 +549,8 @@ export default function AdminDashboardScreen({ navigation }) {
                 ...prev,
                 pendingPayments: Math.max(0, prev.pendingPayments - 1),
               }));
-              Alert.alert('Done', 'Payment rejected. Owner notified.');
-            } catch (err) { Alert.alert('Error', err.message); }
+              showSafeAlert('Done', 'Payment rejected. Owner notified.');
+            } catch (err) { showSafeAlert('Error', err.message); }
           },
         },
       ]
@@ -527,14 +564,14 @@ export default function AdminDashboardScreen({ navigation }) {
     const plan    = SUBSCRIPTION_PLANS[newPlanId];
     const current = restaurant.subscription?.plan || 'free_trial';
     if (current === newPlanId) {
-      Alert.alert('Already on this plan', `${restaurant.name} is already on ${plan.name}`);
+      showSafeAlert('Already on this plan', `${restaurant.name} is already on ${plan.name}`);
       return;
     }
     const isUpgrade   = newPlanId === 'premium' ||
                         (newPlanId === 'basic' && current === 'free_trial');
     const actionLabel = isUpgrade ? `Upgrade to ${plan.name}` : `Downgrade to ${plan.name}`;
 
-    Alert.alert(
+    showSafeAlert(
       `${plan.emoji} ${actionLabel}`,
       `Apply ${plan.name} to ${restaurant.name}?\n\nTakes effect immediately.`,
       [
@@ -546,7 +583,11 @@ export default function AdminDashboardScreen({ navigation }) {
             try {
               const expiresAt = new Date();
               expiresAt.setMonth(expiresAt.getMonth() + 1);
+              
+              // ✅ Strict Mode: Reactivate restaurant automatically on plan overrides
               await updateDoc(doc(db, 'restaurants', restaurant.id), {
+                isActive: true,
+                isSuspended: false,
                 'subscription.plan':           newPlanId,
                 'subscription.status':         newPlanId === 'free_trial' ? 'trial' : 'active',
                 'subscription.updatedAt':      serverTimestamp(),
@@ -559,7 +600,7 @@ export default function AdminDashboardScreen({ navigation }) {
               setRestaurants(prev =>
                 prev.map(r =>
                   r.id === restaurant.id
-                    ? { ...r, subscription: { ...r.subscription, plan: newPlanId,
+                    ? { ...r, isActive: true, isSuspended: false, subscription: { ...r.subscription, plan: newPlanId,
                         status: newPlanId === 'free_trial' ? 'trial' : 'active' } }
                     : r
                 )
@@ -581,9 +622,9 @@ export default function AdminDashboardScreen({ navigation }) {
                   type: 'system', isRead: false, createdAt: serverTimestamp(),
                 });
               }
-              Alert.alert('✅ Plan Updated!', `${restaurant.name} → ${plan.name}`);
+              showSafeAlert('✅ Plan Updated!', `${restaurant.name} → ${plan.name}`);
             } catch (err) {
-              Alert.alert('Error', err.message);
+              showSafeAlert('Error', err.message);
             } finally {
               setUpdatingPlan(false);
             }
@@ -598,10 +639,10 @@ export default function AdminDashboardScreen({ navigation }) {
   // ─────────────────────────────────────────────
   const handleSendNotification = useCallback(async () => {
     if (!notifTitle.trim()) {
-      Alert.alert('Error', 'Please enter a notification title'); return;
+      showSafeAlert('Error', 'Please enter a notification title'); return;
     }
     if (!notifBody.trim()) {
-      Alert.alert('Error', 'Please enter a notification message'); return;
+      showSafeAlert('Error', 'Please enter a notification message'); return;
     }
     setSending(true);
     try {
@@ -630,12 +671,12 @@ export default function AdminDashboardScreen({ navigation }) {
       }
       setNotifTitle('');
       setNotifBody('');
-      Alert.alert(
+      showSafeAlert(
         '✅ Sent!',
         `📬 ${targetUsers.length} users notified\n📱 ${pushResult.sent ?? tokens.length} devices reached`
       );
     } catch (err) {
-      Alert.alert('Error', err.message);
+      showSafeAlert('Error', err.message);
     } finally {
       setSending(false);
     }
@@ -707,7 +748,7 @@ export default function AdminDashboardScreen({ navigation }) {
   );
 
   // ─────────────────────────────────────────────
-  // TAB: OVERVIEW
+  // TAB RENDERS
   // ─────────────────────────────────────────────
   const renderOverview = () => (
     <ScrollView
@@ -722,7 +763,6 @@ export default function AdminDashboardScreen({ navigation }) {
         />
       }
     >
-      {/* Stats Grid — tapping navigates to that tab */}
       <View style={styles.statsGrid}>
         {[
           { label: 'Restaurants',      value: stats.totalRestaurants,  icon: 'restaurant-outline',       color: COLORS.primary,  tab: 'restaurants'  },
@@ -749,7 +789,6 @@ export default function AdminDashboardScreen({ navigation }) {
         ))}
       </View>
 
-      {/* Quick Actions */}
       <View style={styles.quickActionsRow}>
         <TouchableOpacity
           style={styles.quickActionCard}
@@ -777,7 +816,6 @@ export default function AdminDashboardScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Pending Payments Banner */}
       {stats.pendingPayments > 0 && (
         <TouchableOpacity
           style={styles.alertBanner}
@@ -797,7 +835,6 @@ export default function AdminDashboardScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* Pending Approvals Banner */}
       {stats.pendingApprovals > 0 && (
         <TouchableOpacity
           style={[styles.alertBanner, { backgroundColor: COLORS.error }]}
@@ -817,7 +854,6 @@ export default function AdminDashboardScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* Recent Reviews */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>⭐ Recent Reviews</Text>
@@ -849,7 +885,6 @@ export default function AdminDashboardScreen({ navigation }) {
         )}
       </View>
 
-      {/* Sign Out */}
       <TouchableOpacity
         style={[styles.signOutBtn, signingOut && { opacity: 0.7 }]}
         onPress={handleSignOut}
@@ -868,9 +903,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </ScrollView>
   );
 
-  // ─────────────────────────────────────────────
-  // TAB: RESTAURANTS
-  // ─────────────────────────────────────────────
   const renderRestaurants = () => (
     <View style={{ flex: 1 }}>
       <SearchBar
@@ -974,9 +1006,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </View>
   );
 
-  // ─────────────────────────────────────────────
-  // TAB: USERS
-  // ─────────────────────────────────────────────
   const renderUsers = () => (
     <View style={{ flex: 1 }}>
       <SearchBar
@@ -1069,7 +1098,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 </TouchableOpacity>
               )}
               {item.role !== 'admin' && (
-                // ✅ Now handles BOTH ban and unban
                 <TouchableOpacity
                   style={[
                     styles.actionBtn,
@@ -1094,9 +1122,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </View>
   );
 
-  // ─────────────────────────────────────────────
-  // TAB: REVIEWS
-  // ─────────────────────────────────────────────
   const renderReviews = () => (
     <View style={{ flex: 1 }}>
       <SearchBar
@@ -1156,9 +1181,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </View>
   );
 
-  // ─────────────────────────────────────────────
-  // TAB: PAYMENTS
-  // ─────────────────────────────────────────────
   const renderPayments = () => {
     const pending   = paymentOrders.filter(o => o.status === 'awaiting_confirmation');
     const completed = paymentOrders.filter(o => o.status === 'completed');
@@ -1172,7 +1194,6 @@ export default function AdminDashboardScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {/* Summary Row */}
         <View style={styles.paymentSummaryRow}>
           {[
             { label: 'Pending',   value: pending.length,       color: WARNING_COLOR  },
@@ -1187,7 +1208,6 @@ export default function AdminDashboardScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Receiving Details */}
         <View style={styles.receivingDetailsCard}>
           <Text style={styles.receivingDetailsTitle}>🏦 Your Receiving Details</Text>
           <Text style={styles.receivingDetailsHint}>
@@ -1196,7 +1216,7 @@ export default function AdminDashboardScreen({ navigation }) {
           {[
             { label: 'Bank',     value: 'Scotiabank Jamaica'    },
             { label: 'Name',     value: 'Sherwayne Gooden'      },
-            { label: 'Account', value: '••• ••• 2189'           }, // ✅ masked
+            { label: 'Account', value: '••• ••• 2189'           },
             { label: 'Transit', value: '50765'                  },
             { label: 'Currency',value: 'JMD'                    },
             { label: 'PayPal',  value: 'renogooden@outlook.com' },
@@ -1208,7 +1228,6 @@ export default function AdminDashboardScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Pending */}
         <Text style={styles.sectionTitle}>⏳ Awaiting Confirmation ({pending.length})</Text>
         {pending.length === 0 ? (
           <EmptyState
@@ -1271,7 +1290,6 @@ export default function AdminDashboardScreen({ navigation }) {
           ))
         )}
 
-        {/* Completed */}
         {completed.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { marginTop: SIZES.md }]}>
@@ -1297,7 +1315,6 @@ export default function AdminDashboardScreen({ navigation }) {
           </>
         )}
 
-        {/* Rejected */}
         {rejected.length > 0 && (
           <>
             <Text style={[styles.sectionTitle, { marginTop: SIZES.md }]}>
@@ -1332,9 +1349,6 @@ export default function AdminDashboardScreen({ navigation }) {
     );
   };
 
-  // ─────────────────────────────────────────────
-  // TAB: SUBSCRIPTION
-  // ─────────────────────────────────────────────
   const renderSubscription = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -1348,7 +1362,6 @@ export default function AdminDashboardScreen({ navigation }) {
         </Text>
       </View>
 
-      {/* Plan Summary */}
       <View style={styles.planSummaryRow}>
         {Object.values(SUBSCRIPTION_PLANS).map(plan => {
           const count = restaurants.filter(
@@ -1406,7 +1419,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 </View>
               </View>
 
-              {/* Expiry Warnings */}
               {isExpired && (
                 <View style={styles.expiryWarning}>
                   <Ionicons name="alert-circle-outline" size={14} color={COLORS.error} />
@@ -1424,7 +1436,6 @@ export default function AdminDashboardScreen({ navigation }) {
                 </View>
               )}
 
-              {/* Plan Buttons */}
               <View style={styles.planBtnsRow}>
                 {Object.values(SUBSCRIPTION_PLANS).map(plan => {
                   const isCurrent = currentPlanId === plan.id;
@@ -1461,9 +1472,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </ScrollView>
   );
 
-  // ─────────────────────────────────────────────
-  // TAB: NOTIFY
-  // ─────────────────────────────────────────────
   const renderNotify = () => (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -1477,7 +1485,6 @@ export default function AdminDashboardScreen({ navigation }) {
       >
         <Text style={styles.sectionTitle}>📢 Broadcast Notification</Text>
 
-        {/* Target */}
         <Text style={styles.fieldLabel}>Send To</Text>
         <View style={styles.targetRow}>
           {[
@@ -1508,7 +1515,6 @@ export default function AdminDashboardScreen({ navigation }) {
           ))}
         </View>
 
-        {/* Title */}
         <Text style={styles.fieldLabel}>
           Title <Text style={{ color: COLORS.error }}>*</Text>
         </Text>
@@ -1523,7 +1529,6 @@ export default function AdminDashboardScreen({ navigation }) {
         />
         <Text style={styles.charCount}>{notifTitle.length}/100</Text>
 
-        {/* Message */}
         <Text style={styles.fieldLabel}>
           Message <Text style={{ color: COLORS.error }}>*</Text>
         </Text>
@@ -1540,7 +1545,6 @@ export default function AdminDashboardScreen({ navigation }) {
         />
         <Text style={styles.charCount}>{notifBody.length}/500</Text>
 
-        {/* Preview */}
         {(notifTitle.trim() || notifBody.trim()) && (
           <View style={styles.previewCard}>
             <Text style={styles.previewLabel}>PREVIEW</Text>
@@ -1560,7 +1564,6 @@ export default function AdminDashboardScreen({ navigation }) {
           </View>
         )}
 
-        {/* Send */}
         <TouchableOpacity
           style={[styles.sendBtn, sending && { opacity: 0.7 }]}
           onPress={handleSendNotification}
@@ -1576,7 +1579,6 @@ export default function AdminDashboardScreen({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {/* Stats */}
         <View style={styles.notifStats}>
           {[
             { value: users.filter(u => u.expoPushToken).length, label: 'Push Enabled',  icon: 'phone-portrait-outline' },
@@ -1599,9 +1601,6 @@ export default function AdminDashboardScreen({ navigation }) {
     </KeyboardAvoidingView>
   );
 
-  // ─────────────────────────────────────────────
-  // LOADING
-  // ─────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: COLORS.background }]}>
@@ -1612,13 +1611,8 @@ export default function AdminDashboardScreen({ navigation }) {
     );
   }
 
-  // ─────────────────────────────────────────────
-  // MAIN RENDER
-  // ─────────────────────────────────────────────
   return (
     <View style={styles.container}>
-
-      {/* Header */}
       <View style={[styles.adminHeader, { paddingTop: insets.top + SIZES.sm }]}>
         <View>
           <Text style={styles.adminHeaderTitle}>⚡ Admin Panel</Text>
@@ -1643,7 +1637,6 @@ export default function AdminDashboardScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Tab Bar */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -1680,7 +1673,6 @@ export default function AdminDashboardScreen({ navigation }) {
         })}
       </ScrollView>
 
-      {/* Content */}
       <View style={styles.tabContent}>
         {activeTab === 'overview'     && renderOverview()}
         {activeTab === 'restaurants'  && renderRestaurants()}
@@ -1704,7 +1696,6 @@ const styles = StyleSheet.create({
   loadingText:    { fontSize: FONTS.lg, fontWeight: '600', color: COLORS.text, marginTop: SIZES.md },
   loadingSubText: { fontSize: FONTS.sm, color: COLORS.textMuted },
 
-  // ── Header ────────────────────────────────
   adminHeader: {
     backgroundColor:   '#1A2332',
     flexDirection:     'row',
@@ -1723,7 +1714,6 @@ const styles = StyleSheet.create({
   },
   headerSignOutText: { color: '#FFFFFF', fontSize: FONTS.xs, fontWeight: '700' },
 
-  // ── Tab Bar ───────────────────────────────
   tabBar: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
@@ -1750,7 +1740,6 @@ const styles = StyleSheet.create({
   tabContent:   { flex: 1 },
   tabList:      { padding: SIZES.md, gap: SIZES.md },
 
-  // ── Search ────────────────────────────────
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: COLORS.surface,
@@ -1761,7 +1750,6 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: FONTS.md, color: COLORS.text, padding: 0 },
 
-  // ── Filter Chips ──────────────────────────
   filterChipsScroll:   { maxHeight: 44 },
   filterChipsContent:  {
     paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
@@ -1779,7 +1767,6 @@ const styles = StyleSheet.create({
   filterChipText:       { fontSize: FONTS.xs, color: COLORS.textMuted, fontWeight: '600' },
   filterChipTextActive: { color: '#FFFFFF' },
 
-  // ── Stats ─────────────────────────────────
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', padding: SIZES.md, gap: SIZES.sm },
   statCard: {
     width: '47%', backgroundColor: COLORS.surface,
@@ -1790,7 +1777,6 @@ const styles = StyleSheet.create({
   statValue: { fontSize: FONTS.xxl, fontWeight: 'bold' },
   statLabel: { fontSize: FONTS.xs, color: COLORS.textMuted, textAlign: 'center' },
 
-  // ── Quick Actions ─────────────────────────
   quickActionsRow: { flexDirection: 'row', marginHorizontal: SIZES.md, marginBottom: SIZES.sm, gap: SIZES.sm },
   quickActionCard: {
     flex: 1, backgroundColor: COLORS.surface,
@@ -1801,7 +1787,6 @@ const styles = StyleSheet.create({
   quickActionEmoji: { fontSize: 24 },
   quickActionLabel: { fontSize: FONTS.xs, color: COLORS.textMuted, fontWeight: '600', textAlign: 'center' },
 
-  // ── Alert Banners ─────────────────────────
   alertBanner: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: WARNING_COLOR,
@@ -1816,13 +1801,11 @@ const styles = StyleSheet.create({
   alertBannerTitle: { fontSize: FONTS.sm, fontWeight: 'bold', color: '#FFFFFF' },
   alertBannerSub:   { fontSize: FONTS.xs, color: 'rgba(255,255,255,0.85)', marginTop: 2 },
 
-  // ── Sections ──────────────────────────────
   section: { padding: SIZES.md, gap: SIZES.sm },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SIZES.xs },
   sectionTitle:  { fontSize: FONTS.lg, fontWeight: '700', color: COLORS.text },
   sectionSeeAll: { fontSize: FONTS.sm, color: COLORS.primary, fontWeight: '600' },
 
-  // ── Info Banner ───────────────────────────
   infoBanner: {
     flexDirection: 'row', alignItems: 'flex-start',
     backgroundColor: COLORS.primary + '08',
@@ -1831,7 +1814,6 @@ const styles = StyleSheet.create({
   },
   infoBannerText: { flex: 1, fontSize: FONTS.sm, color: COLORS.textMuted, lineHeight: 20 },
 
-  // ── List Cards ────────────────────────────
   listCard: { backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, padding: SIZES.md, gap: SIZES.sm, ...SHADOW },
   listCardBanned: { borderWidth: 1, borderColor: COLORS.error + '30', backgroundColor: COLORS.error + '05' },
   listCardHeader:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
@@ -1842,7 +1824,6 @@ const styles = StyleSheet.create({
   listCardActions: { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap' },
   listCount:       { fontSize: FONTS.xs, color: COLORS.textMuted, marginBottom: SIZES.xs },
 
-  // ── Inline Plan Badge ─────────────────────
   inlinePlanBadge: {
     alignSelf: 'flex-start', paddingHorizontal: SIZES.sm, paddingVertical: 3,
     borderRadius: RADIUS.round, marginTop: 4,
@@ -1851,12 +1832,10 @@ const styles = StyleSheet.create({
   inlinePlanText: { fontSize: FONTS.xs, fontWeight: '700' },
   expiringText:   { fontSize: FONTS.xs, color: WARNING_COLOR },
 
-  // ── User Avatar ───────────────────────────
   userAvatarRow: { flexDirection: 'row', alignItems: 'center', gap: SIZES.sm, flex: 1 },
   userAvatar: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   userAvatarText: { fontSize: FONTS.lg, fontWeight: 'bold', color: COLORS.text },
 
-  // ── Badges ────────────────────────────────
   badge:        { paddingHorizontal: SIZES.sm, paddingVertical: 3, borderRadius: RADIUS.round, backgroundColor: COLORS.border },
   badgeSuccess: { backgroundColor: COLORS.success + '15' },
   badgeError:   { backgroundColor: COLORS.error   + '15' },
@@ -1864,7 +1843,6 @@ const styles = StyleSheet.create({
   badgePrimary: { backgroundColor: COLORS.primary  + '15' },
   badgeText:    { fontSize: FONTS.xs, fontWeight: '700' },
 
-  // ── Action Buttons ────────────────────────
   actionBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: SIZES.sm, paddingVertical: 6, borderRadius: RADIUS.round },
   actionBtnSuccess: { backgroundColor: COLORS.success },
   actionBtnDanger:  { backgroundColor: COLORS.error   },
@@ -1872,7 +1850,6 @@ const styles = StyleSheet.create({
   actionBtnPrimary: { backgroundColor: COLORS.primary },
   actionBtnText:    { color: '#FFFFFF', fontSize: FONTS.xs, fontWeight: '700' },
 
-  // ── Reviews ───────────────────────────────
   reviewCard:       { backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: SIZES.md, gap: SIZES.xs, ...SHADOW },
   reviewHeader:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   reviewUser:       { fontSize: FONTS.md, fontWeight: '700', color: COLORS.text },
@@ -1881,7 +1858,6 @@ const styles = StyleSheet.create({
   reviewText:       { fontSize: FONTS.sm, color: COLORS.textLight, lineHeight: 20 },
   reviewDate:       { fontSize: FONTS.xs, color: COLORS.textMuted },
 
-  // ── Payments ──────────────────────────────
   paymentSummaryRow: { flexDirection: 'row', gap: SIZES.sm, marginBottom: SIZES.md },
   paymentSummaryCard: {
     flex: 1, backgroundColor: COLORS.surface,
@@ -1944,7 +1920,6 @@ const styles = StyleSheet.create({
   },
   refreshBtnText: { color: COLORS.primary, fontSize: FONTS.md, fontWeight: '600' },
 
-  // ── Subscription ──────────────────────────
   planSummaryRow:  { flexDirection: 'row', gap: SIZES.sm, marginBottom: SIZES.md },
   planSummaryCard: {
     flex: 1, backgroundColor: COLORS.surface,
@@ -1983,7 +1958,6 @@ const styles = StyleSheet.create({
   planChangeBtnEmoji: { fontSize: 12 },
   planChangeBtnText:  { fontSize: FONTS.xs, color: COLORS.textMuted, fontWeight: '500' },
 
-  // ── Notify ────────────────────────────────
   fieldLabel: { fontSize: FONTS.md, fontWeight: '600', color: COLORS.text, marginBottom: SIZES.xs },
   targetRow:  { flexDirection: 'row', gap: SIZES.sm, marginBottom: SIZES.md },
   targetBtn: {
@@ -2033,7 +2007,6 @@ const styles = StyleSheet.create({
   notifStatValue: { fontSize: FONTS.xl, fontWeight: 'bold', color: COLORS.primary },
   notifStatLabel: { fontSize: FONTS.xs, color: COLORS.textMuted, textAlign: 'center' },
 
-  // ── Sign Out ──────────────────────────────
   signOutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: COLORS.error,
@@ -2042,7 +2015,6 @@ const styles = StyleSheet.create({
   },
   signOutBtnText: { color: '#FFFFFF', fontSize: FONTS.lg, fontWeight: 'bold' },
 
-  // ── Empty State ───────────────────────────
   emptyState:     { alignItems: 'center', paddingVertical: SIZES.xl, gap: SIZES.sm },
   emptyStateIcon: {
     width: 80, height: 80, borderRadius: 40,
