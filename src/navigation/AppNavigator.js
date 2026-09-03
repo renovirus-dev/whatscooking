@@ -408,43 +408,59 @@ function getTabIcon(routeName, focused) {
   return icons[routeName] || 'ellipse-outline';
 }
 
-const isWeb = Platform.OS === 'web';
+// ─────────────────────────────────────────────
+// 🛡️ DYNAMIC SAFE-AREA TAB OPTIONS HOOK
+// Correctly adds insets.bottom so tab bar is ALWAYS above Android navigation buttons
+// ─────────────────────────────────────────────
+function useTabBarOptions() {
+  const insets = useSafeAreaInsets();
+  const isWeb  = Platform.OS === 'web';
 
-// ✅ FIXED: Bulletproof tab bar for both Android APK and Web
-const tabBarScreenOptions = ({ route }) => ({
-  headerShown:             false,
-  tabBarActiveTintColor:   PRIMARY,
-  tabBarInactiveTintColor: '#95A5A6',
-  tabBarHideOnKeyboard:    false, // ✅ Prevents Android keyboard resize listener from hiding the tab bar
-  tabBarLabelPosition:     'below-icon',
-  tabBarStyle: {
-    backgroundColor: '#FFFFFF',
-    borderTopColor:  '#E0E0E0',
-    borderTopWidth:  1,
-    height:          isWeb ? 66 : 62, // ✅ Explicit height so Android edge-to-edge never collapses it
-    paddingTop:      6,
-    paddingBottom:   8,
-    elevation:       8, // ✅ Android shadow ensures it stays on top of views
-  },
-  tabBarItemStyle: {
-    justifyContent:  'center',
-    alignItems:      'center',
-    paddingVertical: 2,
-  },
-  tabBarLabelStyle: {
-    fontSize:     11,
-    fontWeight:   '600',
-    marginTop:    2,
-    marginBottom: 0,
-  },
-  tabBarIcon: ({ color, size, focused }) => (
-    <Ionicons
-      name={getTabIcon(route.name, focused)}
-      size={isWeb ? 20 : 22}
-      color={color}
-    />
-  ),
-});
+  // Calculate bottom clearance:
+  // On Android with gesture/button bar, insets.bottom is typically 20-48px.
+  // We add this padding directly to the bottom so the buttons NEVER cover the tabs.
+  const bottomPadding = isWeb ? 8 : (insets.bottom > 0 ? insets.bottom : 6);
+  const totalHeight   = isWeb ? 66 : 56 + bottomPadding;
+
+  return useCallback(({ route }) => ({
+    headerShown:             false,
+    tabBarActiveTintColor:   PRIMARY,
+    tabBarInactiveTintColor: '#95A5A6',
+    tabBarHideOnKeyboard:    false,
+    tabBarLabelPosition:     'below-icon',
+    tabBarStyle: {
+      backgroundColor: '#FFFFFF',
+      borderTopColor:  '#E0E0E0',
+      borderTopWidth:  1,
+      height:          totalHeight,
+      paddingTop:      6,
+      paddingBottom:   bottomPadding,
+      elevation:       10,
+      shadowColor:     '#000',
+      shadowOffset:    { width: 0, height: -2 },
+      shadowOpacity:   0.08,
+      shadowRadius:    4,
+    },
+    tabBarItemStyle: {
+      justifyContent:  'center',
+      alignItems:      'center',
+      paddingVertical: 2,
+    },
+    tabBarLabelStyle: {
+      fontSize:     11,
+      fontWeight:   '600',
+      marginTop:    2,
+      marginBottom: 0,
+    },
+    tabBarIcon: ({ color, size, focused }) => (
+      <Ionicons
+        name={getTabIcon(route.name, focused)}
+        size={isWeb ? 20 : 22}
+        color={color}
+      />
+    ),
+  }), [insets.bottom, isWeb, totalHeight, bottomPadding]);
+}
 
 function ProfileTabIcon({ color, size, focused }) {
   let unreadCount = 0;
@@ -452,6 +468,8 @@ function ProfileTabIcon({ color, size, focused }) {
     const ctx = useNotifications();
     unreadCount = ctx?.unreadCount || 0;
   } catch {}
+
+  const isWeb = Platform.OS === 'web';
 
   return (
     <View style={{ position: 'relative' }}>
@@ -493,8 +511,9 @@ const adminHeaderStyle = {
 // GUEST TABS
 // ─────────────────────────────────────────────
 function GuestTabs() {
+  const screenOptions = useTabBarOptions();
   return (
-    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+    <Tab.Navigator screenOptions={screenOptions}>
       <Tab.Screen name="Home"      component={HomeScreen} />
       <Tab.Screen name="Explore"   component={ExploreScreen} />
       <Tab.Screen name="Favorites" component={GuestFavoritesScreen} />
@@ -507,8 +526,9 @@ function GuestTabs() {
 // USER TABS
 // ─────────────────────────────────────────────
 function UserTabs() {
+  const screenOptions = useTabBarOptions();
   return (
-    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+    <Tab.Navigator screenOptions={screenOptions}>
       <Tab.Screen name="Home"      component={HomeScreen} />
       <Tab.Screen name="Explore"   component={ExploreScreen} />
       <Tab.Screen name="Favorites" component={FavoritesScreen} />
@@ -525,8 +545,9 @@ function UserTabs() {
 // OWNER TABS
 // ─────────────────────────────────────────────
 function OwnerTabs() {
+  const screenOptions = useTabBarOptions();
   return (
-    <Tab.Navigator screenOptions={tabBarScreenOptions}>
+    <Tab.Navigator screenOptions={screenOptions}>
       <Tab.Screen name="Dashboard" component={OwnerDashboardScreen} options={{ tabBarLabel: 'Dashboard' }} />
       <Tab.Screen name="Menu"      component={ManageMenuScreen}     options={{ tabBarLabel: 'My Menu' }} />
       <Tab.Screen name="Daily"     component={DailyMenuScreen}      options={{ tabBarLabel: "Today's" }} />
