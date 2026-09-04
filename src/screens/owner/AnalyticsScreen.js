@@ -22,16 +22,17 @@ import {
   getDocs, limit, orderBy,
 } from 'firebase/firestore';
 import { db }                      from '../../firebase/config';
+import { useAuth }                 from '../../hooks/useAuth';
 import { useSubscription }         from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
-import { checkSubscriptionStatus } from '../../utils/subscriptionHelper'; // ✅ Strict mode helper
+import { checkSubscriptionStatus } from '../../utils/subscriptionHelper';
 
 const INFO_COLOR    = COLORS.info    || '#3498DB';
 const WARNING_COLOR = COLORS.warning || '#F39C12';
 const ACCENT_COLOR  = COLORS.accent  || '#9B59B6';
 const DIVIDER_COLOR = COLORS.divider || COLORS.border || '#E0E0E0';
+const DARK          = '#2C3E50';
 
-// ─── Safe Platform Alerts ─────────────────────
 const showSafeAlert = (title, message, buttons) => {
   if (Platform.OS === 'web') {
     if (buttons && buttons.length > 1) {
@@ -120,24 +121,42 @@ const ActivityRow = ({ event, isLast }) => {
   );
 };
 
-// ─────────────────────────────────────────────
-// MAIN SCREEN
-// ─────────────────────────────────────────────
 export default function AnalyticsScreen({ route, navigation }) {
-  const insets         = useSafeAreaInsets();
-  const { restaurant } = route.params || {};
+  const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { restaurant: passedRestaurant } = route.params || {};
   const { hasAnalytics, isExpiringSoon, getDaysRemaining } = useSubscription();
 
-  // ── All Hooks Positioned Cleanly at Top ───
-  const [events, setEvents]         = useState([]);
-  const [loading, setLoading]       = useState(true);
+  const [restaurant, setRestaurant] = useState(passedRestaurant || null);
+  const [restaurantLoading, setRestaurantLoading] = useState(!passedRestaurant);
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError]           = useState(null);
-  const [period, setPeriod]         = useState('week');
+  const [error, setError] = useState(null);
+  const [period, setPeriod] = useState('week');
+
+  // Load restaurant if not passed via navigation params
+  useEffect(() => {
+    if (passedRestaurant) {
+      setRestaurant(passedRestaurant);
+      setRestaurantLoading(false);
+      return;
+    }
+    if (!user?.uid) {
+      setRestaurantLoading(false);
+      return;
+    }
+    const q = query(collection(db, 'restaurants'), where('ownerId', '==', user.uid), limit(1));
+    getDocs(q).then(snap => {
+      if (!snap.empty) {
+        setRestaurant({ id: snap.docs[0].id, ...snap.docs[0].data() });
+      }
+      setRestaurantLoading(false);
+    }).catch(() => setRestaurantLoading(false));
+  }, [user?.uid, passedRestaurant]);
 
   const fetchAnalytics = useCallback(async () => {
     if (!restaurant?.id) {
-      setError('No restaurant data');
       setLoading(false);
       return;
     }
@@ -147,7 +166,7 @@ export default function AnalyticsScreen({ route, navigation }) {
         collection(db, 'analyticsEvents'),
         where('restaurantId', '==', restaurant.id),
         orderBy('timestamp', 'desc'),
-        limit(200),
+        limit(200)
       );
 
       const snap = await getDocs(eventsQuery);
@@ -175,9 +194,11 @@ export default function AnalyticsScreen({ route, navigation }) {
   }, [period, restaurant?.id]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchAnalytics().finally(() => setLoading(false));
-  }, [fetchAnalytics]);
+    if (restaurant?.id) {
+      setLoading(true);
+      fetchAnalytics().finally(() => setLoading(false));
+    }
+  }, [fetchAnalytics, restaurant?.id]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -228,15 +249,13 @@ export default function AnalyticsScreen({ route, navigation }) {
 
   const expiringSoon  = isExpiringSoon ? isExpiringSoon(restaurant) : false;
   const daysRemaining = getDaysRemaining ? getDaysRemaining(restaurant) : 0;
-
-  // Calculate Subscription & Strict Mode Status
-  const subStatus = checkSubscriptionStatus(restaurant);
+  const subStatus     = checkSubscriptionStatus(restaurant);
 
   // ─────────────────────────────────────────
-  // EARLY RENDERS / STRICT MODE GATES
+  // GUARDS & EARLY RETURNS
   // ─────────────────────────────────────────
 
-  if (loadingResto || (loading && events.length === 0)) {
+  if (restaurantLoading) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -249,7 +268,8 @@ export default function AnalyticsScreen({ route, navigation }) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Ionicons name="alert-circle-outline" size={50} color={COLORS.error} />
-        <Text style={styles.errorTitle}>No Restaurant Data</Text>
+        <Text style={styles.errorTitle}>No Restaurant Found</Text>
+        <Text style={styles.errorText}>Please set up your restaurant first.</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={() => navigation.goBack()}>
           <Text style={styles.retryBtnText}>Go Back</Text>
         </TouchableOpacity>
@@ -257,15 +277,11 @@ export default function AnalyticsScreen({ route, navigation }) {
     );
   }
 
-  // ✅ STRICT MODE LOCKOUT: Checks if subscription is active, suspended, or expired
   if (!subStatus.isValid) {
     const isSuspended = subStatus.status === 'suspended';
-    const isPending = subStatus.status === 'pending';
+    const isPending   = subStatus.status === 'pending';
     return (
-      <View style={[
-        styles.lockedContainer,
-        { paddingTop: insets.top, paddingBottom: insets.bottom },
-      ]}>
+      <View style={[styles.lockedContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={[styles.lockedIconBg, isSuspended && { backgroundColor: COLORS.error + '15' }]}>
           <Ionicons 
             name={isSuspended ? "ban-outline" : isPending ? "time-outline" : "calendar-outline"} 
@@ -318,7 +334,6 @@ export default function AnalyticsScreen({ route, navigation }) {
     );
   }
 
-  // ✅ CAPABILITY GATING: If active but plan doesn't support Analytics (e.g. Trial or Basic)
   if (!hasAnalytics(restaurant)) {
     return (
       <View style={[styles.lockedContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
@@ -339,6 +354,15 @@ export default function AnalyticsScreen({ route, navigation }) {
           <Text style={styles.lockedUpgradeBtnText}>Upgrade to Premium — $24.99/mo</Text>
         </TouchableOpacity>
         <Text style={styles.lockedPaymentText}>PayPal or Scotiabank Bank Transfer</Text>
+      </View>
+    );
+  }
+
+  if (loading && events.length === 0) {
+    return (
+      <View style={[styles.centered, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading analytics data...</Text>
       </View>
     );
   }
@@ -530,9 +554,6 @@ export default function AnalyticsScreen({ route, navigation }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// STYLES
-// ─────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   centered: {
@@ -552,6 +573,11 @@ const styles = StyleSheet.create({
   lockedContainer: {
     flex: 1, justifyContent: 'center', alignItems: 'center',
     padding: SIZES.xl, backgroundColor: COLORS.background, gap: SIZES.md,
+  },
+  lockedIconBg: {
+    width: 100, height: 100, borderRadius: 50,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
   },
   lockedTitle:    { fontSize: FONTS.xxl, fontWeight: 'bold', color: COLORS.text, textAlign: 'center' },
   lockedDesc:     { fontSize: FONTS.md, color: COLORS.textMuted, textAlign: 'center', lineHeight: 22 },
