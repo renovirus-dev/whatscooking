@@ -18,7 +18,7 @@ import AsyncStorage                   from '@react-native-async-storage/async-st
 import { useAuth }                    from '../hooks/useAuth';
 import { useNotifications }           from '../context/NotificationContext';
 import { checkAppUpdate }             from '../utils/checkAppUpdate';
-import { navigationRef }              from './navigationRef';
+import { navigationRef }              from './navigationRef'; // ✅ Global Navigation Reference
 
 const PRIMARY = '#FF6B35';
 const DARK    = '#2C3E50';
@@ -409,57 +409,94 @@ function getTabIcon(routeName, focused) {
 }
 
 // ─────────────────────────────────────────────
-// 🛡️ DYNAMIC SAFE-AREA TAB OPTIONS HOOK
-// Correctly adds insets.bottom so tab bar is ALWAYS above Android navigation buttons
+// 🛡️ DUAL-PLATFORM TAB OPTIONS HOOK
 // ─────────────────────────────────────────────
 function useTabBarOptions() {
   const insets = useSafeAreaInsets();
   const isWeb  = Platform.OS === 'web';
 
-  // Calculate bottom clearance:
-  // On Android with gesture/button bar, insets.bottom is typically 20-48px.
-  // We add this padding directly to the bottom so the buttons NEVER cover the tabs.
-  const bottomPadding = isWeb ? 8 : (insets.bottom > 0 ? insets.bottom : 6);
-  const totalHeight   = isWeb ? 66 : 56 + bottomPadding;
+  return useCallback(({ route }) => {
+    if (isWeb) {
+      // ✅ 1. WEB EXACT SETTINGS (Snippet 1 - Clean, no cutoffs on Web)
+      return {
+        headerShown:             false,
+        tabBarActiveTintColor:   PRIMARY,
+        tabBarInactiveTintColor: '#95A5A6',
+        tabBarHideOnKeyboard:    true,
+        tabBarLabelPosition:     'below-icon',
+        tabBarStyle: {
+          backgroundColor: '#FFFFFF',
+          borderTopColor:  '#E0E0E0',
+          borderTopWidth:  1,
+          height:          66,
+          paddingTop:      6,
+          paddingBottom:   8,
+        },
+        tabBarItemStyle: {
+          justifyContent: 'center',
+          alignItems:     'center',
+          padding:        0,
+        },
+        tabBarLabelStyle: {
+          fontSize:     10,
+          fontWeight:   '600',
+          marginTop:    2,
+          marginBottom: 0,
+          padding:      0,
+        },
+        tabBarIcon: ({ color, focused }) => (
+          <Ionicons
+            name={getTabIcon(route.name, focused)}
+            size={20}
+            color={color}
+          />
+        ),
+      };
+    }
 
-  return useCallback(({ route }) => ({
-    headerShown:             false,
-    tabBarActiveTintColor:   PRIMARY,
-    tabBarInactiveTintColor: '#95A5A6',
-    tabBarHideOnKeyboard:    false,
-    tabBarLabelPosition:     'below-icon',
-    tabBarStyle: {
-      backgroundColor: '#FFFFFF',
-      borderTopColor:  '#E0E0E0',
-      borderTopWidth:  1,
-      height:          totalHeight,
-      paddingTop:      6,
-      paddingBottom:   bottomPadding,
-      elevation:       10,
-      shadowColor:     '#000',
-      shadowOffset:    { width: 0, height: -2 },
-      shadowOpacity:   0.08,
-      shadowRadius:    4,
-    },
-    tabBarItemStyle: {
-      justifyContent:  'center',
-      alignItems:      'center',
-      paddingVertical: 2,
-    },
-    tabBarLabelStyle: {
-      fontSize:     11,
-      fontWeight:   '600',
-      marginTop:    2,
-      marginBottom: 0,
-    },
-    tabBarIcon: ({ color, size, focused }) => (
-      <Ionicons
-        name={getTabIcon(route.name, focused)}
-        size={isWeb ? 20 : 22}
-        color={color}
-      />
-    ),
-  }), [insets.bottom, isWeb, totalHeight, bottomPadding]);
+    // ✅ 2. ANDROID APK SETTINGS (Snippet 2 - Elevated above Android Navigation Bar)
+    const bottomPadding = insets.bottom > 0 ? insets.bottom : 6;
+    const totalHeight   = 56 + bottomPadding;
+
+    return {
+      headerShown:             false,
+      tabBarActiveTintColor:   PRIMARY,
+      tabBarInactiveTintColor: '#95A5A6',
+      tabBarHideOnKeyboard:    false,
+      tabBarLabelPosition:     'below-icon',
+      tabBarStyle: {
+        backgroundColor: '#FFFFFF',
+        borderTopColor:  '#E0E0E0',
+        borderTopWidth:  1,
+        height:          totalHeight,
+        paddingTop:      6,
+        paddingBottom:   bottomPadding,
+        elevation:       10,
+        shadowColor:     '#000',
+        shadowOffset:    { width: 0, height: -2 },
+        shadowOpacity:   0.08,
+        shadowRadius:    4,
+      },
+      tabBarItemStyle: {
+        justifyContent:  'center',
+        alignItems:      'center',
+        paddingVertical: 2,
+      },
+      tabBarLabelStyle: {
+        fontSize:     11,
+        fontWeight:   '600',
+        marginTop:    2,
+        marginBottom: 0,
+      },
+      tabBarIcon: ({ color, size, focused }) => (
+        <Ionicons
+          name={getTabIcon(route.name, focused)}
+          size={22}
+          color={color}
+        />
+      ),
+    };
+  }, [insets.bottom, isWeb]);
 }
 
 function ProfileTabIcon({ color, size, focused }) {
