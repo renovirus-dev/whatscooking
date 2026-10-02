@@ -753,7 +753,7 @@ export default function AdminDashboardScreen({ navigation }) {
   const renderOverview = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: insets.bottom + SIZES.md }}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -923,7 +923,7 @@ export default function AdminDashboardScreen({ navigation }) {
       <FlatList
         data={filteredRestaurants}
         keyExtractor={item => item.id}
-        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + SIZES.md }]}
+        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[COLORS.primary]} />
@@ -1026,7 +1026,7 @@ export default function AdminDashboardScreen({ navigation }) {
       <FlatList
         data={filteredUsers}
         keyExtractor={item => item.id}
-        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + SIZES.md }]}
+        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[COLORS.primary]} />
@@ -1132,7 +1132,7 @@ export default function AdminDashboardScreen({ navigation }) {
       <FlatList
         data={filteredReviews}
         keyExtractor={item => item.id}
-        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + SIZES.md }]}
+        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -1189,7 +1189,7 @@ export default function AdminDashboardScreen({ navigation }) {
     return (
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + SIZES.xl }]}
+        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + 140 }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
@@ -1352,7 +1352,7 @@ export default function AdminDashboardScreen({ navigation }) {
   const renderSubscription = () => (
     <ScrollView
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + SIZES.xl }]}
+      contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + 140 }]}
     >
       <Text style={styles.sectionTitle}>💎 Subscription Manager</Text>
       <View style={styles.infoBanner}>
@@ -1479,7 +1479,7 @@ export default function AdminDashboardScreen({ navigation }) {
       keyboardVerticalOffset={insets.top}
     >
       <ScrollView
-        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + SIZES.xl }]}
+        contentContainerStyle={[styles.tabList, { paddingBottom: insets.bottom + 140 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -1717,7 +1717,8 @@ const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: COLORS.surface,
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
-    maxHeight: 56,
+    height: 54, // FIXED HEIGHT FOR ANDROID LAYOUT PRESERVATION
+    flexGrow: 0, // KEEPS SPACE STRICT
   },
   tabBarContent: { paddingHorizontal: SIZES.sm, gap: 4, alignItems: 'center' },
   tab: {
@@ -1737,7 +1738,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   tabBadgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: 'bold' },
-  tabContent:   { flex: 1 },
+  tabContent:   { flex: 1, minHeight: 0 }, // minHeight: 0 PREVENTS VIEW BLOWOUTS ON ANDROID
   tabList:      { padding: SIZES.md, gap: SIZES.md },
 
   searchBar: {
@@ -1750,7 +1751,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: FONTS.md, color: COLORS.text, padding: 0 },
 
-  filterChipsScroll:   { maxHeight: 44 },
+  filterChipsScroll:   { height: 44, flexGrow: 0 }, // CONSTRICTS HEIGHT TO SOLVE ANDROID CLIPPING
   filterChipsContent:  {
     paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
     gap: SIZES.sm, alignItems: 'center',
@@ -1821,7 +1822,7 @@ const styles = StyleSheet.create({
   listCardName:    { fontSize: FONTS.md, fontWeight: '700', color: COLORS.text },
   listCardSub:     { fontSize: FONTS.sm, color: COLORS.textMuted, marginTop: 2 },
   listCardBadges:  { flexDirection: 'row', gap: SIZES.xs, flexWrap: 'wrap', alignItems: 'flex-start' },
-  listCardActions: { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap' },
+  listCardActions: { flexDirection: 'row', gap: SIZES.sm, flexWrap: 'wrap', marginTop: SIZES.xs },
   listCount:       { fontSize: FONTS.xs, color: COLORS.textMuted, marginBottom: SIZES.xs },
 
   inlinePlanBadge: {
@@ -1843,7 +1844,7 @@ const styles = StyleSheet.create({
   badgePrimary: { backgroundColor: COLORS.primary  + '15' },
   badgeText:    { fontSize: FONTS.xs, fontWeight: '700' },
 
-  actionBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: SIZES.sm, paddingVertical: 6, borderRadius: RADIUS.round },
+  actionBtn:        { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: SIZES.sm, paddingVertical: 8, borderRadius: RADIUS.round },
   actionBtnSuccess: { backgroundColor: COLORS.success },
   actionBtnDanger:  { backgroundColor: COLORS.error   },
   actionBtnWarning: { backgroundColor: '#F39C12'      },
