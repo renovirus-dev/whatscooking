@@ -95,7 +95,7 @@ export default function ManageRestaurantsScreen({ navigation }) {
                 (r.subscription?.plan || 'free_trial') === 'free_trial'
               ).length,
     premium:  restaurants.filter(r =>
-                r.subscription?.plan === 'premium'
+                ['premium', 'elite'].includes(r.subscription?.plan)
               ).length,
   }), [restaurants]);
 
@@ -109,7 +109,7 @@ export default function ManageRestaurantsScreen({ navigation }) {
     { key: 'inactive', label: '❌ Inactive', count: filterCounts.inactive },
     { key: 'verified', label: '✓ Verified',  count: filterCounts.verified },
     { key: 'trial',    label: '🆓 Trial',    count: filterCounts.trial    },
-    { key: 'premium',  label: '👑 Premium',  count: filterCounts.premium  },
+    { key: 'premium',  label: '👑 Premium+', count: filterCounts.premium  },
   ], [filterCounts]);
 
   // ─────────────────────────────────────────
@@ -139,7 +139,7 @@ export default function ManageRestaurantsScreen({ navigation }) {
         );
         break;
       case 'premium':
-        result = result.filter(r => r.subscription?.plan === 'premium');
+        result = result.filter(r => ['premium', 'elite'].includes(r.subscription?.plan));
         break;
     }
 

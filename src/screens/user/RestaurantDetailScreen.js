@@ -24,6 +24,7 @@ import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
 import { getThumbUrl, getBannerUrl } from '../../utils/uploadToCloudinary';
 import MenuItemCard from '../../components/MenuItemCard';
 import StarRating   from '../../components/StarRating';
+import { canReserve, canPreorder } from '../../utils/eliteService';
 import ReviewCard   from '../../components/ReviewCard';
 
 // ✅ Safe analytics import
@@ -291,6 +292,14 @@ export default function RestaurantDetailScreen({ route, navigation }) {
       });
     } catch {}
   }, [restaurant]);
+
+  const requireLogin = useCallback((screen) => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to book or order.');
+      return;
+    }
+    navigation.navigate(screen, { restaurant });
+  }, [user, navigation, restaurant]);
 
   const handleCall = useCallback(() => {
     const phone = restaurant?.contact?.phone;
@@ -657,6 +666,18 @@ export default function RestaurantDetailScreen({ route, navigation }) {
               <ActionButton
                 icon="globe-outline" label="Website"
                 color={INFO_COLOR} onPress={handleWebsite}
+              />
+            )}
+            {canReserve(restaurant) && (
+              <ActionButton
+                icon="calendar-outline" label="Reserve"
+                color="#8E44AD" onPress={() => requireLogin('ReserveTable')}
+              />
+            )}
+            {canPreorder(restaurant) && (
+              <ActionButton
+                icon="bag-handle-outline" label="Order ahead"
+                color="#8E44AD" onPress={() => requireLogin('Preorder')}
               />
             )}
           </View>

@@ -25,6 +25,7 @@ import {
   useSubscription,
 } from '../../hooks/useSubscription';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../../theme';
+import { isEliteRestaurant } from '../../utils/eliteService';
 
 // ✅ Safe color fallbacks
 const WARNING_COLOR = COLORS.warning || '#F39C12';
@@ -163,7 +164,8 @@ export default function OwnerDashboardScreen({ navigation }) {
   const currentPlanId    = restaurant?.subscription?.plan || 'free_trial';
   const currentPlan      = PLANS[currentPlanId] || PLANS.free_trial;
   const analyticsEnabled = hasAnalytics(restaurant);
-  const daysRemaining    = getDaysRemaining(restaurant);
+  const isEliteActive    = !!restaurant && isEliteRestaurant(restaurant);
+  const daysRemaining     = getDaysRemaining(restaurant);
   const expiringSoon     = isExpiringSoon(restaurant);
 
   const getPaymentMethodLabel = useCallback(() => {
@@ -332,6 +334,32 @@ export default function OwnerDashboardScreen({ navigation }) {
       color:   INFO_COLOR,
       onPress: () => navigation.navigate('Analytics', { restaurant }),
     }] : []),
+    ...(isEliteActive ? [
+      {
+        label:   'Bookings & Orders',
+        icon:    'calendar-outline',
+        color:   '#8E44AD',
+        onPress: () => navigation.navigate('OwnerBookings'),
+      },
+      {
+        label:   'Promotions',
+        icon:    'pricetag-outline',
+        color:   COLORS.error,
+        onPress: () => navigation.navigate('Promotions'),
+      },
+      {
+        label:   'Locations',
+        icon:    'location-outline',
+        color:   COLORS.success,
+        onPress: () => navigation.navigate('Branches'),
+      },
+      {
+        label:   'Customer Insights',
+        icon:    'people-outline',
+        color:   INFO_COLOR,
+        onPress: () => navigation.navigate('Insights'),
+      },
+    ] : []),
     {
       label:   'Subscription',
       icon:    'diamond-outline',
@@ -560,13 +588,13 @@ export default function OwnerDashboardScreen({ navigation }) {
         <TouchableOpacity
           style={[
             styles.upgradeBtn,
-            currentPlanId === 'premium' && styles.upgradeBtnManage,
+            currentPlanId === 'elite' && styles.upgradeBtnManage,
           ]}
           onPress={() => navigation.navigate('Subscription', { restaurant })}
           activeOpacity={0.8}
         >
           <Text style={styles.upgradeBtnText}>
-            {currentPlanId === 'premium' ? 'Manage' : 'Upgrade'}
+            {currentPlanId === 'elite' ? 'Manage' : 'Upgrade'}
           </Text>
           <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
         </TouchableOpacity>
@@ -772,7 +800,7 @@ export default function OwnerDashboardScreen({ navigation }) {
       </View>
 
       {/* ── Locked Premium Features ──────── */}
-      {currentPlanId !== 'premium' && (
+      {currentPlanId !== 'premium' && currentPlanId !== 'elite' && (
         <View style={styles.lockedSection}>
           <Text style={styles.sectionTitle}>🔒 Premium Features</Text>
           {[

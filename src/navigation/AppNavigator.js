@@ -95,6 +95,23 @@ try { NotificationsScreen    = require('../screens/user/NotificationsScreen').de
 catch (e) { NotificationsScreen    = makePlaceholder('Notifications');    }
 try { PrivacyPolicyScreen    = require('../screens/user/PrivacyPolicyScreen').default;    }
 catch (e) { PrivacyPolicyScreen    = makePlaceholder('Privacy Policy');   }
+let ReserveTableScreen, PreorderScreen, MyBookingsScreen;
+try { ReserveTableScreen = require('../screens/user/ReserveTableScreen').default; }
+catch (e) { ReserveTableScreen = makePlaceholder('Reserve a Table'); }
+try { PreorderScreen     = require('../screens/user/PreorderScreen').default;     }
+catch (e) { PreorderScreen     = makePlaceholder('Order Ahead');     }
+try { MyBookingsScreen   = require('../screens/user/MyBookingsScreen').default;   }
+catch (e) { MyBookingsScreen   = makePlaceholder('My Bookings');     }
+
+let OwnerBookingsScreen, PromotionsScreen, BranchesScreen, InsightsScreen;
+try { OwnerBookingsScreen = require('../screens/owner/OwnerBookingsScreen').default; }
+catch (e) { OwnerBookingsScreen = makePlaceholder('Bookings'); }
+try { PromotionsScreen    = require('../screens/owner/PromotionsScreen').default;    }
+catch (e) { PromotionsScreen    = makePlaceholder('Promotions'); }
+try { BranchesScreen      = require('../screens/owner/BranchesScreen').default;      }
+catch (e) { BranchesScreen      = makePlaceholder('Locations'); }
+try { InsightsScreen      = require('../screens/owner/InsightsScreen').default;      }
+catch (e) { InsightsScreen      = makePlaceholder('Insights'); }
 
 let OwnerDashboardScreen, ManageMenuScreen, AddMenuItemScreen,
     DailyMenuScreen, RestaurantSetupScreen,
@@ -614,6 +631,9 @@ function UserNavigator() {
       <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
       <Stack.Screen name="Favorites"        component={FavoritesScreen}        options={{ title: 'Saved Restaurants' }} />
       <Stack.Screen name="Subscription"     component={SubscriptionScreen}     options={{ title: 'Subscription Plans' }} />
+      <Stack.Screen name="ReserveTable"     component={ReserveTableScreen}     options={{ title: 'Reserve a Table' }} />
+      <Stack.Screen name="Preorder"         component={PreorderScreen}         options={{ title: 'Order Ahead' }} />
+      <Stack.Screen name="MyBookings"       component={MyBookingsScreen}       options={{ title: 'My Bookings' }} />
       <Stack.Screen name="PrivacyPolicy"    component={PrivacyPolicyScreen}    options={{ title: 'Privacy Policy' }} />
     </Stack.Navigator>
   );
@@ -632,6 +652,13 @@ function OwnerNavigator() {
       <Stack.Screen name="RestaurantDetail" component={RestaurantDetailScreen} options={({ route }) => ({ title: route.params?.name || 'Restaurant' })} />
       <Stack.Screen name="Subscription"     component={SubscriptionScreen}     options={{ title: 'Subscription Plans' }} />
       <Stack.Screen name="Analytics"        component={AnalyticsScreen}        options={{ title: 'Analytics' }} />
+      <Stack.Screen name="OwnerBookings"    component={OwnerBookingsScreen}    options={{ title: 'Bookings & Orders' }} />
+      <Stack.Screen name="Promotions"       component={PromotionsScreen}       options={{ title: 'Promotions' }} />
+      <Stack.Screen name="Branches"         component={BranchesScreen}         options={{ title: 'Locations' }} />
+      <Stack.Screen name="Insights"         component={InsightsScreen}         options={{ title: 'Customer Insights' }} />
+      <Stack.Screen name="ReserveTable"     component={ReserveTableScreen}     options={{ title: 'Reserve a Table' }} />
+      <Stack.Screen name="Preorder"         component={PreorderScreen}         options={{ title: 'Order Ahead' }} />
+      <Stack.Screen name="MyBookings"       component={MyBookingsScreen}       options={{ title: 'My Bookings' }} />
       <Stack.Screen name="EditProfile"      component={EditProfileScreen}      options={{ title: 'Edit Profile' }} />
       <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ title: 'Notifications' }} />
       <Stack.Screen name="OwnerDashboard"   component={OwnerDashboardScreen}   options={{ title: 'My Dashboard' }} />

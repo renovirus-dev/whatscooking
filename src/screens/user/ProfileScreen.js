@@ -285,10 +285,10 @@ const OwnerSubscriptionCard = ({ navigation, userId }) => {
 
         <View style={[
           styles.subActionBtn,
-          planId === 'premium' && { backgroundColor: COLORS.secondary },
+          planId === 'elite' && { backgroundColor: COLORS.secondary },
         ]}>
           <Text style={styles.subActionBtnText}>
-            {planId === 'premium' ? 'Manage' : 'Upgrade'}
+            {planId === 'elite' ? 'Manage' : 'Upgrade'}
           </Text>
           <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
         </View>
@@ -727,6 +727,13 @@ export default function ProfileScreen({ navigation }) {
               [{ text: 'OK' }]
             )
           }
+        />
+
+        <ProfileButton
+          icon="calendar-outline"
+          label="My Bookings"
+          subtitle="Reservations & pre-orders"
+          onPress={() => navigation.navigate('MyBookings')}
         />
 
         <ProfileButton

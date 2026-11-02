@@ -32,18 +32,21 @@ const getCoverImage = (restaurant, isSmall = false) => {
 // ─────────────────────────────────────────────
 // PLAN BADGE
 // ─────────────────────────────────────────────
+const PLAN_EMOJI = { basic: '⭐', premium: '👑', elite: '💎' };
+
 const PlanBadge = ({ plan }) => {
   if (!plan || plan === 'free_trial') return null;
+  const isTop = plan === 'premium' || plan === 'elite';
   return (
     <View style={[
       styles.planBadge,
-      { backgroundColor: plan === 'premium' ? '#FFD700' + '30' : COLORS.primary + '20' },
+      { backgroundColor: isTop ? '#FFD700' + '30' : COLORS.primary + '20' },
     ]}>
       <Text style={[
         styles.planBadgeText,
-        { color: plan === 'premium' ? '#B8860B' : COLORS.primary },
+        { color: isTop ? '#B8860B' : COLORS.primary },
       ]}>
-        {plan === 'premium' ? '👑' : '⭐'}
+        {PLAN_EMOJI[plan] || '⭐'}
       </Text>
     </View>
   );
@@ -222,7 +225,7 @@ export default function RestaurantCard({
       {plan !== 'free_trial' && (
         <View style={styles.vPlanBadge}>
           <Text style={styles.vPlanBadgeText}>
-            {plan === 'premium' ? '👑' : '⭐'}
+            {PLAN_EMOJI[plan] || '⭐'}
           </Text>
         </View>
       )}

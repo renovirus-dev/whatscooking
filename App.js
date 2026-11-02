@@ -2,7 +2,7 @@
 // FILE: App.js
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaProvider }     from 'react-native-safe-area-context';
 import { AuthProvider }         from './src/hooks/useAuth';
 import { NotificationProvider } from './src/context/NotificationContext';
@@ -91,7 +91,9 @@ export default function App() {
         <AuthProvider>
           <NotificationProvider>
             <View style={styles.container} onLayout={onLayoutRootView}>
-              <AppNavigator />
+              <View style={styles.webFrame}>
+                <AppNavigator />
+              </View>
             </View>
           </NotificationProvider>
         </AuthProvider>
@@ -103,7 +105,16 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex:            1,
-    backgroundColor: '#FF6B35',
+    backgroundColor: Platform.OS === 'web' ? '#1F1F1F' : '#FF6B35',
+  },
+  // On web, keep content in a centered column instead of stretching across wide screens
+  webFrame: {
+    flex:       1,
+    width:      '100%',
+    maxWidth:   Platform.OS === 'web' ? 820 : undefined,
+    alignSelf:  'center',
+    overflow:   'hidden',
+    backgroundColor: Platform.OS === 'web' ? '#FFFFFF' : 'transparent',
   },
   errorContainer: {
     flex:            1,

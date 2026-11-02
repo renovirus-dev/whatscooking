@@ -60,7 +60,28 @@ export const PLANS = {
       'Priority support',
     ],
   },
+  elite: {
+    id:       'elite',
+    name:     'Elite',
+    emoji:    '💎',
+    price:    49.99,
+    priceJMD: 7750,
+    duration: 'month',
+    color:    '#8E44AD',
+    features: [
+      'Everything in Premium',
+      'Table reservations',
+      'Pre-orders & pickup',
+      'Promotions & coupon codes',
+      'Multiple locations / branches',
+      'Customer insights & CSV export',
+      'Dedicated account support',
+    ],
+  },
 };
+
+// Higher number = higher tier
+export const PLAN_RANK = { free_trial: 0, basic: 1, premium: 2, elite: 3 };
 
 // ─── PayPal Config ────────────────────────────
 export const PAYPAL_CONFIG = {
@@ -129,14 +150,19 @@ export const useSubscription = () => {
 
   const hasAnalytics = (restaurant) => {
     if (!restaurant) return false;
-    return (restaurant?.subscription?.plan || 'free_trial') === 'premium';
+    const plan = restaurant?.subscription?.plan || 'free_trial';
+    return plan === 'premium' || plan === 'elite';
   };
 
   const hasBasic = (restaurant) => {
     if (!restaurant) return false;
     const plan = restaurant?.subscription?.plan || 'free_trial';
-    return plan === 'basic' || plan === 'premium';
+    return plan === 'basic' || plan === 'premium' || plan === 'elite';
   };
+
+  // Elite-only features (reservations, pre-orders, promotions)
+  const hasElite = (restaurant) =>
+    !!restaurant && (restaurant?.subscription?.plan || 'free_trial') === 'elite';
 
   const isPlanExpired = (restaurant) => {
     if (!restaurant) return false;
@@ -353,6 +379,7 @@ export const useSubscription = () => {
     plans:                   PLANS,
     hasAnalytics,
     hasBasic,
+    hasElite,
     isPlanExpired,
     isExpiringSoon,
     getDaysRemaining,

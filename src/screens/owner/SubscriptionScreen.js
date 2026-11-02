@@ -440,7 +440,7 @@ export default function SubscriptionScreen({ route, navigation }) {
           .map(plan => {
             const isCurrent = currentPlan === plan.id;
             const isLoading = loading === plan.id;
-            const isPremium = plan.id === 'premium';
+            const isPremium = plan.id === 'premium'; // "Most popular" highlight
 
             return (
               <View

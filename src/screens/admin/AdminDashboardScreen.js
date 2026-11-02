@@ -1,7 +1,7 @@
 // ============================================
 // FILE: src/screens/admin/AdminDashboardScreen.js
 // ============================================
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, FlatList, ActivityIndicator,
@@ -72,7 +72,16 @@ const SUBSCRIPTION_PLANS = {
     price:   24.99,
     color:   COLORS.primary,
   },
+  elite: {
+    id:      'elite',
+    name:    'Elite',
+    emoji:   '💎',
+    price:   49.99,
+    color:   '#8E44AD',
+  },
 };
+
+const PLAN_RANK = { free_trial: 0, basic: 1, premium: 2, elite: 3 };
 
 // ─── Tab Config (NO menu_scan) ────────────────
 const TABS = [
@@ -91,6 +100,14 @@ export default function AdminDashboardScreen({ navigation }) {
 
   // ── Core State ──────────────────────────────
   const [activeTab, setActiveTab]             = useState('overview');
+  const tabScrollRef = useRef(null);
+  const tabX         = useRef({});
+
+  // Keep the selected tab visible when the bar overflows
+  useEffect(() => {
+    const x = tabX.current[activeTab];
+    if (x != null) tabScrollRef.current?.scrollTo({ x: Math.max(0, x - 40), animated: true });
+  }, [activeTab]);
   const [restaurants, setRestaurants]         = useState([]);
   const [users, setUsers]                     = useState([]);
   const [reviews, setReviews]                 = useState([]);
@@ -567,8 +584,7 @@ export default function AdminDashboardScreen({ navigation }) {
       showSafeAlert('Already on this plan', `${restaurant.name} is already on ${plan.name}`);
       return;
     }
-    const isUpgrade   = newPlanId === 'premium' ||
-                        (newPlanId === 'basic' && current === 'free_trial');
+    const isUpgrade   = (PLAN_RANK[newPlanId] || 0) > (PLAN_RANK[current] || 0);
     const actionLabel = isUpgrade ? `Upgrade to ${plan.name}` : `Downgrade to ${plan.name}`;
 
     showSafeAlert(
@@ -1638,6 +1654,7 @@ export default function AdminDashboardScreen({ navigation }) {
       </View>
 
       <ScrollView
+        ref={tabScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.tabBar}
@@ -1651,6 +1668,7 @@ export default function AdminDashboardScreen({ navigation }) {
               key={tab.id}
               style={[styles.tab, isActive && styles.tabActive]}
               onPress={() => setActiveTab(tab.id)}
+              onLayout={e => { tabX.current[tab.id] = e.nativeEvent.layout.x; }}
               activeOpacity={0.7}
             >
               <View style={{ position: 'relative' }}>
@@ -1665,7 +1683,7 @@ export default function AdminDashboardScreen({ navigation }) {
                   </View>
                 )}
               </View>
-              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+              <Text numberOfLines={1} style={[styles.tabText, isActive && styles.tabTextActive]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -1719,10 +1737,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: COLORS.border,
     height: 54, // FIXED HEIGHT FOR ANDROID LAYOUT PRESERVATION
     flexGrow: 0, // KEEPS SPACE STRICT
+    flexShrink: 0,
   },
-  tabBarContent: { paddingHorizontal: SIZES.sm, gap: 4, alignItems: 'center' },
+  // flexGrow 0 + no shrink: tabs keep natural width and the bar scrolls as tabs are added
+  tabBarContent: { paddingHorizontal: SIZES.sm, gap: 4, alignItems: 'center', flexGrow: 0 },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
+    flexShrink: 0,
     paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
     borderRadius: RADIUS.round,
     borderBottomWidth: 2, borderBottomColor: 'transparent',
@@ -1921,9 +1942,9 @@ const styles = StyleSheet.create({
   },
   refreshBtnText: { color: COLORS.primary, fontSize: FONTS.md, fontWeight: '600' },
 
-  planSummaryRow:  { flexDirection: 'row', gap: SIZES.sm, marginBottom: SIZES.md },
+  planSummaryRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: SIZES.sm, marginBottom: SIZES.md },
   planSummaryCard: {
-    flex: 1, backgroundColor: COLORS.surface,
+    flexGrow: 1, flexBasis: '22%', minWidth: 72, backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg, padding: SIZES.md,
     alignItems: 'center', borderWidth: 1.5, ...SHADOW,
   },
@@ -1950,9 +1971,9 @@ const styles = StyleSheet.create({
   },
   expiryWarningText: { fontSize: FONTS.xs, fontWeight: '600' },
 
-  planBtnsRow:   { flexDirection: 'row', gap: SIZES.sm },
+  planBtnsRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: SIZES.sm },
   planChangeBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    flexGrow: 1, flexBasis: '22%', minWidth: 90, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: SIZES.sm, borderRadius: RADIUS.md,
     borderWidth: 1.5, gap: 4, backgroundColor: COLORS.background,
   },
