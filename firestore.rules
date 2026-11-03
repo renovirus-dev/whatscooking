@@ -1,0 +1,405 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =============================================
+    // HELPER FUNCTIONS
+    // =============================================
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isLoggedIn() && request.auth.uid == userId;
+    }
+
+    function getMyData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isLoggedIn() && getMyData().role == 'admin';
+    }
+
+    function isRestaurantOwner() {
+      return isLoggedIn() && getMyData().role == 'restaurant_owner';
+    }
+
+    function ownsRestaurant(restaurantId) {
+      return isLoggedIn() &&
+        get(/databases/$(database)/documents/restaurants/$(restaurantId))
+          .data.ownerId == request.auth.uid;
+    }
+
+    function ownsEventRestaurant() {
+      return isLoggedIn() &&
+        get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId))
+          .data.ownerId == request.auth.uid;
+    }
+
+    function isRatingUpdate() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['averageRating', 'totalReviews']);
+    }
+
+    function isAnalyticsUpdate() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['analytics', 'updatedAt']);
+    }
+
+    function isFavoriteUpdate() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['totalFavorites']);
+    }
+
+    function isMenuItemViewUpdate() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['viewCount', 'updatedAt']);
+    }
+
+    function isCustomerCancel(allowedStatuses) {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status == 'cancelled'
+        && resource.data.status in allowedStatuses;
+    }
+
+    function isOwnerBookingStatusUpdate(allowedStatuses) {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['status', 'updatedAt'])
+        && request.resource.data.status in allowedStatuses;
+    }
+
+    function canNotifyForBooking(bookingCollection) {
+      let bookingPath = /databases/$(database)/documents/$(bookingCollection)/$(request.resource.data.relatedId);
+      return request.resource.data.relatedCollection == bookingCollection
+        && request.resource.data.relatedId is string
+        && request.resource.data.restaurantId is string
+        && exists(bookingPath)
+        && get(bookingPath).data.restaurantId == request.resource.data.restaurantId
+        && (
+          (
+            get(bookingPath).data.userId == request.auth.uid
+            && get(bookingPath).data.ownerId == request.resource.data.userId
+          )
+          ||
+          (
+            get(bookingPath).data.ownerId == request.auth.uid
+            && get(bookingPath).data.userId == request.resource.data.userId
+          )
+        );
+    }
+
+    function isValidEliteNotification() {
+      return isLoggedIn()
+        && request.resource.data.isRead == false
+        && (
+          canNotifyForBooking('reservations')
+          || canNotifyForBooking('orders')
+        );
+    }
+
+    // ELITE: coupon redemption counters may only increase by one
+    function isPromoUsageUpdate() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(['usageCount'])
+        && request.resource.data.usageCount == resource.data.usageCount + 1;
+    }
+
+    // =============================================
+    // USERS COLLECTION
+    // =============================================
+    match /users/{userId} {
+      allow read: if isLoggedIn();
+
+      allow create: if isLoggedIn()
+        && request.auth.uid == userId;
+
+      allow update: if isLoggedIn() && (
+        isOwner(userId) ||
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // RESTAURANTS COLLECTION
+    // =============================================
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+
+      allow create: if isLoggedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow update: if isLoggedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow update: if isLoggedIn() && isRatingUpdate();
+
+      allow update: if isLoggedIn() && isAnalyticsUpdate();
+
+      allow update: if isLoggedIn() && isFavoriteUpdate();
+
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // MENU ITEMS COLLECTION
+    // =============================================
+    match /menuItems/{itemId} {
+      allow read: if true;
+
+      allow create: if isLoggedIn()
+        && request.resource.data.restaurantId != null
+        && ownsRestaurant(request.resource.data.restaurantId);
+
+      allow update: if isLoggedIn()
+        && ownsRestaurant(resource.data.restaurantId);
+
+      allow update: if isLoggedIn() && isMenuItemViewUpdate();
+
+      allow delete: if isLoggedIn()
+        && ownsRestaurant(resource.data.restaurantId);
+    }
+
+    // =============================================
+    // DAILY MENUS COLLECTION
+    // =============================================
+    match /dailyMenus/{menuId} {
+      allow read: if true;
+
+      allow create: if isLoggedIn()
+        && ownsRestaurant(request.resource.data.restaurantId);
+
+      allow update, delete: if isLoggedIn()
+        && ownsRestaurant(resource.data.restaurantId);
+    }
+
+    // =============================================
+    // REVIEWS COLLECTION
+    // =============================================
+    match /reviews/{reviewId} {
+      allow read: if true;
+
+      allow create: if isLoggedIn()
+        && request.resource.data.userId == request.auth.uid;
+
+      allow update: if isLoggedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow delete: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // =============================================
+    // NOTIFICATIONS COLLECTION
+    // =============================================
+    match /notifications/{notifId} {
+      allow read: if isLoggedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow read: if isAdmin();
+
+      allow create: if isAdmin() || isValidEliteNotification();
+
+      allow update: if isLoggedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow delete: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // =============================================
+    // ELITE: RESERVATIONS
+    // =============================================
+    match /reservations/{reservationId} {
+      allow read: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isLoggedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && exists(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId))
+        && get(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)).data.ownerId
+          == request.resource.data.ownerId;
+
+      allow update: if isLoggedIn() && (
+        (resource.data.ownerId == request.auth.uid
+          && isOwnerBookingStatusUpdate(['confirmed', 'declined', 'no_show', 'completed'])) ||
+        isAdmin() ||
+        (resource.data.userId == request.auth.uid && isCustomerCancel(['pending', 'confirmed']))
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // ELITE: PRE-ORDERS
+    // =============================================
+    match /orders/{orderId} {
+      allow read: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isLoggedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && exists(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId))
+        && get(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)).data.ownerId
+          == request.resource.data.ownerId;
+
+      allow update: if isLoggedIn() && (
+        (resource.data.ownerId == request.auth.uid
+          && isOwnerBookingStatusUpdate(['accepted', 'preparing', 'ready', 'completed', 'declined'])) ||
+        isAdmin() ||
+        (resource.data.userId == request.auth.uid && isCustomerCancel(['pending', 'accepted']))
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // ELITE: PROMOTIONS / COUPONS
+    // =============================================
+    match /promotions/{promoId} {
+      allow read: if isLoggedIn();
+
+      allow create: if isLoggedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && ownsRestaurant(request.resource.data.restaurantId);
+
+      allow update: if isLoggedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow update: if isLoggedIn() && isPromoUsageUpdate();
+
+      allow delete: if isLoggedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+    // =============================================
+    // PAYMENT ORDERS COLLECTION
+    // =============================================
+    match /paymentOrders/{orderId} {
+      allow read: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isLoggedIn()
+        && request.resource.data.userId == request.auth.uid;
+
+      allow update: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // PAYMENTS COLLECTION (Legacy)
+    // =============================================
+    match /payments/{paymentId} {
+      allow read: if isLoggedIn() && (
+        resource.data.userId == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow create: if isLoggedIn()
+        && request.resource.data.userId == request.auth.uid;
+
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // ANALYTICS EVENTS COLLECTION
+    // =============================================
+    match /analyticsEvents/{eventId} {
+      allow create: if true;
+
+      // Premium and Elite owners can read their analytics
+      allow read: if isLoggedIn() && (
+        isAdmin() ||
+        (
+          ownsEventRestaurant() &&
+          get(/databases/$(database)/documents/restaurants/$(resource.data.restaurantId))
+            .data.subscription.plan in ['premium', 'elite']
+        )
+      );
+
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // ANALYTICS SESSIONS COLLECTION
+    // =============================================
+    match /analyticsSessions/{sessionId} {
+      allow create, update: if true;
+
+      allow read: if isLoggedIn() && (
+        isAdmin() ||
+        isRestaurantOwner()
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // =============================================
+    // FOOD IMAGE FILES COLLECTION
+    // =============================================
+    match /foodImageFiles/{photoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =============================================
+    // FOOD IMAGES COLLECTION
+    // =============================================
+    match /foodImages/{poolName} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // =============================================
+    // FAVORITES COLLECTION
+    // =============================================
+    match /favorites/{favoriteId} {
+      allow read: if isLoggedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if isLoggedIn()
+        && request.resource.data.userId == request.auth.uid;
+
+      allow delete: if isLoggedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow update: if false;
+    }
+  }
+}

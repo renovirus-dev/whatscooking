@@ -124,11 +124,12 @@ export const formatDateKey = (key) => {
 export const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
 // ─── Notifications ────────────────────────────
-export const notifyUser = async (userId, title, body, type = 'system') => {
+export const notifyUser = async (userId, title, body, type = 'system', related = null) => {
   if (!userId) return;
   try {
     await addDoc(collection(db, 'notifications'), {
       userId, title, body, type, isRead: false, createdAt: serverTimestamp(),
+      ...(related || {}),
     });
   } catch (err) {
     console.warn('notifyUser failed:', err?.message);
@@ -160,6 +161,7 @@ export const createReservation = async ({
     '🪑 New reservation request',
     `${name.trim()} · party of ${partySize} · ${formatDateKey(date)} at ${formatTime(time)}`,
     'reservation',
+    { restaurantId: restaurant.id, relatedCollection: 'reservations', relatedId: ref.id },
   );
   return ref.id;
 };
@@ -181,6 +183,7 @@ export const updateReservationStatus = async (reservation, status, { byOwner }) 
         reservation.userId,
         status === 'confirmed' ? '✅ Reservation confirmed' : '❌ Reservation declined',
         text, 'reservation',
+        { restaurantId: reservation.restaurantId, relatedCollection: 'reservations', relatedId: reservation.id },
       );
     }
   } else {
@@ -189,6 +192,7 @@ export const updateReservationStatus = async (reservation, status, { byOwner }) 
       '🪑 Reservation cancelled',
       `${reservation.customerName} cancelled their booking for ${when}.`,
       'reservation',
+      { restaurantId: reservation.restaurantId, relatedCollection: 'reservations', relatedId: reservation.id },
     );
   }
 };
@@ -294,6 +298,7 @@ export const createOrder = async ({
     '🥡 New pre-order',
     `${name.trim()} · ${items.reduce((s, i) => s + i.qty, 0)} items · ${money(total)}`,
     'order',
+    { restaurantId: restaurant.id, relatedCollection: 'orders', relatedId: ref.id },
   );
   return ref.id;
 };
@@ -307,11 +312,14 @@ export const updateOrderStatus = async (order, status, { byOwner }) => {
       ready:     `Your order at ${order.restaurantName} is ready for pickup! 🎉`,
       declined:  `${order.restaurantName} could not accept your order.`,
     }[status];
-    if (text) await notifyUser(order.userId, '🥡 Order update', text, 'order');
+    if (text) await notifyUser(order.userId, '🥡 Order update', text, 'order', {
+      restaurantId: order.restaurantId, relatedCollection: 'orders', relatedId: order.id,
+    });
   } else {
     await notifyUser(
       order.ownerId, '🥡 Order cancelled',
       `${order.customerName} cancelled their order (${money(order.total)}).`, 'order',
+      { restaurantId: order.restaurantId, relatedCollection: 'orders', relatedId: order.id },
     );
   }
 };
