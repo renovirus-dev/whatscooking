@@ -18,6 +18,7 @@ import { db }          from '../firebase/config';
 import { useAuth }     from '../hooks/useAuth';
 import { COLORS, SIZES, FONTS, RADIUS, SHADOW } from '../theme';
 import FoodImage       from './FoodImage';
+import Steam, { shouldShowSteam } from './Steam';
 import { getThumbUrl } from '../utils/uploadToCloudinary';
 
 // ─── Safe Color Fallbacks ─────────────────────
@@ -243,6 +244,8 @@ export default function MenuItemCard({
             ]}
             resizeMode="cover"
           />
+
+          {shouldShowSteam(item) && <Steam height={48} />}
 
           {/* ✅ Heart button */}
           {showHeart && (

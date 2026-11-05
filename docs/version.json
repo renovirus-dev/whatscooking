@@ -1,7 +1,7 @@
 {
-  "version": "1.0.2",
-  "versionCode": 3,
+  "version": "1.0.3",
+  "versionCode": 4,
   "downloadUrl": "https://github.com/renovirus-dev/whatscooking/releases/latest/download/whatscooking.apk",
   "forceUpdate": false,
-  "notes": "• New Elite plan: reservations, pre-orders, promotions, multiple locations, customer insights\n• Fixed admin dashboard tabs on Android\n• Better layout on web"
+  "notes": "• New: animated steam on hot food items (not beverages)\n• Fixed filter chips (All / Active / Inactive) folding on Android admin dashboard"
 }

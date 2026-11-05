@@ -751,7 +751,7 @@ export default function AdminDashboardScreen({ navigation }) {
               { backgroundColor: selected === opt.id ? '#FFFFFF' : opt.color },
             ]} />
           )}
-          <Text style={[
+          <Text numberOfLines={1} style={[
             styles.filterChipText,
             selected === opt.id && styles.filterChipTextActive,
           ]}>
@@ -1772,13 +1772,14 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: FONTS.md, color: COLORS.text, padding: 0 },
 
-  filterChipsScroll:   { height: 44, flexGrow: 0 }, // CONSTRICTS HEIGHT TO SOLVE ANDROID CLIPPING
+  filterChipsScroll:   { flexGrow: 0, flexShrink: 0 },
   filterChipsContent:  {
     paddingHorizontal: SIZES.md, paddingVertical: SIZES.sm,
     gap: SIZES.sm, alignItems: 'center',
   },
   filterChip: {
     flexDirection: 'row', alignItems: 'center',
+    flexShrink: 0, minHeight: 34,
     paddingHorizontal: SIZES.md, paddingVertical: 6,
     borderRadius: RADIUS.round,
     backgroundColor: COLORS.surface,
